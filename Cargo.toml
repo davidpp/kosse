@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/app"]
+members = ["crates/core", "crates/app", "crates/fixtures"]
+# Vendored third-party source: not linted or formatted as ours.
+exclude = ["vendor/listeners"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,12 +14,19 @@ publish = false
 
 [workspace.dependencies]
 stackscan-core = { path = "crates/core" }
+stackscan-fixtures = { path = "crates/fixtures" }
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 clap = { version = "4.6.7", features = ["derive"] }
+# Socket -> PID enumeration. Confined to crates/core/src/sockets.rs so API churn stays local.
+# Patched below; see vendor/listeners/STACKSCAN-PATCH.md.
+listeners = "0.6.1"
 # debug-embed: debug builds embed assets too, so tests exercise the shipped code path.
 rust-embed = { version = "8.13.0", features = ["debug-embed", "mime-guess"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+# Process metadata only: no disk/network/component/user-database probing.
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
 ts-rs = "12.0.1"
@@ -45,3 +54,7 @@ module_name_repetitions = "allow"
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+[patch.crates-io]
+# Keeps sockets whose process name is not valid UTF-8 (upstream drops them silently).
+listeners = { path = "vendor/listeners" }

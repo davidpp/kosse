@@ -108,7 +108,7 @@ pub async fn run(listener: TcpListener) -> Result<(), ServeError> {
     match tokio::time::timeout(SHUTDOWN_GRACE, serving).await {
         Ok(result) => result.map_err(ServeError::Serve),
         Err(_elapsed) => {
-            eprintln!(
+            report!(
                 "stackscan: dropping connections still open after {}s",
                 SHUTDOWN_GRACE.as_secs()
             );

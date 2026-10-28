@@ -21,6 +21,8 @@ crates/core   listener discovery · process identity · project attribution · s
 crates/app    one scanner scheduler → Axum API + SSE (loopback) → embedded SPA · CLI · macOS tray
      │
 web/          Vite + React + TanStack Router/Query + Tailwind v4 + shadcn/ui, embedded into the binary
+
+crates/fixtures   test-only: owned listener processes with an identity manifest, lsof ground truth
 ```
 
 Every view (browser, tray and CLI) reads the same snapshot and uses the same action policy. Rust contract types generate the TypeScript types the UI consumes, and CI fails on drift. Details: [architecture](blueprint/architecture.md), [product contract](blueprint/product.md), [verification gates](blueprint/verification.md).

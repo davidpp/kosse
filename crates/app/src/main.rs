@@ -1,8 +1,18 @@
 //! `stackscan` entry point: parses the command line, owns the async runtime, maps failures to
 //! exit codes (0 success, 1 runtime failure, 2 usage error via clap).
 
+/// `eprintln!` without its panic: diagnostics to a closed stderr (`stackscan … 2>&-`, or a
+/// pipe whose reader exited) are dropped instead of aborting the process.
+macro_rules! report {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
+}
+
 mod assets;
 mod cli;
+mod list;
 mod server;
 
 use std::{io, process::ExitCode};
@@ -11,6 +21,7 @@ use clap::Parser;
 
 use crate::{
     cli::{Cli, Command, ServeArgs},
+    list::ListError,
     server::ServeError,
 };
 
@@ -20,6 +31,8 @@ enum AppError {
     Runtime(#[source] io::Error),
     #[error(transparent)]
     Serve(#[from] ServeError),
+    #[error(transparent)]
+    List(#[from] ListError),
 }
 
 fn main() -> ExitCode {
@@ -27,21 +40,24 @@ fn main() -> ExitCode {
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("stackscan: {error}");
+            report!("stackscan: {error}");
             ExitCode::FAILURE
         }
     }
 }
 
 fn run(cli: Cli) -> Result<(), AppError> {
-    // Built explicitly rather than via #[tokio::main]: the macOS tray must later own the main thread.
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .map_err(AppError::Runtime)?;
-
     match cli.command {
-        Command::Serve(args) => runtime.block_on(serve(args)),
+        Command::Serve(args) => {
+            // Built explicitly rather than via #[tokio::main]: the macOS tray must later own the
+            // main thread.
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(AppError::Runtime)?;
+            runtime.block_on(serve(args))
+        }
+        Command::List(args) => Ok(list::run(&args)?),
     }
 }
 
@@ -52,12 +68,12 @@ async fn serve(args: ServeArgs) -> Result<(), AppError> {
         source,
     })?;
     let url = format!("http://{addr}/");
-    eprintln!("stackscan {} listening on {url}", env!("CARGO_PKG_VERSION"));
+    report!("stackscan {} listening on {url}", env!("CARGO_PKG_VERSION"));
     if !args.no_open {
         open_in_browser(&url);
     }
     server::run(listener).await?;
-    eprintln!("stackscan stopped");
+    report!("stackscan stopped");
     Ok(())
 }
 
@@ -68,7 +84,7 @@ fn open_in_browser(url: &str) {
         .status();
     match opened {
         Ok(status) if status.success() => {}
-        Ok(status) => eprintln!("stackscan: could not open {url} in a browser ({status})"),
-        Err(error) => eprintln!("stackscan: could not open {url} in a browser: {error}"),
+        Ok(status) => report!("stackscan: could not open {url} in a browser ({status})"),
+        Err(error) => report!("stackscan: could not open {url} in a browser: {error}"),
     }
 }

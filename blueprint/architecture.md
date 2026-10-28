@@ -16,7 +16,7 @@ Small workspace boundaries support reuse without a plugin framework. Future tunn
 
 ## Discovery and sampling
 
-Evaluate `listeners` first for socket→PID mapping against `lsof` ground truth and fixture listeners on macOS. Filter actual TCP LISTEN state; some enumeration APIs expose other sockets. Compare/fallback to `netstat2` only if evidence shows a gap. Use `sysinfo` for cwd, cmd, parent, user, start time, CPU and memory. Do not reimplement Darwin FFI without demonstrated need.
+Evaluate `listeners` first for socket→PID mapping against `lsof` ground truth and fixture listeners on macOS. Filter actual TCP LISTEN state; some enumeration APIs expose other sockets. Compare/fallback to `netstat2` only if evidence shows a gap. Use `sysinfo` for cwd, cmd, parent, user, start time, CPU and memory. Do not reimplement Darwin FFI without demonstrated need. S02 outcome: `listeners` 0.6.1 with a small vendored patch (it dropped sockets whose process name is not valid UTF-8); `netstat2` and `libproc` were evaluated and rejected, see docs/evidence/S02.md.
 
 Single shared scan loop, initial target 3-second interval. Coalesce concurrent refresh requests. Retain sampler state across ticks; CPU needs two observations and appropriate refresh timing. Deduplicate process inspections across ports. Serialize scans and bound blocking work away from async request workers.
 
@@ -28,7 +28,7 @@ Define serializable versioned contracts with generated TypeScript types (ts-rs, 
 
 - ProcessIdentity: PID + process start timestamp; metadata may be unavailable. Identity without start evidence is not eligible for destructive action.
 - ProcessRecord: identity, sanitized command, cwd, parent PID, user/ownership, age, metrics availability.
-- Endpoint: protocol, bound address, port, observed timestamp, optional HTTP probe result and URL confidence.
+- Endpoint: protocol, port, every canonical bind address on that port, exposure (loopback/interface/allInterfaces, from binds alone), optional HTTP probe result and URL confidence; observation time is the snapshot's `scannedAtMs`.
 - Service: process identity, endpoints, project attribution, package label, observation status.
 - Project: stable canonical worktree path identity, repository/worktree root, display name, branch, optional package path.
 - Snapshot: schema version, monotonic revision, scan time/duration, last successful observation, services/projects, warnings.

@@ -16,6 +16,15 @@ pub struct Cli {
 pub enum Command {
     /// Serve the dashboard and API in the foreground until interrupted.
     Serve(ServeArgs),
+    /// Scan once and print the TCP listeners on this machine and their processes.
+    List(ListArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct ListArgs {
+    /// Print the scan as JSON: the versioned `Snapshot` contract (schemaVersion 1).
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, clap::Args)]

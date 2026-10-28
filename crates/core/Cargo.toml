@@ -9,8 +9,15 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+listeners.workspace = true
 serde.workspace = true
+sysinfo.workspace = true
+thiserror.workspace = true
 ts-rs.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+stackscan-fixtures.workspace = true
 
 [lints]
 workspace = true

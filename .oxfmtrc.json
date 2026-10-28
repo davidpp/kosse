@@ -4,5 +4,10 @@
     "stylesheet": "web/src/styles.css",
     "functions": ["cn", "cva"]
   },
-  "ignorePatterns": ["blueprint/**", "web/src/generated/**", "web/src/routeTree.gen.ts"]
+  "ignorePatterns": [
+    "blueprint/**",
+    "web/src/generated/**",
+    "web/src/routeTree.gen.ts",
+    "vendor/**"
+  ]
 }
