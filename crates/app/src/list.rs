@@ -1,13 +1,20 @@
 //! `stackscan list`: one scan, printed as a table or as the JSON snapshot contract.
 //!
-//! There is no resident instance to ask yet, so this always runs its own one-shot scan.
+//! There is no resident instance to ask yet, so this always runs its own one-shot scan (revision 1,
+//! no interval).
 
 use std::{
+    collections::HashMap,
     fmt::Write as _,
     io::{self, Write},
 };
 
-use stackscan_core::{model::Snapshot, scan::Scanner, sockets::SocketsError};
+use stackscan_core::{
+    model::{GitHead, Observation, Project, Service, Snapshot},
+    scan::Scanner,
+    snapshot::{AttemptTimer, SnapshotTracker},
+    sockets::SocketsError,
+};
 
 use crate::cli::ListArgs;
 
@@ -20,12 +27,17 @@ pub enum ListError {
 }
 
 pub fn run(args: &ListArgs) -> Result<(), ListError> {
-    let snapshot = Scanner::new().scan()?;
+    let timer = AttemptTimer::start();
+    // CPU needs two observations of a process, so a one-shot scan reports it as warming up.
+    let observation = Scanner::new().scan()?;
+    let snapshot = SnapshotTracker::new(None).succeeded(observation, timer.finish());
+    let observation = snapshot.observation.as_ref();
     let mut stdout = io::stdout().lock();
     let written = if args.json {
         write_json(&mut stdout, &snapshot)
     } else {
-        write_table(&mut stdout, &snapshot)
+        // A successful scan always yields an observation.
+        observation.map_or(Ok(()), |observation| write_table(&mut stdout, observation))
     };
     match written.and_then(|()| stdout.flush()) {
         // A closed pipe (`stackscan list | head`) just means the reader has seen enough.
@@ -35,7 +47,10 @@ pub fn run(args: &ListArgs) -> Result<(), ListError> {
         _ => {}
     }
     if !args.json {
-        for warning in &snapshot.warnings {
+        for warning in observation
+            .iter()
+            .flat_map(|observation| &observation.warnings)
+        {
             report!("stackscan: warning: {warning}");
         }
     }
@@ -47,30 +62,65 @@ fn write_json(out: &mut impl Write, snapshot: &Snapshot) -> io::Result<()> {
     out.write_all(b"\n")
 }
 
-fn write_table(out: &mut impl Write, snapshot: &Snapshot) -> io::Result<()> {
+fn write_table(out: &mut impl Write, observation: &Observation) -> io::Result<()> {
+    let projects: HashMap<&str, &Project> = observation
+        .projects
+        .iter()
+        .map(|project| (project.root.as_str(), project))
+        .collect();
     writeln!(
         out,
-        "{:<8} {:<24} {:<6} ADDRESSES",
-        "PID", "PROCESS", "PORT"
+        "{:<8} {:<24} {:<6} {:<32} {:<20} ADDRESSES",
+        "PID", "PROCESS", "PORT", "PROJECT", "BRANCH"
     )?;
-    for service in &snapshot.services {
+    for service in &observation.services {
         let name = service
             .process
             .name
             .as_deref()
             .map_or_else(|| "?".to_owned(), printable);
+        let project = service
+            .project
+            .as_deref()
+            .and_then(|root| projects.get(root).copied());
+        let (project_label, branch) = labels(service, project);
         for endpoint in &service.endpoints {
             writeln!(
                 out,
-                "{:<8} {:<24} {:<6} {}",
+                "{:<8} {:<24} {:<6} {:<32} {:<20} {}",
                 service.process.identity.pid,
                 name,
                 endpoint.port,
+                project_label,
+                branch,
                 endpoint.bind_addresses.join(", ")
             )?;
         }
     }
     Ok(())
+}
+
+/// `project/package/path` and the branch (or `detached@commit`); `-` when unknown.
+fn labels(service: &Service, project: Option<&Project>) -> (String, String) {
+    let Some(project) = project else {
+        return ("-".to_owned(), "-".to_owned());
+    };
+    let mut label = project.name.clone();
+    if let Some(package) = service
+        .package
+        .as_ref()
+        .filter(|package| !package.path.is_empty())
+    {
+        label.push('/');
+        label.push_str(&package.path);
+    }
+    let branch = match project.git.as_ref().map(|git| &git.head) {
+        Some(GitHead::Branch { name }) => printable(name),
+        Some(GitHead::Detached { commit }) => format!("detached@{}", printable(commit)),
+        Some(GitHead::Unknown) => "?".to_owned(),
+        None => "-".to_owned(),
+    };
+    (printable(&label), branch)
 }
 
 /// Process names are untrusted: escape characters that can drive or disguise terminal output.

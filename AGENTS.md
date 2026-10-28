@@ -19,8 +19,10 @@ Stackscan observes local development services (listeners, processes, projects) a
 - Every displayed or logged command line passes central redaction. Process-derived strings are untrusted text.
 - `crates/core` has no UI, router or HTTP-server dependency.
 - Socket enumeration, process name and executable path come from `listeners` (patched, vendored in `vendor/listeners`) only inside `crates/core/src/sockets.rs`; start time, parent, user and cwd come from `sysinfo` in `crates/core/src/inspect.rs`. Never drop a socket for missing metadata: unknown is `null` plus a snapshot warning, never a silent omission or an empty success.
+- Project attribution never parses `.git` or manifest contents itself: a stat-only walk (stopping before the home directory, the filesystem root or another filesystem) finds candidates, and `git` runs only through `crates/core/src/git.rs` (developer-directory binary, timeout, no inherited `GIT_*`). Separate worktrees are separate projects; an unknown cwd is no project, never a guess.
+- CPU is never a fabricated zero: `warmingUp` until a second observation of the same PID + start identity, `unavailable` when withheld.
 - Rust: expected failures are typed `Result`s; no `unwrap`/`expect`/`panic` on OS data or process races. Use `#[expect(lint, reason = "…")]`, not `#[allow]`.
-- TypeScript: strict, no `any`, `@ts-ignore` or unchecked casts (generated files excepted). TanStack Query owns server state; no fetching in components outside it.
+- TypeScript: strict, no `any`, `@ts-ignore` or unchecked casts (generated files excepted). TanStack Query owns server state (snapshot + SSE by revision); components never fetch outside it. Stay within the bundle budget in blueprint/architecture.md.
 - Small modules, no speculative traits or plugin layers. Add a dependency only when code uses it.
 
 ## Tests and evidence

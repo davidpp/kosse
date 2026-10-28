@@ -13,6 +13,7 @@ macro_rules! report {
 mod assets;
 mod cli;
 mod list;
+mod scheduler;
 mod server;
 
 use std::{io, process::ExitCode};
@@ -22,8 +23,12 @@ use clap::Parser;
 use crate::{
     cli::{Cli, Command, ServeArgs},
     list::ListError,
+    scheduler::{SCAN_INTERVAL, Scheduler},
     server::ServeError,
 };
+
+/// How long shutdown waits for a scan in progress (normally milliseconds).
+const SCANNER_STOP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(3);
 
 #[derive(Debug, thiserror::Error)]
 enum AppError {
@@ -33,6 +38,8 @@ enum AppError {
     Serve(#[from] ServeError),
     #[error(transparent)]
     List(#[from] ListError),
+    #[error("could not start the scanner: {0}")]
+    Scanner(#[source] io::Error),
 }
 
 fn main() -> ExitCode {
@@ -69,10 +76,20 @@ async fn serve(args: ServeArgs) -> Result<(), AppError> {
     })?;
     let url = format!("http://{addr}/");
     report!("stackscan {} listening on {url}", env!("CARGO_PKG_VERSION"));
+    // The only scanner of this instance; S04's API reads its snapshots.
+    let scheduler = Scheduler::start(SCAN_INTERVAL).map_err(AppError::Scanner)?;
     if !args.no_open {
         open_in_browser(&url);
     }
-    server::run(listener).await?;
+    let served = server::run(listener).await;
+    // Waiting for a scan in progress blocks, so keep it off the async workers.
+    let stopped = tokio::task::spawn_blocking(move || scheduler.shutdown(SCANNER_STOP_DEADLINE))
+        .await
+        .unwrap_or(false);
+    if !stopped {
+        report!("stackscan: the scanner is still busy; exiting without waiting for it");
+    }
+    served?;
     report!("stackscan stopped");
     Ok(())
 }

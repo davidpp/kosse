@@ -1,6 +1,7 @@
-//! Process metadata via `sysinfo`: start time, parent, owner and working directory.
+//! Process metadata via `sysinfo`: start time, parent, owner, working directory, resident memory
+//! and accumulated CPU time.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
 
@@ -12,6 +13,16 @@ pub struct ProcessDetails {
     pub user_id: Option<u32>,
     pub effective_user_id: Option<u32>,
     pub cwd: Option<String>,
+    /// Resident memory and total CPU time so far, both from one task-info read; `None` when
+    /// the OS withheld it (it does for other users' processes).
+    pub usage: Option<ResourceUsage>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResourceUsage {
+    pub memory_bytes: u64,
+    /// User plus system CPU time since the process started, in milliseconds.
+    pub cpu_time_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,9 +32,11 @@ pub enum ProcessState {
     Exited,
 }
 
-/// Owns the `sysinfo` process table so later scans can reuse it (CPU sampling needs history).
+/// Owns a `sysinfo` process table. CPU history is kept by the caller (see `metrics`), not by
+/// `sysinfo`, so the table can be rebuilt whenever it holds processes that no longer listen.
 pub struct ProcessInspector {
     system: System,
+    inspected: u64,
 }
 
 impl Default for ProcessInspector {
@@ -37,26 +50,59 @@ impl ProcessInspector {
     pub fn new() -> Self {
         Self {
             system: System::new(),
+            inspected: 0,
         }
     }
 
-    /// Inspects each distinct PID once, however many sockets it holds.
+    /// Inspects each distinct PID once, however many sockets it holds, in one `sysinfo` refresh.
     pub fn inspect(&mut self, pids: &[u32]) -> HashMap<u32, ProcessState> {
         let mut distinct: Vec<Pid> = pids.iter().copied().map(Pid::from_u32).collect();
         distinct.sort_unstable();
         // Required, not just cheaper: sysinfo 0.39 drops a process listed twice in one refresh.
         distinct.dedup();
+        self.inspected += distinct.len() as u64;
+        self.prune(&distinct);
         self.system.refresh_processes_specifics(
             ProcessesToUpdate::Some(&distinct),
             true,
             ProcessRefreshKind::nothing()
                 .with_user(UpdateKind::Always)
-                .with_cwd(UpdateKind::Always),
+                .with_cwd(UpdateKind::Always)
+                .with_cpu()
+                .with_memory(),
         );
         distinct
             .into_iter()
             .map(|pid| (pid.as_u32(), self.state_of(pid)))
             .collect()
+    }
+
+    /// Process inspections so far, counting each PID once per [`ProcessInspector::inspect`].
+    #[must_use]
+    pub fn inspected(&self) -> u64 {
+        self.inspected
+    }
+
+    /// A refresh of selected PIDs never drops entries it was not asked about, so a process
+    /// that stopped listening (or exited unseen) would stay in the table for good. Rebuilding
+    /// before the refresh keeps the table to exactly the processes of the latest scan; nothing
+    /// else depends on its history.
+    fn prune(&mut self, current: &[Pid]) {
+        let current: HashSet<&Pid> = current.iter().collect();
+        if self
+            .system
+            .processes()
+            .keys()
+            .any(|pid| !current.contains(pid))
+        {
+            self.system = System::new();
+        }
+    }
+
+    /// Entries in the retained `sysinfo` table.
+    #[must_use]
+    pub fn retained(&self) -> usize {
+        self.system.processes().len()
     }
 
     fn state_of(&self, pid: Pid) -> ProcessState {
@@ -79,6 +125,14 @@ impl ProcessInspector {
                 .cwd()
                 .map(|cwd| cwd.to_string_lossy().into_owned())
                 .filter(|cwd| !cwd.is_empty()),
+            // A failed task-info read leaves every field zero; a live process always has
+            // resident pages.
+            usage: Some(process.memory())
+                .filter(|&bytes| bytes > 0)
+                .map(|memory_bytes| ResourceUsage {
+                    memory_bytes,
+                    cpu_time_ms: process.accumulated_cpu_time(),
+                }),
         })
     }
 

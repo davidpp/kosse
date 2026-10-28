@@ -22,7 +22,7 @@ pub enum Command {
 
 #[derive(Debug, clap::Args)]
 pub struct ListArgs {
-    /// Print the scan as JSON: the versioned `Snapshot` contract (schemaVersion 1).
+    /// Print the scan as JSON: the versioned `Snapshot` contract; see its `schemaVersion`.
     #[arg(long)]
     pub json: bool,
 }

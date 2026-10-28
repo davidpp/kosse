@@ -6,11 +6,13 @@ Scaffolded in S01 with current supported generators; versions and rationale are 
 
 - Rust stable, Cargo workspace, rustfmt + clippy. Pin a tested toolchain in rust-toolchain.toml.
 - `crates/core`: listener discovery, process identity, attribution, snapshots, sampling, action policy, config. No UI/router dependency.
-- `crates/app`: CLI, one scanner scheduler, Axum API/SSE, embedded web assets, macOS tray lifecycle.
-- `web`: Bun, Vite, React strict TypeScript, TanStack Router file routes, TanStack Query for API state, Tailwind v4, shadcn/ui via CLI, Lucide.
+- `crates/app`: CLI, one scanner scheduler, Axum API/SSE, embedded web assets, macOS tray lifecycle, and the dashboard window (a `stackscan window` child process: wry + tao WKWebView on the loopback URL).
+- `web`: Bun, Vite, React APIs on the [TanStack Redact](https://tanstack.com/redact/latest) runtime (Vite plugin; synchronous rendering, ~20 kB gzipped instead of React's ~69 kB), strict TypeScript, TanStack Query for server state, TanStack Router file routes if they fit the budget (S01b measures it), Tailwind v4 (build-time only), Lucide icons imported per icon, system font stack, native `<dialog>`. Hand-built components designed with Impeccable; no component framework. Redact is pre-1.0 and adopted deliberately (owner choice); pin exact versions and re-verify on upgrade.
+- Performance budget (owner direction, 2026-10-28: the tool must be nimble): shipped JS + CSS ≤ 50 kB gzipped in total, no web fonts; `check` fails when the budget is exceeded. The resident app's idle cost is measured and reported in evidence (CPU, RSS with the window closed and open).
 - Oxlint/Oxfmt; Lefthook. Vitest + Testing Library for UI logic; Playwright for browser integration. Cargo unit/integration tests.
-- Framer Motion only if animation is useful; React Hook Form + Zod only when forms warrant them. Do not add unused dependencies.
-- No TanStack Start, Workers or database: Rust serves a local SPA/API, not a hosted full-stack app.
+- CSS transitions only where motion helps comprehension, respecting reduced motion; no animation or form libraries. Do not add unused dependencies.
+- [Rune](https://github.com/anomalyco/rune) (Rust GPU UI) is tracked as a candidate for a future native window/popover once it has releases, status-item support and API stability; it is not a v1 dependency.
+- No full-stack framework, Workers or database: Rust serves a small local SPA/API, not a hosted app.
 
 Small workspace boundaries support reuse without a plugin framework. Future tunnels/proxy integrations remain outside the observational core; see project-metadata.md for provider ownership and consent boundaries. Do not build an ABI/SDK before a concrete integration. Resolve crate APIs from current docs; candidates are not blanket dependency requirements.
 
@@ -18,7 +20,7 @@ Small workspace boundaries support reuse without a plugin framework. Future tunn
 
 Evaluate `listeners` first for socket→PID mapping against `lsof` ground truth and fixture listeners on macOS. Filter actual TCP LISTEN state; some enumeration APIs expose other sockets. Compare/fallback to `netstat2` only if evidence shows a gap. Use `sysinfo` for cwd, cmd, parent, user, start time, CPU and memory. Do not reimplement Darwin FFI without demonstrated need. S02 outcome: `listeners` 0.6.1 with a small vendored patch (it dropped sockets whose process name is not valid UTF-8); `netstat2` and `libproc` were evaluated and rejected, see docs/evidence/S02.md.
 
-Single shared scan loop, initial target 3-second interval. Coalesce concurrent refresh requests. Retain sampler state across ticks; CPU needs two observations and appropriate refresh timing. Deduplicate process inspections across ports. Serialize scans and bound blocking work away from async request workers.
+Single shared scan loop, initial target 3-second interval. Coalesce concurrent refresh requests. Retain sampler state across ticks; CPU needs two observations and appropriate refresh timing. Deduplicate process inspections across ports. Serialize scans and bound blocking work away from async request workers. S03 outcome: one dedicated scanner thread in `crates/app` owns the only `Scanner`; CPU is computed per PID + start identity from accumulated CPU time between scans (sysinfo's own `cpu_usage` depends on the refresh of any process and keeps stale values), and sysinfo's process table is rebuilt to the current scan's processes; see docs/evidence/S03.md.
 
 Measure scan duration and idle overhead with actual fixtures. Target under one interval at 30 owned fixture listeners; if missed, report evidence and optimize before increasing default cadence. Unknown permission/process disappearance is partial data, not fatal to the snapshot.
 
@@ -30,11 +32,11 @@ Define serializable versioned contracts with generated TypeScript types (ts-rs, 
 - ProcessRecord: identity, sanitized command, cwd, parent PID, user/ownership, age, metrics availability.
 - Endpoint: protocol, port, every canonical bind address on that port, exposure (loopback/interface/allInterfaces, from binds alone), optional HTTP probe result and URL confidence; observation time is the snapshot's `scannedAtMs`.
 - Service: process identity, endpoints, project attribution, package label, observation status.
-- Project: stable canonical worktree path identity, repository/worktree root, display name, branch, optional package path.
-- Snapshot: schema version, monotonic revision, scan time/duration, last successful observation, services/projects, warnings.
+- Project: canonical worktree root (identity; the package directory outside Git), display name, Git facts (common directory for display grouping only, linked worktree, branch or detached HEAD; `null` outside Git). The package label (path relative to the project root, name, manifests) is on the Service.
+- Snapshot: schema version, monotonic revision, last successful observation (scan time/duration, services/projects, warnings; `null` before the first success), scanner status (interval, last attempt, failure, consecutive failures, overruns).
 - Action result: structured success/conflict/permission/unsupported/still-running/respawned/observation-error; never raw shell strings as protocol.
 
-Normalize IPv4/IPv6 duplicates for presentation while retaining bind/exposure evidence. Group under repo/worktree root, retain nearest manifest as a package label. Do not merge separate worktrees by common Git directory. Stop ancestor walks at user-home/filesystem boundary. Resolve Git via supported Git command/library behavior, not assumptions that .git is always a directory. Use timeouts and cache metadata; fixture-test detached HEAD and .git files.
+Normalize IPv4/IPv6 duplicates for presentation while retaining bind/exposure evidence. Group under repo/worktree root, retain nearest manifest as a package label. Do not merge separate worktrees by common Git directory. Stop ancestor walks at user-home/filesystem boundary. Resolve Git via supported Git command/library behavior, not assumptions that .git is always a directory. Use timeouts and cache metadata; fixture-test detached HEAD and .git files. S03 uses the `git` CLI from the active developer directory (`xcode-select -p`, never the `/usr/bin/git` shim that prompts to install tools), with a 2 s timeout, only for directories whose stat-only walk found a `.git` entry; layouts are cached 60 s and branches 15 s.
 
 ## HTTP enrichment
 
@@ -50,7 +52,7 @@ Validate Host against configured loopback authority on every route. For unsafe m
 
 CSP and escaped text; no remote scripts/fonts. Test malicious Host, Origin, preflight, cross-site forms, missing token, stale token and invalid payload through real HTTP entrypoints. Dev uses a same-origin Vite proxy to the backend: Vite on `127.0.0.1:47833` proxies `/api` to the backend on `127.0.0.1:47832` (both defined in `web/dev-ports.ts`, away from the installed default 47831). The Host/Origin allowlist admits exactly that dev authority only when the backend runs in dev mode, with no production relaxation.
 
-TanStack Query owns client server-state cache. SSE updates/invalidation flow through it; no competing polling store. Reconnect with backoff and fresh snapshot; monotonic revisions handle dropped/out-of-order events. Disconnected/stale is visible.
+TanStack Query owns client server state: an initial snapshot fetch, then SSE updates written into the query cache only when their revision is newer; no competing polling store. Mutations go through one typed client module. Reconnect with backoff and fresh snapshot; monotonic revisions handle dropped/out-of-order events. Disconnected/stale is visible.
 
 ## Actions
 
@@ -71,7 +73,7 @@ Required executable command contract (implement, test, then document exact synta
 - `--version`, `--help`; clear exit codes; shutdown cleans app resources, not observed services.
 A second launch should open the verified existing instance rather than duplicate sampling. Never trust a PID file alone.
 
-Native tray requires correct macOS main-thread event-loop integration. Evaluate tray-icon plus its supported event loop; package a minimal .app where needed. No Electron/Tauri rewrite merely to get a menu. All views talk to the same core/snapshot.
+Native tray requires correct macOS main-thread event-loop integration. Evaluate tray-icon plus its supported event loop; package a minimal .app where needed. The dashboard window runs as a child process (`stackscan window`) so a WebKit crash or hang cannot take down the scanner or tray, and closing it frees the web engine's memory; it loads the same loopback origin as a browser, so the HTTP security rules apply unchanged. If the window cannot start, open the default browser and say why. Any browser can still open the dashboard URL. No Electron/Tauri rewrite merely to get a menu. All views talk to the same core/snapshot.
 
 Local release = macOS arm64 archive containing executable/app as needed, embedded frontend, checksums, third-party notices and install/uninstall instructions. No Node/Bun required at runtime. Signing/notarization/public distribution are separate approval-dependent work.
 

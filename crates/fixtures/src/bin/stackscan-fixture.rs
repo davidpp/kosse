@@ -3,6 +3,8 @@
 //! it or died) or `--max-lifetime-secs` elapses. Every accepted connection gets a short non-HTTP
 //! banner and is closed.
 //!
+//! `--busy` keeps one thread spinning, a controlled CPU workload for metrics tests.
+//!
 //! `--listen 127.0.0.1` binds one ephemeral port; `--listen 127.0.0.1,::1` binds one port shared by
 //! both addresses. Repeat `--listen` for more ports.
 
@@ -31,6 +33,10 @@ struct Args {
     /// Exit on its own after this long, even if the owner never closes stdin.
     #[arg(long, default_value_t = 120)]
     max_lifetime_secs: u64,
+
+    /// Keep one thread busy (about one core of CPU) until exit.
+    #[arg(long)]
+    busy: bool,
 }
 
 fn parse_group(value: &str) -> Result<Vec<IpAddr>, String> {
@@ -72,6 +78,9 @@ fn main() -> ExitCode {
     for listener in listeners {
         thread::spawn(move || serve_banner(&listener));
     }
+    if args.busy {
+        thread::spawn(spin);
+    }
     let lifetime = Duration::from_secs(args.max_lifetime_secs);
     thread::spawn(move || {
         thread::sleep(lifetime);
@@ -110,6 +119,13 @@ fn bind_group(group: &[IpAddr]) -> io::Result<Vec<TcpListener>> {
         io::ErrorKind::AddrInUse,
         "no port was free on every address",
     ))
+}
+
+fn spin() {
+    let mut counter: u64 = 0;
+    loop {
+        counter = std::hint::black_box(counter.wrapping_add(1));
+    }
 }
 
 fn announce(ready: &Ready) -> io::Result<()> {

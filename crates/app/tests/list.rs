@@ -12,8 +12,14 @@ use std::{
     process::{Command, Output},
 };
 
-use stackscan_core::model::{SNAPSHOT_SCHEMA_VERSION, ScanWarning, Service, Snapshot};
-use stackscan_fixtures::{Fixture, FixtureSpec, lsof};
+use stackscan_core::model::{
+    CpuUsage, GitHead, Observation, Project, SNAPSHOT_SCHEMA_VERSION, ScanWarning, Service,
+    Snapshot,
+};
+use stackscan_fixtures::{
+    Fixture, FixtureSpec, lsof,
+    repo::{Sandbox, git, init_repo},
+};
 
 const V4: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const V6: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
@@ -31,7 +37,7 @@ fn stackscan(args: &[&str]) -> Output {
     output
 }
 
-fn fixture_service<'a>(snapshot: &'a Snapshot, fixture: &Fixture) -> &'a Service {
+fn fixture_service<'a>(snapshot: &'a Observation, fixture: &Fixture) -> &'a Service {
     let mut matching = snapshot
         .services
         .iter()
@@ -69,9 +75,14 @@ fn list_json_matches_fixture_manifest_and_lsof() {
     .map(|fixture| fixture.expect("spawn fixture"));
 
     let output = stackscan(&["list", "--json"]);
-    let snapshot: Snapshot =
+    let published: Snapshot =
         serde_json::from_slice(&output.stdout).expect("JSON snapshot contract");
-    assert_eq!(snapshot.schema_version, SNAPSHOT_SCHEMA_VERSION);
+    assert_eq!(published.schema_version, SNAPSHOT_SCHEMA_VERSION);
+    assert_eq!(published.revision, 1);
+    assert_ne!(published.instance, "");
+    assert_eq!(published.scanner.interval_ms, None, "one-shot");
+    assert_eq!(published.scanner.failure, None);
+    let snapshot = published.observation.expect("an observation");
     assert!(snapshot.scan_duration_ms > 0.0);
     assert!(
         output.stderr.is_empty(),
@@ -100,6 +111,16 @@ fn list_json_matches_fixture_manifest_and_lsof() {
             service.process.cwd.as_deref(),
             fixture.record().cwd.to_str()
         );
+        // One observation: CPU cannot be sampled yet, memory can.
+        assert_eq!(service.process.metrics.cpu, CpuUsage::WarmingUp);
+        assert!(
+            service
+                .process
+                .metrics
+                .memory_bytes
+                .is_some_and(|bytes| bytes > 0)
+        );
+        assert!(service.process.age_secs.is_some());
     }
 
     let dual = fixture_service(&snapshot, &fixtures[2]);
@@ -137,15 +158,25 @@ fn list_table_shows_each_fixture_port_once_with_its_addresses() {
     let endpoints = &fixture.record().endpoints;
     let shared_port = endpoints[0].port().to_string();
     let v6_port = endpoints[2].port().to_string();
+    // The fixture's own temporary cwd is in no project.
     let mut expected = vec![
         vec![
             pid.as_str(),
             "stackscan-fixture",
             shared_port.as_str(),
+            "-",
+            "-",
             "127.0.0.1,",
             "::1",
         ],
-        vec![pid.as_str(), "stackscan-fixture", v6_port.as_str(), "::1"],
+        vec![
+            pid.as_str(),
+            "stackscan-fixture",
+            v6_port.as_str(),
+            "-",
+            "-",
+            "::1",
+        ],
     ];
     // Rows are ordered by port; ephemeral ports need not ascend in spawn order.
     expected.sort_by_key(|row| row[2].parse::<u16>().expect("port"));
@@ -153,6 +184,98 @@ fn list_table_shows_each_fixture_port_once_with_its_addresses() {
         rows, expected,
         "one row per port, both addresses on the shared one"
     );
+}
+
+fn project_of<'a>(observation: &'a Observation, fixture: &Fixture) -> &'a Project {
+    let root = fixture_service(observation, fixture)
+        .project
+        .as_deref()
+        .unwrap_or_else(|| panic!("fixture {} has no project", fixture.pid()));
+    observation
+        .projects
+        .iter()
+        .find(|project| project.root == root)
+        .expect("project listed")
+}
+
+fn path_text(path: &std::path::Path) -> String {
+    path.to_str().expect("UTF-8 path").to_owned()
+}
+
+/// The user-facing acceptance path: `stackscan list --json` distinguishes same-name
+/// repositories, worktrees, packages and detached HEADs of real processes.
+#[test]
+fn list_json_attributes_projects_worktrees_and_packages() {
+    let tree = Sandbox::new().expect("sandbox");
+    let first = tree.dir("one/app").expect("dir");
+    let second = tree.dir("two/app").expect("dir");
+    for repo in [&first, &second] {
+        init_repo(repo).expect("repo");
+    }
+    tree.file("one/app/package.json", "{}").expect("file");
+    tree.file("one/app/packages/web/package.json", "{}")
+        .expect("file");
+    let web = tree.dir("one/app/packages/web").expect("dir");
+    let linked = tree.root().join("one/app wt é");
+    git(
+        &first,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            &path_text(&linked),
+        ],
+    )
+    .expect("worktree add");
+    let linked = linked.canonicalize().expect("canonical");
+    git(&second, &["checkout", "-q", "--detach"]).expect("detach");
+    let spawn = |dir: &std::path::Path| {
+        Fixture::spawn(&FixtureSpec::new().listen(&[V4]).cwd(dir)).expect("spawn fixture")
+    };
+    let (in_web, in_linked, in_second) = (spawn(&web), spawn(&linked), spawn(&second));
+
+    let output = stackscan(&["list", "--json"]);
+    let snapshot: Snapshot = serde_json::from_slice(&output.stdout).expect("JSON");
+    let observation = snapshot.observation.expect("an observation");
+
+    let web_project = project_of(&observation, &in_web);
+    let linked_project = project_of(&observation, &in_linked);
+    let second_project = project_of(&observation, &in_second);
+    assert_eq!(web_project.root, path_text(&first));
+    assert_eq!(linked_project.root, path_text(&linked));
+    assert_eq!(second_project.root, path_text(&second));
+    assert_eq!(web_project.name, second_project.name, "same name");
+    let (web_git, linked_git, second_git) = (
+        web_project.git.as_ref().expect("git"),
+        linked_project.git.as_ref().expect("git"),
+        second_project.git.as_ref().expect("git"),
+    );
+    assert_eq!(web_git.common_dir, linked_git.common_dir);
+    assert_ne!(web_git.common_dir, second_git.common_dir);
+    assert!(linked_git.linked);
+    assert_eq!(
+        linked_git.head,
+        GitHead::Branch {
+            name: "feature".into()
+        }
+    );
+    assert!(matches!(second_git.head, GitHead::Detached { .. }));
+    let package = fixture_service(&observation, &in_web)
+        .package
+        .as_ref()
+        .expect("package");
+    assert_eq!(package.path, "packages/web");
+
+    // The table shows the same attribution.
+    let table = String::from_utf8(stackscan(&["list"]).stdout).expect("UTF-8");
+    let row = table
+        .lines()
+        .find(|line| line.split_whitespace().next() == Some(&in_web.pid().to_string()))
+        .expect("web fixture row");
+    let columns: Vec<&str> = row.split_whitespace().collect();
+    assert_eq!(columns[3..5], ["app/packages/web", "main"], "{row}");
 }
 
 #[test]

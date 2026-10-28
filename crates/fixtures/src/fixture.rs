@@ -13,7 +13,7 @@ use std::{
     env,
     io::{self, BufRead, BufReader, Read},
     net::{IpAddr, SocketAddr},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, ChildStdin, Command, ExitStatus, Stdio},
     sync::mpsc,
     thread,
@@ -40,6 +40,8 @@ pub struct FixtureSpec {
     groups: Vec<Vec<IpAddr>>,
     max_lifetime: Duration,
     executable_name: Option<String>,
+    cwd: Option<PathBuf>,
+    busy: bool,
 }
 
 impl Default for FixtureSpec {
@@ -55,6 +57,8 @@ impl FixtureSpec {
             groups: Vec::new(),
             max_lifetime: Duration::from_secs(120),
             executable_name: None,
+            cwd: None,
+            busy: false,
         }
     }
 
@@ -77,6 +81,21 @@ impl FixtureSpec {
     #[must_use]
     pub fn executable_name(mut self, name: &str) -> Self {
         self.executable_name = Some(name.to_owned());
+        self
+    }
+
+    /// Runs in this existing directory (owned by the caller, e.g. a temporary repository)
+    /// instead of a fresh temporary one.
+    #[must_use]
+    pub fn cwd(mut self, dir: &Path) -> Self {
+        self.cwd = Some(dir.to_path_buf());
+        self
+    }
+
+    /// Keeps one thread spinning: a controlled CPU workload of about one core.
+    #[must_use]
+    pub fn busy(mut self) -> Self {
+        self.busy = true;
         self
     }
 }
@@ -139,15 +158,21 @@ pub struct Fixture {
     child: Child,
     stdin: Option<ChildStdin>,
     stderr: Option<std::process::ChildStderr>,
-    // Declared last so the directory outlives the process that runs in it.
-    _cwd: TempDir,
+    // Declared last so the directory outlives the process that runs in it. `None` when the
+    // caller supplied the directory.
+    _cwd: Option<TempDir>,
 }
 
 impl Fixture {
     /// Launches a fixture and waits (bounded) until every socket is listening.
     pub fn spawn(spec: &FixtureSpec) -> Result<Self, FixtureError> {
-        let cwd = tempfile::Builder::new().prefix(CWD_PREFIX).tempdir()?;
-        let canonical_cwd = cwd.path().canonicalize()?;
+        let (cwd, canonical_cwd) = if let Some(dir) = &spec.cwd {
+            (None, dir.canonicalize()?)
+        } else {
+            let dir = tempfile::Builder::new().prefix(CWD_PREFIX).tempdir()?;
+            let canonical = dir.path().canonicalize()?;
+            (Some(dir), canonical)
+        };
         let binary = match &spec.executable_name {
             Some(name) => {
                 let renamed = canonical_cwd.join(name);
@@ -161,6 +186,9 @@ impl Fixture {
         for group in &spec.groups {
             let joined: Vec<String> = group.iter().map(ToString::to_string).collect();
             command.arg("--listen").arg(joined.join(","));
+        }
+        if spec.busy {
+            command.arg("--busy");
         }
         command
             .arg("--max-lifetime-secs")

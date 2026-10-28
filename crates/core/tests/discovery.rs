@@ -15,7 +15,7 @@ use std::{
 
 use stackscan_core::{
     inspect::{ProcessInspector, ProcessState},
-    model::{Exposure, ProcessField, ScanWarning, Service, Snapshot},
+    model::{CpuUsage, Exposure, Observation, ProcessField, ScanWarning, Service},
     scan::Scanner,
     sockets::{ListenSocket, tcp_listen_sockets},
 };
@@ -28,7 +28,7 @@ fn spawn(spec: &FixtureSpec) -> Fixture {
     Fixture::spawn(spec).expect("spawn fixture")
 }
 
-fn service_of<'a>(snapshot: &'a Snapshot, fixture: &Fixture) -> &'a Service {
+fn service_of<'a>(snapshot: &'a Observation, fixture: &Fixture) -> &'a Service {
     let matching: Vec<&Service> = snapshot
         .services
         .iter()
@@ -69,7 +69,7 @@ fn manifest_binds(fixture: &Fixture) -> BTreeSet<(u32, IpAddr, u16)> {
         .collect()
 }
 
-fn assert_matches_manifest_and_lsof(snapshot: &Snapshot, fixture: &Fixture) -> Service {
+fn assert_matches_manifest_and_lsof(snapshot: &Observation, fixture: &Fixture) -> Service {
     let service = service_of(snapshot, fixture).clone();
     let record = fixture.record();
 
@@ -124,7 +124,8 @@ fn assert_matches_manifest_and_lsof(snapshot: &Snapshot, fixture: &Fixture) -> S
     for warning in &snapshot.warnings {
         match warning {
             ScanWarning::ProcessExited { pid, .. }
-            | ScanWarning::MetadataUnavailable { pid, .. } => {
+            | ScanWarning::MetadataUnavailable { pid, .. }
+            | ScanWarning::AttributionUnavailable { pid, .. } => {
                 assert_ne!(*pid, fixture.pid(), "unexpected warning {warning}");
             }
             ScanWarning::OtherUsersNotVisible => {}
@@ -208,7 +209,7 @@ fn sockets_of(fixture: &Fixture) -> (Vec<ListenSocket>, SystemTime) {
     (sockets, enumerated_at)
 }
 
-fn assert_reported_as_exited(snapshot: &Snapshot, fixture: &Fixture) {
+fn assert_reported_as_exited(snapshot: &Observation, fixture: &Fixture) {
     assert!(
         snapshot
             .services
@@ -235,7 +236,7 @@ fn process_exiting_between_enumeration_and_inspection_is_a_warning() {
     fixture.kill().expect("kill owned fixture");
     fixture.wait(Duration::from_secs(5)).expect("reap");
 
-    let snapshot = Scanner::new().snapshot_of(sockets, enumerated_at);
+    let snapshot = Scanner::new().observation_of(sockets, enumerated_at);
     assert_reported_as_exited(&snapshot, &fixture);
 }
 
@@ -254,7 +255,7 @@ fn zombie_between_enumeration_and_inspection_is_a_warning() {
         thread::sleep(Duration::from_millis(10));
     }
 
-    let snapshot = Scanner::new().snapshot_of(sockets, enumerated_at);
+    let snapshot = Scanner::new().observation_of(sockets, enumerated_at);
     assert_reported_as_exited(&snapshot, &fixture);
     fixture.wait(Duration::from_secs(5)).expect("reap");
 }
@@ -268,7 +269,7 @@ fn process_started_after_enumeration_is_not_the_socket_owner() {
     let before_fixture_started =
         SystemTime::UNIX_EPOCH + Duration::from_secs(fixture.record().started_at_secs - 5);
 
-    let snapshot = Scanner::new().snapshot_of(sockets, before_fixture_started);
+    let snapshot = Scanner::new().observation_of(sockets, before_fixture_started);
     assert_reported_as_exited(&snapshot, &fixture);
 }
 
@@ -319,7 +320,7 @@ fn withheld_metadata_is_unknown_not_guessed() {
         process_name: Some("launchd".into()),
         executable: None,
     };
-    let snapshot = Scanner::new().snapshot_of(vec![socket], SystemTime::now());
+    let snapshot = Scanner::new().observation_of(vec![socket], SystemTime::now());
 
     let service = snapshot
         .services
@@ -329,6 +330,9 @@ fn withheld_metadata_is_unknown_not_guessed() {
     assert_eq!(service.process.identity.started_at_secs, None);
     assert_eq!(service.process.user_id, None);
     assert_eq!(service.process.cwd, None);
+    assert_eq!(service.process.metrics.cpu, CpuUsage::Unavailable);
+    assert_eq!(service.process.metrics.memory_bytes, None);
+    assert_eq!(service.project, None, "no cwd, no guessed project");
     assert!(
         snapshot
             .warnings
@@ -337,7 +341,9 @@ fn withheld_metadata_is_unknown_not_guessed() {
                 fields: vec![
                     ProcessField::StartTime,
                     ProcessField::User,
-                    ProcessField::Cwd
+                    ProcessField::Cwd,
+                    ProcessField::Cpu,
+                    ProcessField::Memory,
                 ],
             })
     );
