@@ -1,4 +1,11 @@
-# Stackscan
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/kosse-lockup-night.svg">
+    <img src="brand/kosse-lockup.svg" alt="Kosse" height="56">
+  </picture>
+</h1>
+
+**« Kosse qui roule sur mon ordi ? »** Québécois for "what's running on my computer?"
 
 A native macOS tray menu and a lightweight local dashboard for the development services you already run: **discover, identify, open, inspect, stop.**
 
@@ -18,7 +25,7 @@ You start dev servers from terminals, scripts and coding agents. A day later the
 ```text
 crates/core   listener discovery · process identity · project attribution · snapshots · action policy · config
      │        (no UI, router or HTTP-server dependency)
-crates/app    one scanner scheduler → Axum API + SSE (loopback) → embedded SPA · CLI · macOS tray
+crates/app    one scanner scheduler (+ bounded loopback HTTP probes) → Axum API + SSE (loopback) → embedded SPA · CLI · macOS tray
      │
 web/          slim dashboard embedded into the binary, shown in a lightweight WKWebView window
               or any browser (moving to the TanStack Redact runtime, ≤ 50 kB gzipped: slice S01b)
@@ -45,6 +52,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for all commands and conventions, and [AG
 ## How this project is built
 
 Stackscan is developed blueprint-first. [`blueprint/`](blueprint/README.md) holds the product contract, architecture, verification gates and a dependency-ordered slice plan. Each slice is implemented and verified through real entrypoints (owned fixture processes, the real HTTP server, a real browser), then reviewed independently for correctness and for documentation before it lands. Mocked tests alone never count as done.
+
+## Brand
+
+_Kossé ?_ is Québécois for "what's that?", the question you ask about an unfamiliar port. The mark, **Le raccord**, is a K whose one stem is the process and whose two arms are the endpoints it owns. Its colour is **Fleuve**, the St. Lawrence's green-teal. The identity, palette and tokens are in [`brand/BRAND.md`](brand/BRAND.md); the assets and how to regenerate them are in [`brand/`](brand/README.md).
 
 ## License
 
