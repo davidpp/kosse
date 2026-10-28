@@ -80,6 +80,8 @@ pub fn typescript_bindings() -> String {
     module.add::<Session>();
     module.add::<ApiError>();
     module.add::<ProbeRequest>();
+    module.add::<crate::action::ActionRequest>();
+    module.add::<crate::action::ActionResult>();
     module.add::<crate::model::Snapshot>();
     module.finish()
 }

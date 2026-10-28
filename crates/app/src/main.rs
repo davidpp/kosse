@@ -10,6 +10,7 @@ macro_rules! report {
     }};
 }
 
+mod actions;
 mod api;
 mod assets;
 mod cli;
@@ -24,6 +25,7 @@ use std::{io, process::ExitCode, sync::Arc};
 use clap::Parser;
 
 use crate::{
+    actions::Actions,
     api::AppState,
     cli::{Cli, Command, ServeArgs},
     guard::{ActionToken, Policy},
@@ -95,10 +97,12 @@ async fn serve(args: ServeArgs) -> Result<(), AppError> {
         scheduler.handle().subscribe(),
         stopping_receiver.clone(),
     ));
+    let actions = Arc::new(Actions::new(action_scope(&args)));
     let app = server::router(AppState::new(
         scheduler.handle(),
         policy,
         probes,
+        actions,
         stopping_receiver,
     ));
     report!("kosse {} listening on {url}", env!("CARGO_PKG_VERSION"));
@@ -146,6 +150,16 @@ fn probe_scope(args: &ServeArgs) -> Scope {
     }
     let _ = args;
     Scope::All
+}
+
+/// Every eligible process may be signalled, except in debug builds given `--act-only`.
+fn action_scope(args: &ServeArgs) -> actions::Scope {
+    #[cfg(debug_assertions)]
+    if let Some(pids) = &args.act_only {
+        return actions::Scope::only(&pids.0);
+    }
+    let _ = args;
+    actions::Scope::All
 }
 
 /// Best effort: the server is already useful without a browser window, so failures only warn.

@@ -56,6 +56,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/events", get(api::events))
         .route("/api/refresh", post(api::refresh))
         .route("/api/probe", post(api::probe))
+        .route("/api/stop", post(api::stop))
+        .route("/api/force", post(api::force))
         .route("/api", any(StatusCode::NOT_FOUND))
         .route("/api/{*rest}", any(StatusCode::NOT_FOUND))
         .fallback_service(get(assets::serve))
@@ -170,6 +172,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        actions::{self, Actions},
         guard::{ActionToken, Policy},
         prober::{Probes, Scope},
         scheduler::{MakeScan, Scheduler},
@@ -237,10 +240,14 @@ mod tests {
         let token = policy.token().to_owned();
         let (stopping, stopping_receiver) = watch::channel(false);
         let probes = Arc::new(Probes::new(Scope::Only(std::collections::HashSet::new())));
+        let actions = Arc::new(Actions::new(actions::Scope::Only(
+            std::collections::HashMap::new(),
+        )));
         let app = router(AppState::new(
             scheduler.handle(),
             policy,
             probes,
+            actions,
             stopping_receiver,
         ));
         runtime.spawn(async move { axum::serve(listener, app).await });

@@ -10,6 +10,9 @@
 //! - `POST /api/refresh` (`{}`): scans now and returns the resulting snapshot.
 //! - `POST /api/probe` ([`ProbeRequest`]): probes one endpoint now ("try HTTP") and returns its
 //!   `HttpProbe`, marked `requested`.
+//! - `POST /api/stop` and `POST /api/force` ([`ActionRequest`]): `SIGTERM`, or `SIGKILL` after a
+//!   `stillRunning` stop, to one revalidated process; returns an [`ActionResult`] (see
+//!   [`crate::actions`]).
 //!
 //! Each snapshot is serialized once per revision and shared by every reader and event stream.
 
@@ -30,13 +33,16 @@ use axum::{
 };
 use futures_util::stream::{self, Stream};
 use kosse_core::{
+    action::{ActionRequest, ActionResult},
     contract::{ApiErrorCode, Health, ProbeRequest, Session},
     model::Snapshot,
     probe,
+    signal::Signal,
 };
 use tokio::sync::watch;
 
 use crate::{
+    actions::Actions,
     guard::{Policy, Refusal},
     prober::Probes,
     scheduler::{RefreshError, SchedulerHandle},
@@ -44,8 +50,8 @@ use crate::{
 
 /// How long `GET /api/snapshot` waits for the first scan of a fresh instance.
 const FIRST_SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
-/// Minimum time between scans triggered through `POST /api/refresh`, and between requested
-/// probes.
+/// Minimum time between scans triggered through `POST /api/refresh`, between requested probes,
+/// and between accepted stop/force requests.
 pub const WRITE_MIN_INTERVAL: Duration = Duration::from_secs(1);
 const KEEP_ALIVE: Duration = Duration::from_secs(15);
 
@@ -56,6 +62,8 @@ pub struct AppState {
     probes: Arc<Probes>,
     refresh_limit: Arc<RateLimit>,
     probe_limit: Arc<RateLimit>,
+    actions: Arc<Actions>,
+    action_limit: Arc<RateLimit>,
     json: Arc<SnapshotJson>,
     /// Turns true when the server starts shutting down; open event streams then end.
     stopping: watch::Receiver<bool>,
@@ -66,6 +74,7 @@ impl AppState {
         scheduler: SchedulerHandle,
         policy: Arc<Policy>,
         probes: Arc<Probes>,
+        actions: Arc<Actions>,
         stopping: watch::Receiver<bool>,
     ) -> Self {
         Self {
@@ -74,6 +83,8 @@ impl AppState {
             probes,
             refresh_limit: Arc::new(RateLimit::default()),
             probe_limit: Arc::new(RateLimit::default()),
+            actions,
+            action_limit: Arc::new(RateLimit::default()),
             json: Arc::new(SnapshotJson::default()),
             stopping,
         }
@@ -278,6 +289,76 @@ pub async fn probe(
     }
     let key = (request.identity, request.port);
     Json(state.probes.request(key, target).await).into_response()
+}
+
+pub async fn stop(
+    State(state): State<AppState>,
+    body: Result<Json<ActionRequest>, JsonRejection>,
+) -> Response {
+    act(state, body, Signal::Terminate).await
+}
+
+pub async fn force(
+    State(state): State<AppState>,
+    body: Result<Json<ActionRequest>, JsonRejection>,
+) -> Response {
+    act(state, body, Signal::Kill).await
+}
+
+/// `200` for `exited`, `stillRunning`, `respawned`, `endpointTaken` and `observationFailed`
+/// (a signal was sent); `409` for `stale` and `forceNotOffered`; `403` for `refused` and
+/// `permissionDenied`; `500` for `signalFailed` (nothing sent) and `internal`. The body is always
+/// the [`ActionResult`].
+async fn act(
+    state: AppState,
+    body: Result<Json<ActionRequest>, JsonRejection>,
+    signal: Signal,
+) -> Response {
+    let request = match body {
+        Ok(Json(request)) => request,
+        Err(rejection) => return body_refusal(&rejection),
+    };
+    if !state.action_limit.try_acquire() {
+        return rate_limited("a stop was requested less than a second ago");
+    }
+    let Some(snapshot) = state.scheduler.latest() else {
+        return scanner_busy();
+    };
+    let Some(busy) = state.actions.begin() else {
+        return rate_limited("another stop is still being observed");
+    };
+    let actions = Arc::clone(&state.actions);
+    let executed = tokio::task::spawn_blocking(move || {
+        let _busy = busy;
+        actions.execute(&request, &snapshot, signal)
+    })
+    .await;
+    let result = executed.unwrap_or_else(|_| ActionResult::Internal {
+        reason: "the action stopped unexpectedly; refresh to see what changed".to_owned(),
+    });
+    let status = match &result {
+        ActionResult::SignalFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        ActionResult::Refused { .. } | ActionResult::PermissionDenied { .. } => {
+            StatusCode::FORBIDDEN
+        }
+        ActionResult::Stale { .. } | ActionResult::ForceNotOffered => StatusCode::CONFLICT,
+        ActionResult::Exited { .. }
+        | ActionResult::StillRunning { .. }
+        | ActionResult::Respawned { .. }
+        | ActionResult::EndpointTaken { .. }
+        | ActionResult::ObservationFailed { .. }
+        | ActionResult::Internal { .. } => {
+            // Publish what the signal changed without waiting for the next tick.
+            let scheduler = state.scheduler.clone();
+            tokio::spawn(async move { scheduler.refresh().await });
+            if matches!(result, ActionResult::Internal { .. }) {
+                StatusCode::INTERNAL_SERVER_ERROR
+            } else {
+                StatusCode::OK
+            }
+        }
+    };
+    (status, Json(result)).into_response()
 }
 
 /// A body the JSON extractor refused: too large (declared or while reading a chunked body), or

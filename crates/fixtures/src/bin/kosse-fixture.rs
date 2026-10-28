@@ -11,17 +11,28 @@
 //! `--` are ignored: they give the process a chosen command line (fake secrets, markup).
 //!
 //! `--listen 127.0.0.1` binds one ephemeral port; `--listen 127.0.0.1,::1` binds one port shared by
-//! both addresses. Repeat `--listen` for more ports.
+//! both addresses. Repeat `--listen` for more ports. `--port` binds the (single) group on that
+//! port instead.
+//!
+//! Signals: by default `SIGTERM` ends the fixture; `--ignore-term` catches and ignores it (only
+//! `SIGKILL` stops it). `--supervise` runs a supervisor that listens on nothing itself: it starts a
+//! child fixture with the other arguments, reports the child's sockets in its own ready line, and
+//! whenever the child exits starts a new one on the same port (retrying while the port is taken)
+//! until its own stdin reaches EOF, when it kills its current child through the child's handle.
 
 use std::{
     fs::OpenOptions,
-    io::{self, Read, Write},
+    io::{self, BufRead, BufReader, Read, Write},
     net::{IpAddr, TcpListener, TcpStream},
     path::PathBuf,
-    process::ExitCode,
-    sync::Arc,
+    process::{Child, Command, ExitCode, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use clap::Parser;
@@ -32,9 +43,15 @@ const SHARED_PORT_ATTEMPTS: usize = 32;
 /// Largest request head read (and recorded) per connection.
 const MAX_REQUEST: usize = 16 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
+/// Pause between a supervised child's exit (or failed start) and the next attempt.
+const RESPAWN_DELAY: Duration = Duration::from_millis(20);
 
 #[derive(Debug, Parser)]
 #[command(name = "kosse-fixture")]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent command-line switches"
+)]
 struct Args {
     /// Comma-separated addresses sharing one ephemeral port. Repeat for more ports.
     #[arg(long = "listen", required = true, value_parser = parse_group)]
@@ -56,6 +73,18 @@ struct Args {
     #[arg(long)]
     record: bool,
 
+    /// Bind the single `--listen` group on this port instead of an ephemeral one.
+    #[arg(long)]
+    port: Option<u16>,
+
+    /// Catch and ignore `SIGTERM`.
+    #[arg(long)]
+    ignore_term: bool,
+
+    /// Supervise a child fixture with the other arguments, restarting it on the same port.
+    #[arg(long)]
+    supervise: bool,
+
     /// Ignored; sets the command line others observe.
     #[arg(last = true)]
     _extra: Vec<String>,
@@ -75,6 +104,19 @@ fn parse_group(value: &str) -> Result<Vec<IpAddr>, String> {
 
 fn main() -> ExitCode {
     let args = Args::parse();
+    if args.port.is_some() && args.groups.len() != 1 {
+        eprintln!("kosse-fixture: --port needs exactly one --listen group");
+        return ExitCode::from(2);
+    }
+    if args.supervise {
+        return supervise(&args);
+    }
+    if args.ignore_term
+        && let Err(error) = ignore_term()
+    {
+        eprintln!("kosse-fixture: could not ignore SIGTERM: {error}");
+        return ExitCode::FAILURE;
+    }
     let tls = if args.serve == Mode::Tls {
         match self_signed_config() {
             Ok(config) => Some(config),
@@ -88,7 +130,7 @@ fn main() -> ExitCode {
     };
     let mut listeners = Vec::new();
     for group in &args.groups {
-        match bind_group(group) {
+        match bind_group(group, args.port) {
             Ok(bound) => listeners.extend(bound),
             Err(error) => {
                 eprintln!("kosse-fixture: could not bind {group:?}: {error}");
@@ -129,11 +171,18 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Binds every address of `group` on one port, retrying with a new port on collision.
-fn bind_group(group: &[IpAddr]) -> io::Result<Vec<TcpListener>> {
+/// Binds every address of `group` on one port (`fixed`, or an ephemeral one, retrying with a new
+/// port on collision).
+fn bind_group(group: &[IpAddr], fixed: Option<u16>) -> io::Result<Vec<TcpListener>> {
     let Some((&first, rest)) = group.split_first() else {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty group"));
     };
+    if let Some(port) = fixed {
+        return group
+            .iter()
+            .map(|&address| TcpListener::bind((address, port)))
+            .collect();
+    }
     for _ in 0..SHARED_PORT_ATTEMPTS {
         let leader = TcpListener::bind((first, 0))?;
         let port = leader.local_addr()?.port();
@@ -157,6 +206,140 @@ fn bind_group(group: &[IpAddr]) -> io::Result<Vec<TcpListener>> {
         io::ErrorKind::AddrInUse,
         "no port was free on every address",
     ))
+}
+
+/// Installs a `SIGTERM` handler that does nothing (tokio's, so no unsafe code here), before the
+/// ready line is printed.
+fn ignore_term() -> io::Result<()> {
+    let (installed, result) = mpsc::channel();
+    thread::spawn(move || {
+        let runtime = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                let _ = installed.send(Err(error));
+                return;
+            }
+        };
+        runtime.block_on(async move {
+            use tokio::signal::unix::{SignalKind, signal};
+            match signal(SignalKind::terminate()) {
+                Ok(mut terms) => {
+                    let _ = installed.send(Ok(()));
+                    while terms.recv().await.is_some() {}
+                }
+                Err(error) => {
+                    let _ = installed.send(Err(error));
+                }
+            }
+        });
+    });
+    result
+        .recv()
+        .unwrap_or_else(|_| Err(io::Error::other("signal thread ended")))
+}
+
+/// See the module docs. The supervisor never signals anything but its own unreaped child.
+fn supervise(args: &Args) -> ExitCode {
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(error) => {
+            eprintln!("kosse-fixture: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let stopping = Arc::new(AtomicBool::new(false));
+    {
+        let stopping = Arc::clone(&stopping);
+        thread::spawn(move || {
+            let _ = io::copy(&mut io::stdin().lock(), &mut io::sink());
+            stopping.store(true, Ordering::SeqCst);
+        });
+    }
+    let deadline = Instant::now() + Duration::from_secs(args.max_lifetime_secs);
+    let done = || stopping.load(Ordering::SeqCst) || Instant::now() >= deadline;
+    let mut port = args.port;
+    let mut announced = false;
+    while !done() {
+        let Ok(mut child) = Command::new(&exe)
+            .args(child_args(args, port))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+        else {
+            return ExitCode::FAILURE;
+        };
+        // `None`: it could not bind (the port is still taken) or start; try again shortly.
+        let Some(ready) = child_ready(&mut child) else {
+            let _ = child.wait();
+            thread::sleep(RESPAWN_DELAY);
+            continue;
+        };
+        port = ready.listeners.first().map(std::net::SocketAddr::port);
+        if !announced {
+            let own = Ready {
+                pid: std::process::id(),
+                listeners: ready.listeners,
+            };
+            if announce(&own).is_err() {
+                let _ = child.kill();
+                let _ = child.wait();
+                return ExitCode::FAILURE;
+            }
+            announced = true;
+        }
+        loop {
+            if matches!(child.try_wait(), Ok(Some(_)) | Err(_)) {
+                break;
+            }
+            if done() {
+                let _ = child.kill();
+                let _ = child.wait();
+                return ExitCode::SUCCESS;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        thread::sleep(RESPAWN_DELAY);
+    }
+    ExitCode::SUCCESS
+}
+
+fn child_args(args: &Args, port: Option<u16>) -> Vec<String> {
+    let mut child = Vec::new();
+    for group in &args.groups {
+        let joined: Vec<String> = group.iter().map(ToString::to_string).collect();
+        child.push("--listen".to_owned());
+        child.push(joined.join(","));
+    }
+    if let Some(port) = port {
+        child.push("--port".to_owned());
+        child.push(port.to_string());
+    }
+    if args.ignore_term {
+        child.push("--ignore-term".to_owned());
+    }
+    if args.busy {
+        child.push("--busy".to_owned());
+    }
+    if args.record {
+        child.push("--record".to_owned());
+    }
+    child.push("--serve".to_owned());
+    child.push(args.serve.as_arg().to_owned());
+    child.push("--max-lifetime-secs".to_owned());
+    child.push(args.max_lifetime_secs.to_string());
+    child
+}
+
+/// The child's ready line, or `None` if it exited (or wrote garbage) first.
+fn child_ready(child: &mut Child) -> Option<Ready> {
+    let stdout = child.stdout.take()?;
+    let mut line = String::new();
+    BufReader::new(stdout).read_line(&mut line).ok()?;
+    serde_json::from_str(&line).ok()
 }
 
 fn spin() {

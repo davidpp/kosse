@@ -28,6 +28,9 @@ hyper-util = { version = "0.1.21", features = ["tokio"] }
 listeners = "0.6.1"
 # Test-only self-signed certificates for the TLS fixture.
 rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }
+# kill(2) with typed errno and a positive-only PID type (process groups need a separate call).
+# Already locked via tempfile (tests); new to the shipped graph with only process + std.
+rustix = { version = "1.1.6", default-features = false, features = ["process", "std"] }
 # debug-embed: debug builds embed assets too, so tests exercise the shipped code path.
 rust-embed = { version = "8.13.0", features = ["debug-embed", "mime-guess"] }
 # TLS for probes (and the test fixture's server): ring provider (smaller than aws-lc-rs), TLS 1.2

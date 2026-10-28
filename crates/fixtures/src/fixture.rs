@@ -36,6 +36,10 @@ const CWD_PREFIX: &str = "kosse fixture é-";
 
 /// What to launch: each group is one port shared by its addresses.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent fixture switches, mirrored from the command line"
+)]
 pub struct FixtureSpec {
     groups: Vec<Vec<IpAddr>>,
     max_lifetime: Duration,
@@ -44,6 +48,9 @@ pub struct FixtureSpec {
     busy: bool,
     serve: Serve,
     record: bool,
+    port: Option<u16>,
+    ignore_term: bool,
+    supervise: bool,
     extra_args: Vec<String>,
 }
 
@@ -64,6 +71,9 @@ impl FixtureSpec {
             busy: false,
             serve: Serve::Banner,
             record: false,
+            port: None,
+            ignore_term: false,
+            supervise: false,
             extra_args: Vec::new(),
         }
     }
@@ -116,6 +126,30 @@ impl FixtureSpec {
     #[must_use]
     pub fn record(mut self) -> Self {
         self.record = true;
+        self
+    }
+
+    /// Binds the (single) listen group on this port instead of an ephemeral one.
+    #[must_use]
+    pub fn port(mut self, port: u16) -> Self {
+        self.port = Some(port);
+        self
+    }
+
+    /// Catches and ignores `SIGTERM`, so only `SIGKILL` stops it.
+    #[must_use]
+    pub fn ignore_term(mut self) -> Self {
+        self.ignore_term = true;
+        self
+    }
+
+    /// The spawned process is a supervisor that listens on nothing itself: it runs a child fixture
+    /// with this spec and restarts it on the same port whenever it exits (waiting while the port
+    /// is taken). Its ready line, and so [`FixtureRecord::endpoints`], are the child's sockets;
+    /// [`Fixture::pid`] is the supervisor's. Cleanup stops the supervisor, which kills its child.
+    #[must_use]
+    pub fn supervise(mut self) -> Self {
+        self.supervise = true;
         self
     }
 
@@ -219,6 +253,15 @@ impl Fixture {
         }
         if spec.record {
             command.arg("--record");
+        }
+        if let Some(port) = spec.port {
+            command.arg("--port").arg(port.to_string());
+        }
+        if spec.ignore_term {
+            command.arg("--ignore-term");
+        }
+        if spec.supervise {
+            command.arg("--supervise");
         }
         command.arg("--serve").arg(spec.serve.as_arg());
         command

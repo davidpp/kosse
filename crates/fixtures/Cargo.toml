@@ -17,6 +17,8 @@ serde_json.workspace = true
 sysinfo.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+# The fixture's `--ignore-term` handler (safe signal handling; already in the graph).
+tokio.workspace = true
 
 [lints]
 workspace = true

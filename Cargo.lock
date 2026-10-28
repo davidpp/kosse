@@ -539,6 +539,7 @@ version = "0.1.0"
 dependencies = [
  "kosse-fixtures",
  "listeners",
+ "rustix",
  "serde",
  "serde_json",
  "sysinfo",
@@ -558,6 +559,7 @@ dependencies = [
  "sysinfo",
  "tempfile",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

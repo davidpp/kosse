@@ -78,12 +78,16 @@ pub struct Server {
 
 impl Server {
     /// `serve --no-open --port 0` plus `extra` arguments. Unless `extra` says otherwise, the
-    /// server probes nothing (`--probe-only=`): tests never probe the machine's real services.
+    /// server probes nothing (`--probe-only=`) and may signal nothing (`--act-only=`): tests
+    /// never probe or signal the machine's real services.
     pub fn start_with(extra: &[&str]) -> Self {
         let mut args = vec!["serve", "--no-open", "--port", "0"];
         args.extend_from_slice(extra);
         if !extra.iter().any(|arg| arg.starts_with("--probe-only")) {
             args.push("--probe-only=");
+        }
+        if !extra.iter().any(|arg| arg.starts_with("--act-only")) {
+            args.push("--act-only=");
         }
         let mut child = OwnedChild::spawn(&args);
         let mut stderr = child.take_stderr();

@@ -39,6 +39,45 @@ startedAtSecs: number | null, };
  */
 export type ProbeRequest = { identity: ProcessIdentity, port: number, };
 
+/**
+ * `POST /api/stop` (graceful, `SIGTERM`) and `POST /api/force` (`SIGKILL`, only after a
+ * `stillRunning` result for the same identity).
+ */
+export type ActionRequest = { 
+/**
+ * `Snapshot.instance` of the snapshot the user confirmed from.
+ */
+instance: string, identity: ProcessIdentity, 
+/**
+ * Every port the confirmation showed. It must be exactly the ports this identity listens
+ * on in the current snapshot, so nobody stops a process without seeing all it serves.
+ */
+ports: Array<number>, };
+
+export type Ineligible = "systemProcess" | "kosseItself" | "noStartTime" | "otherUser" | "ownerUnknown" | "unreadable" | "outsideTestScope";
+
+/**
+ * A process listening on one of the target's port numbers. `identity.startedAtSecs` is
+ * `null` when the OS disclosed nothing about it (it is still listed).
+ */
+export type PortOwner = { port: number, identity: ProcessIdentity, 
+/**
+ * Untrusted text, as reported by the OS.
+ */
+name: string | null, parentPid: number | null, };
+
+export type StaleReason = "instanceChanged" | "exited" | "identityChanged" | "notInSnapshot" | "portsChanged";
+
+/**
+ * The outcome of a stop or force request. Only `exited` means the process is gone and its
+ * ports are free.
+ */
+export type ActionResult = { "outcome": "exited", target: ProcessIdentity, ports: Array<number>, shared: Array<PortOwner>, } | { "outcome": "stillRunning", target: ProcessIdentity, ports: Array<number>, forceUntilMs: number | null, } | { "outcome": "respawned", target: ProcessIdentity, parentPid: number, owners: Array<PortOwner>, shared: Array<PortOwner>, } | { "outcome": "endpointTaken", target: ProcessIdentity, owners: Array<PortOwner>, shared: Array<PortOwner>, } | { "outcome": "observationFailed", target: ProcessIdentity, 
+/**
+ * The process was seen gone; only its ports could not be checked.
+ */
+processExited: boolean, reason: string, } | { "outcome": "stale", reason: StaleReason, } | { "outcome": "forceNotOffered" } | { "outcome": "refused", reason: Ineligible, } | { "outcome": "permissionDenied", target: ProcessIdentity, } | { "outcome": "signalFailed", target: ProcessIdentity, reason: string, } | { "outcome": "internal", reason: string, };
+
 export type GitHead = { "kind": "branch", name: string, } | { "kind": "detached", commit: string, } | { "kind": "unknown" };
 
 /**

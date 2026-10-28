@@ -49,6 +49,13 @@ pub struct ServeArgs {
     #[cfg(debug_assertions)]
     #[arg(long, hide = true, value_name = "PID,…", value_parser = parse_pids)]
     pub probe_only: Option<PidList>,
+
+    /// Tests only: stop/force may signal only these processes (matched by PID and the start time
+    /// read at startup) and their direct children (`--act-only=` none), so a test can never
+    /// signal the machine's real services. Not present in release builds.
+    #[cfg(debug_assertions)]
+    #[arg(long, hide = true, value_name = "PID,…", value_parser = parse_action_pids)]
+    pub act_only: Option<PidList>,
 }
 
 /// A comma-separated PID list; empty is allowed.
@@ -68,4 +75,14 @@ fn parse_pids(value: &str) -> Result<PidList, String> {
         })
         .collect::<Result<_, _>>()
         .map(PidList)
+}
+
+/// Like [`parse_pids`], refusing PID 0 and 1.
+#[cfg(debug_assertions)]
+fn parse_action_pids(value: &str) -> Result<PidList, String> {
+    let pids = parse_pids(value)?;
+    match pids.0.iter().find(|&&pid| pid <= 1) {
+        Some(pid) => Err(format!("PID {pid} can never be signalled")),
+        None => Ok(pids),
+    }
 }
