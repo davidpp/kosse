@@ -1,3 +1,8 @@
 [install]
 # Supply-chain guard: do not resolve package versions published less than 5 days ago.
 minimumReleaseAge = 432000
+# Owner-approved exception (2026-10-28) for exactly @tanstack/redact@0.2.1, the first MIT release,
+# published inside the window. Bun 1.4.2 does not honour version-scoped entries, so this line
+# records the approval rather than exempting anything; the exact pin in web/package.json and
+# bun.lock fixes the version. Remove after 2026-11-01.
+minimumReleaseAgeExcludes = ["@tanstack/redact@0.2.1"]

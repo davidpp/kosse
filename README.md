@@ -28,7 +28,7 @@ crates/core   listener discovery · process identity · project attribution · s
 crates/app    one scanner scheduler (+ bounded loopback HTTP probes) → Axum API + SSE (loopback) → embedded SPA · CLI · macOS tray
      │
 web/          slim dashboard embedded into the binary, shown in a lightweight WKWebView window
-              or any browser (moving to the TanStack Redact runtime, ≤ 50 kB gzipped: slice S01b)
+              or any browser (TanStack Redact runtime, ≤ 50 kB gzipped JS + CSS)
 
 crates/fixtures   test-only: owned listener processes with an identity manifest, disposable Git
                   repositories, lsof ground truth

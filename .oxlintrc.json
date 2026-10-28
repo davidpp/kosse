@@ -20,7 +20,24 @@
       {
         "allow": ["**/*.css", "@testing-library/jest-dom/vitest"]
       }
+    ],
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "react-dom/client",
+            "importNames": ["hydrateRoot"],
+            "message": "Redact's hydration feature is off (web/vite.config.ts); mount with createRoot."
+          },
+          {
+            "name": "react",
+            "importNames": ["Activity", "unstable_Activity"],
+            "message": "Redact's activity feature is off (web/vite.config.ts); enable it there first."
+          }
+        ]
+      }
     ]
   },
-  "ignorePatterns": ["web/dist/**", "web/src/generated/**", "web/src/routeTree.gen.ts"]
+  "ignorePatterns": ["web/dist/**", "web/src/generated/**"]
 }

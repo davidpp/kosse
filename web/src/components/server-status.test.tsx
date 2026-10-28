@@ -26,6 +26,7 @@ describe("ServerStatus", () => {
         query={{
           status: "error",
           error: new Error("Health check failed with HTTP 502"),
+          isFetching: false,
         }}
         onRetry={retry}
       />,
@@ -34,5 +35,24 @@ describe("ServerStatus", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Health check failed with HTTP 502");
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it("blocks a second retry while one is in flight", async () => {
+    const retry = vi.fn<() => void>();
+    render(
+      <ServerStatus
+        query={{ status: "error", error: new Error("connection refused"), isFetching: true }}
+        onRetry={retry}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Retrying…" });
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    // It stays focusable, so keyboard focus is not dropped while the retry runs.
+    button.focus();
+    expect(button).toHaveFocus();
+    await userEvent.click(button);
+    await userEvent.keyboard("{Enter}");
+    expect(retry).not.toHaveBeenCalled();
   });
 });
