@@ -2,7 +2,7 @@
 
 ## Stack and layout
 
-Planned, not installed yet. Scaffold with current supported generators and record chosen versions/lockfiles.
+Scaffolded in S01 with current supported generators; versions and rationale are in docs/evidence/S01.md, tool pins in `mise.toml` and `rust-toolchain.toml`, lockfiles `Cargo.lock` and `bun.lock`.
 
 - Rust stable, Cargo workspace, rustfmt + clippy. Pin a tested toolchain in rust-toolchain.toml.
 - `crates/core`: listener discovery, process identity, attribution, snapshots, sampling, action policy, config. No UI/router dependency.
@@ -24,7 +24,7 @@ Measure scan duration and idle overhead with actual fixtures. Target under one i
 
 ## Model and identity
 
-Define serializable versioned contracts with generated TypeScript types (evaluate ts-rs or equivalent); CI must detect stale generated output. UI must not hand-maintain a divergent Rust model.
+Define serializable versioned contracts with generated TypeScript types (ts-rs, exported to `web/src/generated/contracts.ts`); a freshness test fails `check` and CI on stale output. UI must not hand-maintain a divergent Rust model.
 
 - ProcessIdentity: PID + process start timestamp; metadata may be unavailable. Identity without start evidence is not eligible for destructive action.
 - ProcessRecord: identity, sanitized command, cwd, parent PID, user/ownership, age, metrics availability.
@@ -48,7 +48,7 @@ Read endpoints: health/version, snapshot, SSE. Write endpoints: refresh, stop, p
 
 Validate Host against configured loopback authority on every route. For unsafe methods require exact same-origin Origin (reject missing/null/mismatch), JSON content type, bounded payload, and a per-instance random action token obtained only through same-origin API. No wildcard CORS. Token is not embedded in URL/logs/persisted config. These defenses target websites/DNS rebinding, not malicious local processes.
 
-CSP and escaped text; no remote scripts/fonts. Test malicious Host, Origin, preflight, cross-site forms, missing token, stale token and invalid payload through real HTTP entrypoints. Dev uses a same-origin Vite proxy to the backend, documented allowlist for the exact dev authority only, with no production relaxation.
+CSP and escaped text; no remote scripts/fonts. Test malicious Host, Origin, preflight, cross-site forms, missing token, stale token and invalid payload through real HTTP entrypoints. Dev uses a same-origin Vite proxy to the backend: Vite on `127.0.0.1:47833` proxies `/api` to the backend on `127.0.0.1:47832` (both defined in `web/dev-ports.ts`, away from the installed default 47831). The Host/Origin allowlist admits exactly that dev authority only when the backend runs in dev mode, with no production relaxation.
 
 TanStack Query owns client server-state cache. SSE updates/invalidation flow through it; no competing polling store. Reconnect with backoff and fresh snapshot; monotonic revisions handle dropped/out-of-order events. Disconnected/stale is visible.
 
@@ -85,4 +85,5 @@ Scaffold must choose one documented root command runner (Bun scripts may orchest
 - release:local: versioned artifact + manifest/checksums, no publishing.
 - install/uninstall: prefix-aware sandbox support; do not touch live installation or startup as a test side effect.
 - hooks: fast non-mutating pre-commit gate; CI full checks and macOS fixture/build lane. No hooks that silently rewrite/stage code.
+Supporting commands also exist: `lint`, `typecheck`, `contracts` (regenerate TS contracts) and `audit` (cargo-deny + workflow lint). `test:e2e` arrives with the browser slice (S07) and the release/install commands with packaging (S09).
 Configure shell child teardown for dev and tests. Add reproducible lockfiles and documented tool versions. No pretend-green placeholder commands; add a command only when its behavior exists.

@@ -1,0 +1,36 @@
+name: Bug report
+description: Something Stackscan shows or does is wrong.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The services you had running (ports, how they were started) and what you clicked or ran.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "`stackscan --version`"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and chip
+      placeholder: macOS 26.1, Apple M4
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Extra details
+      description: Logs or `stackscan list --json` output. Remove anything private (paths, tokens, command lines) before posting.
+      render: text

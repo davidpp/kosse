@@ -35,10 +35,10 @@ No destructive GET, no cross-origin mutation, no rebinding Host accepted, no raw
 
 ## Evidence storage
 
-Keep concise durable summaries in `docs/evidence/<issue>.md` when created; attach through `kabane log`. Include command, version/commit or working-tree fingerprint, environment, result, failures and unverified items. Generated screenshots/traces/artifacts remain ignored unless a small curated artifact is useful. Never copy private real process command lines into repository evidence.
+Keep concise durable summaries in `docs/evidence/<slice>.md` (e.g. `S02.md`) and reference them from the tracker. Include command, version/commit or working-tree fingerprint, environment, result, failures and unverified items. Generated screenshots/traces/artifacts remain ignored unless a small curated artifact is useful. Never copy private real process command lines into repository evidence.
 
 ## Completion audit
 
-All required commands execute successfully from documented checkout instructions. CI configuration matches local checks (actual remote CI run remains unverified until a remote exists). All required children done with evidence. Installed entrypoint is tested, not only cargo run/Vite. No uncontrolled processes, live startup changes, or temporary fixture directories left behind.
+All required commands execute successfully from documented checkout instructions. CI configuration matches local checks (CI runs on push; record the first green run in slice evidence). All required children done with evidence. Installed entrypoint is tested, not only cargo run/Vite. No uncontrolled processes, live startup changes, or temporary fixture directories left behind.
 
-Human-only tray/login verification cannot be silently marked passed by an unattended loop. Record waiting and provide exact steps. David may explicitly waive or defer a criterion; record that decision rather than changing acceptance unilaterally.
+Human-only tray/login verification cannot be silently marked passed by an unattended loop. Record waiting and provide exact steps. The maintainer may explicitly waive or defer a criterion; record that decision rather than changing acceptance unilaterally.

@@ -2,10 +2,7 @@
 
 ## Owner preferences
 
-Read 2026-10-09 from the local Second Brain replica after its REST endpoint was unavailable:
-- `~/Documents/second-brain/knowledge/preferences/_overview.md`
-- `~/Documents/second-brain/knowledge/preferences/stacks.md`
-- `~/Documents/second-brain/knowledge/preferences/coding.md`
+Read 2026-10-09 and re-checked 2026-10-28 from the maintainer's personal knowledge base (stack and coding-setup preference notes; not part of this repository).
 
 Rust backend is explicit owner direction. Maintained preferences select Bun/Vite/React, TanStack Router and Query, Tailwind v4/shadcn, Oxlint/Oxfmt, Lefthook, strict types, full setup and real entrypoint verification. Cloudflare is a hosting preference, not a reason to add hosting to a local tool. Release automation specifics are not an established universal preference.
 
@@ -39,4 +36,4 @@ Tray Stack inspired the product concept; PortDoc/Portbook informed the earlier f
 
 The earlier research inspected PortDoc source. Accordingly this project makes no strict clean-room claim. No PortDoc source/assets/skill text are copied into Stackscan; implementation agents should work from these independent requirements and licensed library documentation, not consult PortDoc implementation for translation. Obtain appropriate advice before any distribution if provenance concerns arise.
 
-The current project is planning only. No application license selected, remote created, dependency installed, or build/runtime behavior verified by this planning step.
+The planning step selected no dependencies and verified no runtime behavior; implementation evidence lives in `docs/evidence/`. The project is MIT-licensed and published at github.com/davidpp/stackscan.
