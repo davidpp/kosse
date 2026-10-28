@@ -13,6 +13,7 @@
 //! - `POST /api/stop` and `POST /api/force` ([`ActionRequest`]): `SIGTERM`, or `SIGKILL` after a
 //!   `stillRunning` stop, to one revalidated process; returns an [`ActionResult`] (see
 //!   [`crate::actions`]).
+//! - `GET`/`POST /api/preferences`: the dashboard's preferences (see [`crate::preferences`]).
 //! - `POST /api/window` ([`WindowRequest`]): the menu-bar app shows its dashboard window at that
 //!   route and brings it forward; other instances answer `409 notResident`.
 //!

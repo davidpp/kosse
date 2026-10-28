@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { failureOf, probe, refresh } from "@/api/client";
+import { useAllListeners } from "@/api/preferences";
 import { offerSnapshot, snapshotQuery, useLiveSnapshot } from "@/api/snapshot";
 import { CustomizeDialog } from "@/components/customize-dialog";
 import { Header, type Freshness } from "@/components/header";
@@ -40,7 +41,13 @@ function Dashboard() {
   const freshness = useFreshness(data);
 
   const [query, setQuery] = useState("");
-  const [allListeners, setAllListeners] = useState(false);
+  const {
+    allListeners,
+    choose: setAllListeners,
+    ...preference
+  } = useAllListeners(
+    connection.state === "live" ? `live:${data?.instance ?? ""}` : connection.state,
+  );
   const [customizing, setCustomizing] = useState<string | null>(null);
   const [tried, setTried] = useState<ReadonlyMap<string, Tried>>(new Map());
   const searchRef = useRef<HTMLInputElement>(null);
@@ -103,6 +110,11 @@ function Dashboard() {
       />
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-3 px-4 py-4">
         <ConnectionNotice connection={connection} hasData={data !== undefined} />
+        {preference.problem === null ? null : (
+          <Notice tone="failed" onDismiss={preference.dismiss}>
+            {preference.problem}
+          </Notice>
+        )}
         {/* A failed refresh is news until a newer scan arrives. */}
         {scan.isError && (observation?.scannedAtMs ?? 0) < scan.submittedAt ? (
           <Notice tone="failed" onDismiss={() => scan.reset()}>

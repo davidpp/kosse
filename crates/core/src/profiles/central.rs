@@ -1,5 +1,6 @@
 //! Kossé's per-user configuration file: central project profiles keyed by canonical worktree
-//! root, in `~/Library/Application Support/Kosse/config.json` (or `$KOSSE_CONFIG_DIR`).
+//! root, and the dashboard's preferences, in `~/Library/Application Support/Kosse/config.json`
+//! (or `$KOSSE_CONFIG_DIR`).
 //!
 //! - Versioned JSON. A newer version, or a file that does not parse or validate, is reported and
 //!   left exactly as it is: writes are refused until the user fixes or removes it, so the original
@@ -21,11 +22,14 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::profiles::{
-    document::{ProjectProfile, unique_keys},
-    source::{self, FileStamp, Links, MAX_FILE_BYTES},
-    validate::{self, ProfileError},
-    view::ProfileProblem,
+use crate::{
+    contract::Preferences,
+    profiles::{
+        document::{ProjectProfile, unique_keys},
+        source::{self, FileStamp, Links, MAX_FILE_BYTES},
+        validate::{self, ProfileError},
+        view::ProfileProblem,
+    },
 };
 
 /// Overrides the configuration directory (tests, sandboxes). Must be absolute.
@@ -47,8 +51,36 @@ pub struct CentralConfig {
         skip_serializing_if = "BTreeMap::is_empty"
     )]
     pub projects: BTreeMap<String, ProjectProfile>,
+    /// Part of config version 1: a file without it has the defaults, and a build that predates
+    /// it keeps it as an unknown field.
+    #[serde(default, skip_serializing_if = "StoredPreferences::is_empty")]
+    pub preferences: StoredPreferences,
     #[serde(flatten)]
     pub unknown: BTreeMap<String, Value>,
+}
+
+/// [`Preferences`] as stored: a missing preference has its default, and preferences this build
+/// does not know are kept on rewrite. A known one with the wrong type makes the file invalid.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredPreferences {
+    #[serde(default)]
+    pub all_listeners: bool,
+    #[serde(flatten)]
+    pub unknown: BTreeMap<String, Value>,
+}
+
+impl StoredPreferences {
+    fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    #[must_use]
+    pub fn known(&self) -> Preferences {
+        Preferences {
+            all_listeners: self.all_listeners,
+        }
+    }
 }
 
 impl CentralConfig {
@@ -57,6 +89,7 @@ impl CentralConfig {
         Self {
             version: CONFIG_VERSION,
             projects: BTreeMap::new(),
+            preferences: StoredPreferences::default(),
             unknown: BTreeMap::new(),
         }
     }
@@ -217,6 +250,28 @@ impl CentralStore {
             }
             config.projects.insert(root.to_owned(), profile.clone());
             Ok(Some(profile))
+        })
+    }
+
+    /// The saved preferences, or the defaults when there is no file yet. A file that cannot be
+    /// used is reported, as for a save.
+    pub fn preferences(&self) -> Result<Preferences, StoreError> {
+        match self.load() {
+            Ok(config) => Ok(config
+                .map(|(config, _)| config.preferences.known())
+                .unwrap_or_default()),
+            Err(problem) => Err(StoreError::Unusable {
+                path: self.file(),
+                problem,
+            }),
+        }
+    }
+
+    /// Replaces the preferences this build knows, keeping the others. Returns them as stored.
+    pub fn save_preferences(&self, preferences: Preferences) -> Result<Preferences, StoreError> {
+        self.update(|config| {
+            config.preferences.all_listeners = preferences.all_listeners;
+            Ok(config.preferences.known())
         })
     }
 
@@ -393,6 +448,54 @@ mod tests {
     }
 
     #[test]
+    fn preferences_default_persist_and_keep_what_this_build_does_not_know() {
+        let (_dir, store) = store();
+        assert_eq!(
+            store.preferences().expect("defaults"),
+            Preferences::default()
+        );
+        assert!(!store.file().exists(), "reading creates nothing");
+
+        store.save("/work/app", Some(profile("App"))).expect("save");
+        let written: Value =
+            serde_json::from_slice(&fs::read(store.file()).expect("read")).expect("json");
+        assert!(
+            written.get("preferences").is_none(),
+            "defaults are not written"
+        );
+
+        fs::write(
+            store.file(),
+            r#"{"version":1,"preferences":{"theme":"dark"},"projects":{"/work/app":{"version":1,"name":"App"}}}"#,
+        )
+        .expect("write");
+        let on = Preferences {
+            all_listeners: true,
+        };
+        assert_eq!(store.save_preferences(on).expect("save"), on);
+        assert_eq!(store.preferences().expect("load"), on);
+        let written: Value =
+            serde_json::from_slice(&fs::read(store.file()).expect("read")).expect("json");
+        assert_eq!(written["preferences"]["allListeners"], true);
+        assert_eq!(written["preferences"]["theme"], "dark");
+        assert_eq!(written["projects"]["/work/app"]["name"], "App");
+
+        fs::write(
+            store.file(),
+            r#"{"version":1,"preferences":{"allListeners":"yes"}}"#,
+        )
+        .expect("write");
+        assert!(matches!(
+            store.preferences(),
+            Err(StoreError::Unusable { .. })
+        ));
+        assert!(matches!(
+            store.save_preferences(on),
+            Err(StoreError::Unusable { .. })
+        ));
+    }
+
+    #[test]
     fn corrupt_and_newer_files_are_never_overwritten() {
         for (contents, newer) in [
             (&b"{\"version\":1,\"projects\":{\"/a\":"[..], false),
@@ -423,6 +526,10 @@ mod tests {
                 ),
                 other => panic!("expected a refusal, got {other:?}"),
             }
+            assert!(matches!(
+                store.save_preferences(Preferences::default()),
+                Err(StoreError::Unusable { .. })
+            ));
             assert_eq!(fs::read(store.file()).expect("read"), contents);
         }
     }

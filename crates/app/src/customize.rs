@@ -39,6 +39,10 @@ impl Customize {
         }
     }
 
+    pub fn store(&self) -> CentralStore {
+        self.store.clone()
+    }
+
     /// A project of the latest snapshot, or a root with a saved central profile.
     fn knows(&self, root: &str) -> bool {
         let Some(snapshot) = self.scheduler.latest() else {
@@ -113,30 +117,43 @@ pub async fn save(
             })
             .into_response()
         }
-        Ok(Err(StoreError::Rejected(problem))) => error(
+        Ok(Err(failure)) => store_failure(failure),
+        Err(_) => unfinished(),
+    }
+}
+
+/// `422 invalidProfile`, `409 configUnavailable` (an unusable or full file, left as it is) or
+/// `500 configWriteFailed`.
+pub(crate) fn store_failure(failure: StoreError) -> Response {
+    match failure {
+        StoreError::Rejected(problem) => error(
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiErrorCode::InvalidProfile,
             problem.to_string(),
         ),
-        Ok(Err(failure @ (StoreError::Unusable { .. } | StoreError::TooLarge))) => error(
+        failure @ (StoreError::Unusable { .. } | StoreError::TooLarge) => error(
             StatusCode::CONFLICT,
             ApiErrorCode::ConfigUnavailable,
             failure.to_string(),
         ),
-        Ok(Err(failure)) => error(
+        failure => error(
             StatusCode::INTERNAL_SERVER_ERROR,
             ApiErrorCode::ConfigWriteFailed,
             failure.to_string(),
         ),
-        Err(_) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ApiErrorCode::ConfigWriteFailed,
-            "the configuration write did not finish".into(),
-        ),
     }
 }
 
-fn error(status: StatusCode, code: ApiErrorCode, message: String) -> Response {
+/// The blocking configuration task panicked or was cancelled.
+pub(crate) fn unfinished() -> Response {
+    error(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        ApiErrorCode::ConfigWriteFailed,
+        "the configuration write did not finish".into(),
+    )
+}
+
+pub(crate) fn error(status: StatusCode, code: ApiErrorCode, message: String) -> Response {
     (
         status,
         Json(ApiError {

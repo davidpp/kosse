@@ -87,6 +87,16 @@ pub struct SavedProfile {
     pub profile: Option<crate::profiles::ProjectProfile>,
 }
 
+/// The dashboard's preferences, kept in Kossé's configuration file (never in a project).
+/// `GET /api/preferences` returns them (defaults when there is no file yet); `POST
+/// /api/preferences` replaces them and returns them as stored.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Preferences {
+    /// Show listeners outside a project and other users' processes ("All listeners").
+    pub all_listeners: bool,
+}
+
 /// The body of every API error response.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -151,6 +161,7 @@ pub fn typescript_bindings() -> String {
     module.add::<crate::action::ActionResult>();
     module.add::<SaveProfileRequest>();
     module.add::<SavedProfile>();
+    module.add::<Preferences>();
     module.add::<WindowRequest>();
     module.add::<crate::model::Snapshot>();
     module.finish()

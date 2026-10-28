@@ -30,6 +30,7 @@ use crate::{
     assets,
     customize::{self, Customize},
     guard::{self, MAX_BODY_BYTES},
+    preferences::{self, PreferencesApi},
 };
 
 const OCCUPANCY_PROBE_TIMEOUT: Duration = Duration::from_millis(250);
@@ -61,6 +62,12 @@ pub fn router(state: AppState, customize: Customize) -> Router {
         .route("/api/stop", post(api::stop))
         .route("/api/force", post(api::force))
         .route("/api/window", post(api::window))
+        .route(
+            "/api/preferences",
+            get(preferences::read)
+                .post(preferences::save)
+                .with_state(PreferencesApi::new(customize.store())),
+        )
         .route("/api/profile", post(customize::save).with_state(customize))
         .route("/api", any(StatusCode::NOT_FOUND))
         .route("/api/{*rest}", any(StatusCode::NOT_FOUND))

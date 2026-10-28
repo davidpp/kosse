@@ -9,6 +9,7 @@ import type {
   ApiError,
   ApiErrorCode,
   HttpProbe,
+  Preferences,
   ProbeRequest,
   SavedProfile,
   SaveProfileRequest,
@@ -106,6 +107,27 @@ export async function saveProfile(
   const body = await expectOk(await post(client, "/api/profile", request));
   if (!isSavedProfile(body)) throw unexpected("profile");
   return body;
+}
+
+/** The saved dashboard preferences; a configuration Kossé cannot use is a refusal, not retried. */
+export const preferencesQuery = queryOptions({
+  queryKey: ["preferences"],
+  queryFn: async ({ signal }): Promise<Preferences> =>
+    asPreferences(await expectOk(await send("/api/preferences", { signal }))),
+  staleTime: Number.POSITIVE_INFINITY,
+  retry: false,
+});
+
+export async function savePreferences(
+  client: QueryClient,
+  preferences: Preferences,
+): Promise<Preferences> {
+  return asPreferences(await expectOk(await post(client, "/api/preferences", preferences)));
+}
+
+function asPreferences(body: unknown): Preferences {
+  if (!isRecord(body) || typeof body.allListeners !== "boolean") throw unexpected("preferences");
+  return { allListeners: body.allListeners };
 }
 
 export async function fetchSnapshot(signal: AbortSignal): Promise<Snapshot> {

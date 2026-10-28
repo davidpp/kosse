@@ -26,6 +26,7 @@ mod list;
 mod menu;
 mod open;
 mod opener;
+mod preferences;
 mod prober;
 mod route;
 mod running;

@@ -190,6 +190,17 @@ export type SaveProfileRequest = { root: string, profile: ProjectProfile | null,
 export type SavedProfile = { root: string, profile: ProjectProfile | null, };
 
 /**
+ * The dashboard's preferences, kept in Kossé's configuration file (never in a project).
+ * `GET /api/preferences` returns them (defaults when there is no file yet); `POST
+ * /api/preferences` replaces them and returns them as stored.
+ */
+export type Preferences = { 
+/**
+ * Show listeners outside a project and other users' processes ("All listeners").
+ */
+allListeners: boolean, };
+
+/**
  * A dashboard address; the identity routes name a process by PID and start time.
  */
 export type WindowRoute = { "kind": "dashboard" } | { "kind": "inspect", pid: number, startedAtSecs: bigint, } | { "kind": "stop", pid: number, startedAtSecs: bigint, };

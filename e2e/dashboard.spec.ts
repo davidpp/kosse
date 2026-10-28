@@ -1,6 +1,6 @@
 // The dashboard against the real Kossé server and fixture processes this file owns. Tests run in
 // order and share one world per browser: later tests see what earlier ones stopped.
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { expect, test, type Page } from "@playwright/test";
@@ -66,6 +66,19 @@ function card(page: Page, root: string | null) {
 async function open(page: Page, path = "/") {
   await page.goto(`${world.server.url}${path}`);
   await expect(page.getByText("Live", { exact: true })).toBeVisible();
+}
+
+/** Resolves when Kossé has stored `allListeners`; a rate-limited attempt is retried by the page. */
+async function preferenceSaved(page: Page, allListeners: boolean): Promise<void> {
+  const response = await page.waitForResponse(
+    (candidate) =>
+      candidate.url().endsWith("/api/preferences") &&
+      candidate.status() !== 429 &&
+      candidate.request().method() === "POST" &&
+      candidate.request().postDataJSON()?.allListeners === allListeners,
+  );
+  expect(response.status()).toBe(200);
+  expect(await response.json()).toEqual({ allListeners });
 }
 
 /** The `instance` of the server's current snapshot. */
@@ -160,6 +173,11 @@ test("search narrows by port, project and command; all listeners reveals the res
 
   await search.press("Escape");
   await expect(search).toHaveValue("");
+
+  // "Show all listeners" is the saved preference too; later tests start from the default.
+  const saved = preferenceSaved(page, false);
+  await page.getByRole("checkbox", { name: /All listeners/ }).uncheck();
+  await saved;
 });
 
 test("Open goes to the probed loopback URL", async ({ page }) => {
@@ -367,6 +385,74 @@ test("customize a project: saved centrally, kept on reload, repository untouched
   );
   expect(await fingerprint(world.storefront)).toEqual(files);
   expect(git(world.storefront, "status", "--porcelain")).toBe(status);
+});
+
+test("All listeners is saved centrally and kept on reload, repository untouched", async ({
+  page,
+}) => {
+  const files = await fingerprint(world.storefront);
+  const status = git(world.storefront, "status", "--porcelain");
+  const toggle = page.getByRole("checkbox", { name: /All listeners/ });
+  const own = card(page, null).getByText(`:${world.server.port}`);
+
+  await open(page);
+  await expect(toggle).not.toBeChecked();
+  await expect(own).toHaveCount(0);
+  let saved = preferenceSaved(page, true);
+  await toggle.check();
+  await saved;
+
+  await page.reload();
+  await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  await expect(toggle).toBeChecked();
+  await expect(own).toBeVisible();
+  expect(await readFile(join(world.configDir, "config.json"), "utf8")).toContain(
+    '"allListeners": true',
+  );
+  expect(await fingerprint(world.storefront)).toEqual(files);
+  expect(git(world.storefront, "status", "--porcelain")).toBe(status);
+
+  saved = preferenceSaved(page, false);
+  await toggle.uncheck();
+  await saved;
+  await page.reload();
+  await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  await expect(toggle).not.toBeChecked();
+  await expect(own).toHaveCount(0);
+
+  // A change still waiting for its save slot when the page reloads is saved by the next load.
+  await page.waitForTimeout(1100);
+  saved = preferenceSaved(page, true);
+  await toggle.check();
+  await saved;
+  saved = preferenceSaved(page, false);
+  await toggle.uncheck();
+  await page.reload();
+  await expect(toggle).not.toBeChecked();
+  await saved;
+  await page.reload();
+  await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  await expect(toggle).not.toBeChecked();
+
+  // A file Kossé will not overwrite: the toggle still works for this page, and says so.
+  const config = join(world.configDir, "config.json");
+  const good = await readFile(config, "utf8");
+  const newer = '{"version": 9, "preferences": {"allListeners": true}}';
+  await writeFile(config, newer);
+  try {
+    await page.reload();
+    await expect(page.getByText("Saved preferences could not be read")).toBeVisible();
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await expect(
+      page.getByText("“All listeners” applies to this page only; it was not saved"),
+    ).toBeVisible();
+    await expect(toggle).toBeChecked();
+    await expect(own).toBeVisible();
+    expect(await readFile(config, "utf8")).toBe(newer);
+  } finally {
+    await writeFile(config, good);
+  }
 });
 
 test("losing the server is visible; a restarted instance is picked up and old confirmations are stale", async ({
