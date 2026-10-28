@@ -24,6 +24,7 @@ Scenarios:
 | API/actions | HTTP integration tests of security and stale identity; owned process termination and respawn observation |
 | Dashboard | Playwright (WebKit and Chromium) against actual Rust server; open/inspect/filter/confirm-stop; reload, errors, reconnect; screenshots |
 | Footprint | Bundle ≤ 50 kB gzipped enforced by `check` (S01b); resident idle CPU and RSS measured with the dashboard window closed and open (S08, S10) |
+| Terminal | `kosse tui` against the real binary and owned fixtures in a real or emulated terminal: parity flows, private-server lifecycle and cleanup, attach to a verified instance only |
 | Tray and window | Real packaged app starts a native menu; open/inspect/stop entrypoints verified via automation or human checklist; `kosse window` opens the dashboard (WKWebView), refocuses instead of duplicating, survives its own crash without affecting the scanner, and falls back to the default browser with a stated reason |
 | Packaging | Clean sandbox install→launch→discover→stop fixture→quit→uninstall; runtime needs no frontend toolchain |
 | Startup | Generated launch configuration tested in sandbox; actual login cycle requires explicit owner approval/human evidence |

@@ -52,6 +52,14 @@ Store project profiles, aliases, hidden identities/rules, and UI preferences in 
 
 No raw command line/environment persistence, external telemetry, update polling, outbound redirects during probing, or remote assets needed at runtime. Every displayed command passes centralized secret redaction; UI escapes process-derived strings.
 
+## Terminal surface
+
+A first-party terminal UI for people who live in the terminal or don't want anything resident. `kosse tui` attaches to a verified running Kossé, or starts a private server for the session and stops it on exit. It offers the dashboard's feature set (grouped projects and services, search, all-listeners, inspect, Open in the default browser, try HTTP, the same Stop then Force confirmations and honest results, customize a project) with keyboard-first navigation, the brand palette mapped to the terminal, light/dark terminals and graceful narrow widths. It uses the same API and contracts; no alternate action policy.
+
+## Use without a resident app
+
+Nothing has to run in the background. `kosse open` starts the server, shows the dashboard window and exits when the window closes; `kosse tui` does the same for the terminal; `kosse list` is a one-shot scan. The resident tray app and login startup are opt-in.
+
 ## Explicit non-goals
 
 Built-in DNS/reverse proxy/TLS certificate provisioning; start/restart orchestration; terminal/log capture; process-tree termination; container-internal attribution; metrics history database; plugin runtime/SDK in v1; network/storage cleanup; AI inference; custom tray popover; multiple-machine inventory.

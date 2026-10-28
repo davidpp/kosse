@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-A native macOS tray menu and a lightweight local dashboard for the development services you already run: **discover, identify, open, inspect, stop.**
+A native macOS tray menu, a lightweight local dashboard and a terminal UI for the development services you already run: **discover, identify, open, inspect, stop.**
 
 You start dev servers from terminals, scripts and coding agents. A day later there are a dozen listeners on unremembered ports, some from worktrees you forgot. Kossé shows them grouped by repository, worktree and package, with honest observations (listening, reachable over HTTP, or neither) and current CPU and memory. It stops a forgotten process only after confirming its exact identity. It never asks you to register projects or change how you launch them.
 
@@ -32,7 +32,7 @@ crates/fixtures   test-only: owned listener processes with an identity manifest,
                   repositories, lsof ground truth
 ```
 
-Every view (dashboard, tray and CLI) reads the same snapshot and uses the same action policy. Rust contract types generate the TypeScript types the UI consumes, and CI fails on drift. Details: [architecture](blueprint/architecture.md), [product contract](blueprint/product.md), [verification gates](blueprint/verification.md).
+Every view (dashboard, terminal UI, tray and CLI) reads the same snapshot and uses the same action policy. Rust contract types generate the TypeScript types the UI consumes, and CI fails on drift. Details: [architecture](blueprint/architecture.md), [product contract](blueprint/product.md), [verification gates](blueprint/verification.md).
 
 ## Development
 

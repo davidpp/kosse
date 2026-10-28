@@ -7,6 +7,7 @@ Scaffolded in S01 with current supported generators; versions and rationale are 
 - Rust stable, Cargo workspace, rustfmt + clippy. Pin a tested toolchain in rust-toolchain.toml.
 - `crates/core`: listener discovery, process identity, attribution, snapshots, sampling, action policy, config. No UI/router dependency.
 - `crates/app`: CLI, one scanner scheduler, Axum API/SSE, embedded web assets, macOS tray lifecycle, and the dashboard window (a `kosse window` child process: wry + tao WKWebView on the loopback URL).
+- `tui`: the first-party terminal client in TypeScript on [OpenTUI](https://github.com/anomalyco/opentui) (React bindings, real React: Redact targets the DOM), consuming the same generated contracts and HTTP/SSE API as the dashboard. Built with `bun build --compile` into a separate `kosse-tui` executable shipped next to `kosse`; `kosse tui` finds and runs it, so the core binary stays small and needs no Bun. It sends the same Host/Origin/token headers as a same-origin page.
 - `web`: Bun, Vite, React APIs on the [TanStack Redact](https://tanstack.com/redact/latest) runtime (Vite plugin; synchronous rendering, ~20 kB gzipped instead of React's ~69 kB), strict TypeScript, TanStack Query for server state, Tailwind v4 (build-time only), Lucide icons imported per icon, system font stack, native `<dialog>`. Hand-built components designed with Impeccable; no component framework. Redact is pre-1.0 and adopted deliberately (owner choice); pin exact versions and re-verify on upgrade. Outcome of S01b: TanStack Router measured (~28 kB; 58.6 kB total with it vs ~31 kB without) and not adopted; addressable views (inspect, window routes for S08) use a minimal location/history switch (S07). Redact hydration/activity/fragmentRefs off; Vitest runs the Redact runtime (`server.deps.inline` + client `mainFields`); `check` enforces the budget via `bun run budget`.
 - Performance budget (owner direction, 2026-10-28: the tool must be nimble): shipped JS + CSS ≤ 50 kB gzipped in total, no web fonts; `check` fails when the budget is exceeded. The resident app's idle cost is measured and reported in evidence (CPU, RSS with the window closed and open).
 - Oxlint/Oxfmt; Lefthook. Vitest + Testing Library for UI logic; Playwright for browser integration. Cargo unit/integration tests.
@@ -78,6 +79,8 @@ Use platform application directories, versioned JSON and atomic rename. Central 
 
 Required executable command contract (implement, test, then document exact syntax):
 - `kosse`: resident app with tray + server, opens dashboard on explicit initial launch.
+- `kosse open`: on-demand dashboard without a resident app: starts the server (or reuses a verified running instance), opens the dashboard window, and exits with it.
+- `kosse tui`: on-demand terminal client; attaches to a verified running instance or starts a private server for its lifetime.
 - `kosse serve --no-open --port <n>`: foreground headless.
 - `kosse list --json`: daemon snapshot when compatible instance exists; one-shot discovery otherwise.
 - `kosse doctor`: dependency/platform/config/instance diagnostics, non-destructive.
