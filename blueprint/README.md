@@ -1,0 +1,35 @@
+# Stackscan blueprint
+
+## Intent
+
+Ship the small tool David wants to keep running, not a general-purpose process manager. It observes services started by terminals and agents; it does not take ownership of their startup.
+
+| Document | Responsibility |
+|---|---|
+| [Product](product.md) | Scope, interactions, acceptance |
+| [Architecture](architecture.md) | Stack, service model, security, command contract |
+| [Project metadata](project-metadata.md) | Optional integration without mandatory orchestration |
+| [Implementation plan](implementation-plan.md) | Work packages and dependency graph; status stays in Kabane |
+| [Verification](verification.md) | Fixtures, entry-point proof, completion gates |
+| [Loop](loop.md) | How a fresh agent resumes and executes bounded work |
+| [References](references.md) | Preferences, library candidates, provenance |
+
+**Epic:** JSTA-1. **Scope:** `jake://scope/stackscan`.
+
+This borrows only the general idea of a blueprint workflow: explicit intent, ordered work, testable acceptance, resumable context. It does not duplicate another project's skill adapters or force an approval pause after every diff. A user-invoked loop can finish bounded local work without repeated confirmation, subject to the stop conditions in loop.md.
+
+## Definition of complete
+
+A locally packaged macOS arm64 application provides both tray and browser views, identifies real fixture services, samples metrics, safely stops fixture processes, installs/uninstalls in a sandbox, and passes the full command suite. Source checkout instructions and local release instructions work. OS-only/human verification gaps are blockers or explicitly user-accepted deferrals, not silent passes.
+
+Not required for v1: public hosting, signed/notarized distribution, Homebrew tap, Windows/Linux parity, cloud telemetry, public release. No external credentials should be necessary to complete the local artifact.
+
+## Planning decisions
+
+- macOS arm64 is the required v1 target; other platforms get explicit unsupported behavior, not claimed support.
+- Browser homepage plus native tray menu are required. A custom graphical tray popover is deferred.
+- Rust process/service core; preferred personal React stack for the browser.
+- Bind to IPv4 loopback, default port 47831; an occupied port must fail clearly rather than silently move a bookmarked homepage.
+- One resident application can own scanner, API, tray. Headless serve is also supported, but must not run a second instance on the same endpoint.
+- Small versioned JSON config; no database/history store needed.
+- Independent implementation, not a PortDoc fork. Product-code license remains David's decision before distribution; dependency license audit is required.

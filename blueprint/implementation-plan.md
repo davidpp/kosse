@@ -1,0 +1,132 @@
+# Implementation plan
+
+**Epic JSTA-1 · scope `jake://scope/stackscan`**
+
+This is the dependency/specification index, not a second status tracker. Read live state and evidence via Kabane. All children are agent work (`kind: issue`). A `next` child is runnable only when its blockers are done.
+
+| Plan | Kabane | Work package | Depends on |
+|---|---|---|---|
+| S01 | JSTA-2 | Scaffold Rust/React workspace and executable quality gates | — |
+| S02 | JSTA-3 | Validate macOS discovery and build owned-process fixture harness | S01 |
+| S03 | JSTA-4 | Implement project attribution, shared snapshots and process metrics | S02 |
+| S04 | JSTA-5 | Add secure local API, SSE and bounded HTTP enrichment | S03 |
+| S05 | JSTA-6 | Implement identity-safe stop and explicit force escalation | S04 |
+| S06 | JSTA-7 | Add central project profiles and optional repo metadata | S03 |
+| S07 | JSTA-8 | Build the browser homepage and verify real service workflows | S04, S05, S06 |
+| S08 | JSTA-9 | Add native macOS tray lifecycle and single-instance behavior | S07 |
+| S09 | JSTA-10 | Implement local packaging, install/uninstall and opt-in login startup | S08 |
+| S10 | JSTA-11 | Run installed-entrypoint acceptance audit and complete operator docs | S09 |
+
+## Dependency graph
+
+```text
+S01 → S02 → S03 → S04 → S05 ─┐
+               └→ S06 ──────┼→ S07 → S08 → S09 → S10
+                      S04 ──┘
+```
+
+S06 may proceed independently of S04/S05 after S03; use separate worktrees only when explicitly coordinated. Default loop order is table order. Required v1 includes passive project metadata; external proxy/port allocator integration is limited to declared friendly links, not management.
+
+## S01 — JSTA-2
+
+### Scope
+
+Create Cargo core/app workspace and web via supported current Vite/React + TanStack Router generators; Bun lockfile, Tailwind v4/shadcn CLI, TanStack Query, strict TS. Set tested toolchain, Oxlint/Oxfmt, Lefthook, Rust fmt/clippy, unit/UI test infrastructure and CI config. Establish a real root command runner, minimal embedded frontend build, version/health entrypoint, typed contract generation with freshness check, and development process cleanup. Do not add placeholder release scripts.
+
+### Acceptance
+
+From a clean dependency install, dev serves a minimal page through the intended dev proxy; production binary serves embedded page; actual check/build/test/fmt:check commands pass. Generated type staleness fails a test/check. Hook is non-mutating and CI uses same checks. Document versions, commands, missing platform prerequisites and no-remote CI limitation. Read current docs and inspect existing files first.
+
+## S02 — JSTA-3
+
+### Scope
+
+Implement TCP listener→PID discovery and process inspection; evaluate listeners vs lsof fixture ground truth, fallback netstat2 only with evidence. Add owned fixture process manifest/identity cleanup, IPv4/IPv6, multi-port, non-HTTP, process-exit races, unavailable metadata, timed child teardown. Add stackscan list --json with actual local observations; no real user service signaling.
+
+### Acceptance
+
+CLI output matches known fixture PIDs/ports and lsof; duplicates normalized without hiding bind addresses. Permission and disappearing-process cases yield partial warnings, not panic/false empty success. Fixture cleanup only touches recorded owned identities. Record measured scan cost, chosen backend and crate licenses.
+
+## S03 — JSTA-4
+
+### Scope
+
+Build one scheduler/core model per blueprint/architecture.md. PID+start identity, worktree/repo grouping, nearest package labels, branch/detached HEAD, endpoint dedupe, bounded cache, retained CPU sampling, memory and age. Coalesce refreshes and retain last-good snapshot with staleness. Core never depends on UI.
+
+### Acceptance
+
+Actual list JSON plus deterministic tests distinguish same-name repos, nested packages and two worktrees; .git file and Unicode paths supported. CPU warmup is unknown then sampled on controlled workload. 30-listener scan duration measured against 3-second cadence; scanner errors/overruns visible. No repeated per-port process introspection.
+
+## S04 — JSTA-5
+
+### Scope
+
+Axum read API, SSE and revisioned snapshots over single scheduler. Exact loopback bind/Host guard, same-origin unsafe request policy, JSON/content limits and per-instance token. Central command redaction. Bounded candidate HTTP probing, 404 reachability, TLS errors, IPv6, redirect restriction and stream-body cap. Dev proxy has explicit dev-only authority, no production relaxation.
+
+### Acceptance
+
+Real HTTP integration suite rejects malicious Host/Origin/missing token/cross-site payloads and accepts intended same-origin requests. Raw secrets never appear in API/logs. 404 is reachable, hanging/huge/redirect endpoints bounded, non-HTTP sockets not blindly probed. SSE reconnect/revision behavior and last-good staleness verified. Occupied default port fails clearly.
+
+## S05 — JSTA-6
+
+### Scope
+
+Add core action policy and secured API for own-user eligible PID+start identities. Self/invalid/unknown identity refusal; immediate revalidation, TERM then separate confirmed KILL, bounded post-signal observations and respawn reporting. Never execute cmdlines or signal groups/parents. Explain remaining macOS check/signal race.
+
+### Acceptance
+
+Real API tests terminate only owned fixtures; stale identity/mismatch/self/foreign owner refused. TERM-ignoring fixture remains until explicit second action. Supervisor respawn is distinguished from released port; observation error cannot report success. Confirmations include all ports sharing target identity. No real user service stopped.
+
+## S06 — JSTA-7
+
+### Scope
+
+Implement blueprint/project-metadata.md: central project profiles keyed by canonical worktree path, schema emission/validation, optional bounded repo-file read/reload, service labels/matches/probe paths/friendly links and honest configured-not-observed state. Central-over-repo-over-inference precedence with provenance. Versioned atomic preferences; corruption/newer-schema safety. UI customization writes centrally with zero repository footprint. No scripts, launch, proxy, CA, port reservation or plugin runtime.
+
+### Acceptance
+
+Fixture tests cover traversal/symlinks, ambiguity, multiple processes in cwd, port-only misattribution prevention, malicious links, corrupt/newer schema, failed reload retaining last-good warning, config deletion, and worktrees. Emitted schema validates shipped example. CLI shows provenance and honest unobserved state. Verify central overrides, worktree isolation, explicit moved-path reassociation and that customization leaves monitored repo status and files unchanged. Metadata causes no execution, system/network configuration changes or remote fetching.
+
+## S07 — JSTA-8
+
+### Scope
+
+Use Impeccable and preferred React stack to implement dense grouped dashboard, search, endpoint links, metrics, inspect route, all-listeners/noise controls, aliases, metadata provenance, explicit stop/force dialogs, responsive/theme/accessibility/error/stale/empty states. TanStack Query owns cache with SSE integration. Wire “Customize this project” and persisted central profiles/preferences through guarded API; consume generated contracts. Display effective metadata provenance and declared custom-domain links without falsely verifying them.
+
+### Acceptance
+
+Playwright against real Rust backend + owned fixtures verifies discover→filter→open/inspect→confirm stop→observe disappearance/respawn, force escalation and reload persistence. Customize a project without repo metadata, reload and verify persistence plus unchanged monitored repo files/status. Screenshots cover desktop/narrow/light/dark; keyboard/focus/reduced motion checked. SSE loss/reconnect and failed mutation show honest UI. Build/lint/types/unit/browser gates pass; no mock-only completion.
+
+## S08 — JSTA-9
+
+### Scope
+
+Implement tray-icon with documented macOS main-thread event loop and existing async runtime/core. Native grouped menu, dashboard/open/inspect/stop routing to same confirmed action UI, app-only quit. Default app mode vs headless serve; second launch verifies existing instance and opens it without duplicate scanner. No graphical popover or duplicated action policy.
+
+### Acceptance
+
+Run actual app on macOS: tray visible with owned fixture services, Open/Inspect reaches browser routes, Stop invokes same confirmation, Quit leaves fixtures alive. Headless serves without tray. Second launch no duplicate scanner; unrelated port occupant not treated as trusted instance. Capture automation or explicit human evidence; absent GUI access is waiting, never passed.
+
+## S09 — JSTA-10
+
+### Scope
+
+Create real release:local/install:local/uninstall:local, macOS arm64 executable/.app as required with embedded UI, checksums, third-party notices and manifest. Prefix-aware sandbox tests. Evaluate service-manager/auto-launch; implement startup enable/disable/status, no auto-enable. Implement doctor/version/help, clear exits, config-preserving upgrade and uninstall. License selection/signing/public publishing not assumed.
+
+### Acceptance
+
+Sandbox packaged artifact runs without Node/Bun, serves UI and tray as applicable, discovers fixtures, and uninstalls only owned files; upgrade preserves config. Startup configuration/lifecycle unit/sandbox tests pass; do not modify David's real login items without approval. Local artifact checksum verified. Document unsigned-app limitations and human login check as separate unverified/approval gate.
+
+## S10 — JSTA-11
+
+### Scope
+
+Run entire blueprint/verification.md matrix from packaged/installed entrypoints, not only cargo run. Add concise docs/evidence, architecture/command updates, README setup/use/cleanup/limitations, threat model and dependency/advisory/license audit. Validate advertised tray/browser/CLI behavior, fixture teardown and offline runtime. Check all child evidence before closing epic.
+
+### Acceptance
+
+Full local command suite green; installed browser+tray+CLI workflow has evidence, generated contracts current, no uncontrolled fixture processes/files. Required GUI checks performed or explicitly owner-deferred; actual login cycle remains approval-dependent and clearly separated from verified artifact. No public release/remote/push implied. Mark epic done only when required acceptance holds; attach final evidence and remaining limits.
+
+## Exit rule
+
+S10 audits all child evidence before JSTA-1 is closed. Missing actual GUI/installed-entrypoint verification is not satisfied by mocks or passing unit tests. Do not silently shrink scope to complete a loop. Human-only or privileged actions need explicit approval; local packaging can complete without publishing or signing.
