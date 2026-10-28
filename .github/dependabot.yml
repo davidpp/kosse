@@ -4,9 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # Same 5-day settling window as bunfig.toml minimumReleaseAge.
+    # 7 days: zizmor's dependabot-cooldown minimum; stricter than bunfig.toml's 5-day install guard.
     cooldown:
-      default-days: 5
+      default-days: 7
     groups:
       cargo:
         patterns: ["*"]
@@ -15,9 +15,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # Same 5-day settling window as bunfig.toml minimumReleaseAge.
+    # 7 days: zizmor's dependabot-cooldown minimum; stricter than bunfig.toml's 5-day install guard.
     cooldown:
-      default-days: 5
+      default-days: 7
     groups:
       bun:
         patterns: ["*"]
@@ -26,9 +26,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # Same 5-day settling window as bunfig.toml minimumReleaseAge.
+    # 7 days: zizmor's dependabot-cooldown minimum; stricter than bunfig.toml's 5-day install guard.
     cooldown:
-      default-days: 5
+      default-days: 7
     groups:
       github-actions:
         patterns: ["*"]
