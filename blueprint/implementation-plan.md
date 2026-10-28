@@ -122,11 +122,11 @@ Run actual app on macOS: tray visible with owned fixture services, Open Dashboar
 
 ### Scope
 
-Create real release:local/install:local/uninstall:local, macOS arm64 executable/.app as required with embedded UI, checksums, third-party notices and manifest. Prefix-aware sandbox tests. Evaluate service-manager/auto-launch; implement startup enable/disable/status, no auto-enable. Implement doctor/version/help, clear exits, config-preserving upgrade and uninstall. License selection/signing/public publishing not assumed.
+Create real release:local/install:local/uninstall:local, binary-first: a macOS arm64 `kosse` executable tarball with embedded UI, checksums, third-party notices (Rust via cargo-about + the Vite license file) and manifest; an unpublished Homebrew formula template that installs it; a minimal .app only if S08 testing showed it is needed. Prefix-aware sandbox tests. Evaluate service-manager/auto-launch; implement startup enable/disable/status, no auto-enable. Implement doctor/version/help, clear exits, config-preserving upgrade and uninstall. License selection/signing/public publishing not assumed.
 
 ### Acceptance
 
-Sandbox packaged artifact runs without Node/Bun, serves UI and tray as applicable, discovers fixtures, and uninstalls only owned files; upgrade preserves config. Startup configuration/lifecycle unit/sandbox tests pass; do not modify the maintainer's real login items without approval. Local artifact checksum verified. Document unsigned-app limitations and human login check as separate unverified/approval gate.
+Sandbox packaged artifact runs without Node/Bun, serves UI and tray as applicable, discovers fixtures, and uninstalls only owned files; upgrade preserves config. Startup configuration/lifecycle unit/sandbox tests pass; do not modify the maintainer's real login items without approval. Local artifact checksum verified. Verify that a tarball fetched with `curl` runs without a Gatekeeper prompt (no quarantine attribute) and document the browser-download case. Document unsigned limitations and the human login check as separate unverified/approval gates.
 
 ## S10
 
