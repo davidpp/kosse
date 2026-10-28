@@ -12,9 +12,8 @@ This is the dependency/specification index, not a second status tracker. Live st
 | S05 | Implement identity-safe stop and explicit force escalation | S04 |
 | S06 | Add central project profiles and optional repo metadata | S03 |
 | S07 | Build the slim dashboard and verify real service workflows | S01b, S04, S05, S06 |
-| S07t | Build the first-party OpenTUI terminal client | S04, S05, S06 |
 | S08 | Add native macOS tray lifecycle, on-demand `kosse open` and single-instance behavior | S07 |
-| S09 | Implement local packaging, install/uninstall and opt-in login startup | S07t, S08 |
+| S09 | Implement local packaging, install/uninstall and opt-in login startup | S08 |
 | S10 | Run installed-entrypoint acceptance audit and complete operator docs | S09 |
 
 ## Dependency graph
@@ -22,7 +21,6 @@ This is the dependency/specification index, not a second status tracker. Live st
 ```text
 S01 → S02 → S03 → S04 → S05 ─┐
  │             └→ S06 ──────┼→ S07 → S08 → S09 → S10
- │                          └→ S07t ──────↗
  └→ S01b ───────────────────┘
 ```
 
@@ -110,18 +108,6 @@ Use Impeccable (design context, then craft, critique and audit) and the slim Red
 
 Playwright against real Rust backend + owned fixtures verifies discover→filter→open/inspect→confirm stop→observe disappearance/respawn, force escalation and reload persistence. Customize a project without repo metadata, reload and verify persistence plus unchanged monitored repo files/status. Screenshots cover desktop/narrow/light/dark; keyboard/focus/reduced motion checked. SSE loss/reconnect and failed mutation show honest UI. Build/lint/types/unit/browser gates pass; no mock-only completion.
 
-## S07t
-
-Added 2026-10-28 by owner direction: some users don't want a resident app, and terminal users want a first-class client.
-
-### Scope
-
-`tui/` workspace package on OpenTUI (load its skill and current docs), consuming `web/src/generated/contracts.ts` (shared, never duplicated) and the HTTP/SSE API. `kosse tui` subcommand: attach to a verified running instance (never trust an unverified port occupant), otherwise spawn `kosse serve` privately on a free loopback port for the session and stop it by identity on exit. Feature parity with the dashboard (product.md Terminal surface), keyboard-first, brand palette mapped to terminal colours with a monochrome fallback, narrow-width layout. Compile with `bun build --compile`; measure startup time, RSS and executable size.
-
-### Acceptance
-
-Real-terminal tests (OpenTUI's test renderer or a PTY harness against the real binary and owned fixtures, scoped with `--probe-only`/`--act-only`) cover discover, filter, inspect, open, stop → still running → force, respawn reporting, customize persistence and server disconnect/reconnect. `kosse tui` with no running instance starts and fully cleans up its private server. Screenshots (fixture data) for the README. Docs and commands updated; check/CI include its lint, types and tests.
-
 ## S08
 
 ### Scope
@@ -151,6 +137,23 @@ Run entire blueprint/verification.md matrix from packaged/installed entrypoints,
 ### Acceptance
 
 Full local command suite green; installed browser+tray+CLI workflow has evidence, generated contracts current, no uncontrolled fixture processes/files. Required GUI checks performed or explicitly owner-deferred; actual login cycle remains approval-dependent and clearly separated from verified artifact. No public release/remote/push implied. Mark epic done only when required acceptance holds; attach final evidence and remaining limits.
+
+## Next phase
+
+### S07t (next phase, after v1)
+
+Added 2026-10-28 by owner direction: some users don't want a resident app, and terminal users want a first-class client.
+
+Deferred by owner direction (2026-10-28): v1 ships the Rust binary with the dashboard (window or browser) and `kosse open` for on-demand use; the OpenTUI client starts after v1.
+
+#### Scope
+
+`tui/` workspace package on OpenTUI (load its skill and current docs), consuming `web/src/generated/contracts.ts` (shared, never duplicated) and the HTTP/SSE API. `kosse tui` subcommand: attach to a verified running instance (never trust an unverified port occupant), otherwise spawn `kosse serve` privately on a free loopback port for the session and stop it by identity on exit. Feature parity with the dashboard (product.md Terminal surface), keyboard-first, brand palette mapped to terminal colours with a monochrome fallback, narrow-width layout. Compile with `bun build --compile`; measure startup time, RSS and executable size.
+
+#### Acceptance
+
+Real-terminal tests (OpenTUI's test renderer or a PTY harness against the real binary and owned fixtures, scoped with `--probe-only`/`--act-only`) cover discover, filter, inspect, open, stop → still running → force, respawn reporting, customize persistence and server disconnect/reconnect. `kosse tui` with no running instance starts and fully cleans up its private server. Screenshots (fixture data) for the README. Docs and commands updated; check/CI include its lint, types and tests.
+
 
 ## Exit rule
 

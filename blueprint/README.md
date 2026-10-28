@@ -18,7 +18,7 @@ This borrows only the general idea of a blueprint workflow: explicit intent, ord
 
 ## Definition of complete
 
-A locally packaged macOS arm64 application provides tray, dashboard and terminal views (each usable on demand without a resident app), identifies real fixture services, samples metrics, safely stops fixture processes, installs/uninstalls in a sandbox, and passes the full command suite. Source checkout instructions and local release instructions work. OS-only/human verification gaps are blockers or explicitly user-accepted deferrals, not silent passes.
+A locally packaged macOS arm64 application provides tray and dashboard views (the dashboard also on demand via `kosse open`, without a resident app), identifies real fixture services, samples metrics, safely stops fixture processes, installs/uninstalls in a sandbox, and passes the full command suite. Source checkout instructions and local release instructions work. OS-only/human verification gaps are blockers or explicitly user-accepted deferrals, not silent passes.
 
 Not required for v1: public hosting, signed/notarized distribution, Homebrew tap, Windows/Linux parity, cloud telemetry, public release. No external credentials should be necessary to complete the local artifact.
 
