@@ -21,15 +21,13 @@ confidence-threshold = 0.9
 # provider and webpki certificate verifier. Permissive and MIT-compatible; allowed per crate rather
 # than globally so a new ISC dependency is a deliberate decision.
 exceptions = [
-  { crate = "ring", allow = [
-    "ISC",
-  ] },
-  { crate = "rustls-webpki", allow = [
-    "ISC",
-  ] },
-  { crate = "untrusted", allow = [
-    "ISC",
-  ] },
+  { crate = "ring", allow = ["ISC"] },
+  { crate = "rustls-webpki", allow = ["ISC"] },
+  { crate = "untrusted", allow = ["ISC"] },
+  # MPL-2.0 (file-level copyleft), only for option-ext: wry -> dirs -> dirs-sys -> option-ext, a
+  # non-optional dependency of the dashboard window's web view on macOS (S08). Shipped unmodified;
+  # its source stays available on crates.io and the release notices (S09) must carry its license.
+  { crate = "option-ext", allow = ["MPL-2.0"] },
 ]
 
 [licenses.private]

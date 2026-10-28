@@ -1,9 +1,10 @@
-//! `kosse list`: one scan, printed as a table or as the JSON snapshot contract.
+//! `kosse list`: a snapshot, printed as a table or as the JSON snapshot contract.
 //!
-//! There is no resident instance to ask yet, so this always runs its own one-shot scan (revision 1,
-//! no interval), with the central and repository profiles applied as `serve` applies them. The
-//! table names each process's configured service with its source, then lists configured services
-//! that no process matches as "configured, not observed".
+//! When a verified Kossé instance runs on the port (see [`crate::instance`]) and its snapshot has
+//! this build's schema version, that snapshot is printed: no second scan. Otherwise this runs its
+//! own one-shot scan (revision 1, no interval), with the central and repository profiles applied
+//! as `serve` applies them. The table names each process's configured service with its source,
+//! then lists configured services that no process matches as "configured, not observed".
 
 use std::{
     collections::HashMap,
@@ -22,7 +23,11 @@ use kosse_core::{
     sockets::SocketsError,
 };
 
-use crate::cli::ListArgs;
+use crate::{
+    cli::ListArgs,
+    instance::{self, Found},
+    text::printable,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ListError {
@@ -35,19 +40,29 @@ pub enum ListError {
 }
 
 pub fn run(args: &ListArgs) -> Result<(), ListError> {
-    let store = CentralStore::from_env()?;
-    let timer = AttemptTimer::start();
-    // CPU needs two observations of a process, so a one-shot scan reports it as warming up.
-    let mut scanner = Scanner::new();
-    let mut observation = scanner.scan()?;
-    Profiles::new(store).apply(&mut observation, scanner.own_user());
-    let snapshot = SnapshotTracker::new(None).succeeded(observation, timer.finish());
+    let snapshot = match running_snapshot(args.port) {
+        Some(snapshot) => snapshot,
+        None => scan_once()?,
+    };
     let observation = snapshot.observation.as_ref();
+    if !args.json
+        && let (Some(failure), Some(observation)) = (&snapshot.scanner.failure, observation)
+    {
+        // A resident instance whose latest scan failed: its data is the last good scan.
+        let age = kosse_core::scan::unix_millis(std::time::SystemTime::now())
+            .saturating_sub(observation.scanned_at_ms)
+            / 1000;
+        report!(
+            "kosse: warning: the latest scan failed ({}); showing the last good scan, from {age} s ago",
+            printable(failure)
+        );
+    }
     let mut stdout = io::stdout().lock();
     let written = if args.json {
         write_json(&mut stdout, &snapshot)
     } else {
-        // A successful scan always yields an observation.
+        // A one-shot scan always yields an observation, and an instance's snapshot without one
+        // is never used (see `running_snapshot`).
         observation.map_or(Ok(()), |observation| write_table(&mut stdout, observation))
     };
     match written.and_then(|()| stdout.flush()) {
@@ -67,6 +82,41 @@ pub fn run(args: &ListArgs) -> Result<(), ListError> {
         }
     }
     Ok(())
+}
+
+/// The snapshot of a verified instance on `port`, if it is compatible with this build and has an
+/// observation (an instance whose first scan failed has none; scanning once says more).
+fn running_snapshot(port: u16) -> Option<Snapshot> {
+    if port == 0 {
+        return None;
+    }
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .ok()?;
+    match runtime.block_on(instance::find(port)) {
+        Found::Kosse(existing) => {
+            let url = existing.url.clone();
+            let snapshot = (*existing).compatible_snapshot();
+            if snapshot.is_none() {
+                report!(
+                    "kosse: the Kossé at {url} uses another snapshot version; scanning once instead"
+                );
+            }
+            snapshot.filter(|snapshot| snapshot.observation.is_some())
+        }
+        Found::Nothing | Found::Refused(_) => None,
+    }
+}
+
+fn scan_once() -> Result<Snapshot, ListError> {
+    let store = CentralStore::from_env()?;
+    let timer = AttemptTimer::start();
+    // CPU needs two observations of a process, so a one-shot scan reports it as warming up.
+    let mut scanner = Scanner::new();
+    let mut observation = scanner.scan()?;
+    Profiles::new(store).apply(&mut observation, scanner.own_user());
+    Ok(SnapshotTracker::new(None).succeeded(observation, timer.finish()))
 }
 
 fn write_json(out: &mut impl Write, snapshot: &Snapshot) -> io::Result<()> {
@@ -225,46 +275,4 @@ fn labels(service: &Service, project: Option<&Project>) -> (String, String) {
         None => "-".to_owned(),
     };
     (printable(&label), branch)
-}
-
-/// Process names are untrusted: escape characters that can drive or disguise terminal output.
-fn printable(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for character in text.chars() {
-        if character.is_control() || is_invisible_format(character) {
-            let _ = write!(out, "{}", character.escape_unicode());
-        } else {
-            out.push(character);
-        }
-    }
-    out
-}
-
-/// Format characters that reorder or hide text: bidi embeddings, overrides and isolates
-/// (Trojan Source), zero-width characters, line/paragraph separators and the BOM. std has no
-/// Unicode general-category lookup, so the relevant ranges are listed.
-fn is_invisible_format(character: char) -> bool {
-    matches!(
-        character,
-        '\u{061C}'
-            | '\u{200B}'..='\u{200F}'
-            | '\u{2028}'..='\u{202E}'
-            | '\u{2060}'..='\u{2069}'
-            | '\u{FEFF}'
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::printable;
-
-    #[test]
-    fn control_and_invisible_format_characters_are_escaped() {
-        assert_eq!(printable("node\u{1b}[2Jx\n"), "node\\u{1b}[2Jx\\u{a}");
-        assert_eq!(
-            printable("a\u{202E}b\u{2066}c\u{200B}d"),
-            "a\\u{202e}b\\u{2066}c\\u{200b}d"
-        );
-        assert_eq!(printable("vite é"), "vite é");
-    }
 }

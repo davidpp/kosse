@@ -16,7 +16,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use kosse_core::contract::Health;
+use kosse_core::contract::{Health, InstanceMode};
 use support::{OwnedChild, Server};
 
 #[test]
@@ -32,6 +32,7 @@ fn health_reports_name_and_version() {
         Health {
             name: "kosse".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
+            mode: InstanceMode::Headless,
         }
     );
 }

@@ -13,6 +13,41 @@ use ts_rs::{Config, TS, TypeVisitor};
 pub struct Health {
     pub name: String,
     pub version: String,
+    pub mode: InstanceMode,
+}
+
+/// How the instance runs, so a second launch knows what it can ask of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum InstanceMode {
+    /// The menu-bar app (`kosse`): it owns a dashboard window and takes `POST /api/window`.
+    Resident,
+    /// `kosse open` serving only for its own window's lifetime.
+    Ephemeral,
+    /// `kosse serve`: no tray, no window.
+    Headless,
+}
+
+/// `POST /api/window`: show the resident app's dashboard window at `route` and bring it forward.
+/// Only a [`InstanceMode::Resident`] instance accepts it (`409 notResident` otherwise).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WindowRequest {
+    pub route: WindowRoute,
+}
+
+/// A dashboard address; the identity routes name a process by PID and start time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum WindowRoute {
+    Dashboard,
+    Inspect { pid: u32, started_at_secs: u64 },
+    Stop { pid: u32, started_at_secs: u64 },
 }
 
 /// The per-instance action token. Unsafe API requests carry it in the `X-Kosse-Token`
@@ -99,6 +134,8 @@ pub enum ApiErrorCode {
     /// Writing the configuration failed (permissions, disk); `message` says why. Nothing was
     /// changed.
     ConfigWriteFailed,
+    /// Only the menu-bar app has a window to show (`POST /api/window`).
+    NotResident,
 }
 
 /// Every contract type in one TypeScript module.
@@ -114,6 +151,7 @@ pub fn typescript_bindings() -> String {
     module.add::<crate::action::ActionResult>();
     module.add::<SaveProfileRequest>();
     module.add::<SavedProfile>();
+    module.add::<WindowRequest>();
     module.add::<crate::model::Snapshot>();
     module.finish()
 }

@@ -50,7 +50,7 @@ fn kosse(config: &Path, args: &[&str]) -> Output {
 }
 
 fn list_json(config: &Path) -> Observation {
-    let output = kosse(config, &["list", "--json"]);
+    let output = kosse(config, &["list", "--json", "--port", "0"]);
     assert!(
         output.status.success(),
         "{}",
@@ -61,7 +61,7 @@ fn list_json(config: &Path) -> Observation {
 }
 
 fn list_table(config: &Path) -> String {
-    let output = kosse(config, &["list"]);
+    let output = kosse(config, &["list", "--port", "0"]);
     assert!(output.status.success());
     String::from_utf8(output.stdout).expect("UTF-8")
 }

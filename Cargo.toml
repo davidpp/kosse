@@ -49,6 +49,26 @@ rustls = { version = "0.23.46", default-features = false, features = ["ring", "s
 rustls-native-certs = "0.8.5"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+# Native menu-bar icon and its menu (S08); macOS only in v1, so no GTK/appindicator features.
+tray-icon = { version = "0.26.1", default-features = false }
+# The tray's menu and the window's app menu; the same version tray-icon re-exports.
+muda = { version = "0.21.2", default-features = false }
+# Main-thread event loop for the tray and the dashboard window (raw-window-handle 0.6 for wry).
+tao = { version = "0.37.1", default-features = false, features = ["rwh_06"] }
+# The dashboard window's WKWebView (`kosse window`); no Linux webview features.
+wry = { version = "0.57.0", default-features = false }
+# Bringing the dashboard window forward (NSRunningApplication activation, macOS 14 cooperative
+# activation). Both already in the graph through tao, wry and tray-icon; safe bindings only.
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "libc",
+  "NSApplication",
+  "NSResponder",
+  "NSRunningApplication",
+] }
+# Decodes the embedded tray template PNGs. Already in the graph through muda.
+png = "0.18.1"
 # Process metadata only: no disk/network/component/user-database probing.
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 tempfile = "3.27.0"

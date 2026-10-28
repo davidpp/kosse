@@ -3,7 +3,8 @@
 //! Routes: the API (see [`api`]); any other `/api` path is 404; everything else is the embedded
 //! web bundle (see [`assets`]). Every route, the bundle included, passes [`guard::enforce`].
 //! [`bind`] claims the loopback endpoint and refuses ports another process already serves; [`run`]
-//! serves until SIGINT/SIGTERM, ends open event streams, then drains for a bounded time.
+//! serves until SIGINT/SIGTERM or the owner quits, ends open event streams, then drains for a
+//! bounded time.
 
 use std::{
     future::IntoFuture,
@@ -59,6 +60,7 @@ pub fn router(state: AppState, customize: Customize) -> Router {
         .route("/api/probe", post(api::probe))
         .route("/api/stop", post(api::stop))
         .route("/api/force", post(api::force))
+        .route("/api/window", post(api::window))
         .route("/api/profile", post(customize::save).with_state(customize))
         .route("/api", any(StatusCode::NOT_FOUND))
         .route("/api/{*rest}", any(StatusCode::NOT_FOUND))
@@ -102,17 +104,21 @@ async fn is_accepting(addr: SocketAddr) -> bool {
     )
 }
 
-/// Serves until SIGINT/SIGTERM, then sets `stopping` (ending event streams) and gives open
-/// connections [`SHUTDOWN_GRACE`] to finish.
+/// Serves until SIGINT/SIGTERM or `quit`, then sets `stopping` (ending event streams) and gives
+/// open connections [`SHUTDOWN_GRACE`] to finish.
 pub async fn run(
     listener: TcpListener,
     app: Router,
     stopping: watch::Sender<bool>,
+    quit: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), ServeError> {
     let (stop_requested, stop_received) = oneshot::channel();
     let serving = axum::serve(listener, app)
         .with_graceful_shutdown(async move {
-            shutdown_signal().await;
+            tokio::select! {
+                () = shutdown_signal() => {}
+                () = quit => {}
+            }
             stopping.send_replace(true);
             let _ = stop_requested.send(());
         })

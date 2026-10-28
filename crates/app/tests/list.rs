@@ -75,7 +75,7 @@ fn list_json_matches_fixture_manifest_and_lsof() {
     ]
     .map(|fixture| fixture.expect("spawn fixture"));
 
-    let output = kosse(&["list", "--json"]);
+    let output = kosse(&["list", "--json", "--port", "0"]);
     let published: Snapshot =
         serde_json::from_slice(&output.stdout).expect("JSON snapshot contract");
     assert_eq!(published.schema_version, SNAPSHOT_SCHEMA_VERSION);
@@ -147,7 +147,7 @@ fn list_json_matches_fixture_manifest_and_lsof() {
 fn list_table_shows_each_fixture_port_once_with_its_addresses() {
     let fixture =
         Fixture::spawn(&FixtureSpec::new().listen(&[V4, V6]).listen(&[V6])).expect("spawn fixture");
-    let output = kosse(&["list"]);
+    let output = kosse(&["list", "--port", "0"]);
     let table = String::from_utf8(output.stdout).expect("UTF-8 table");
     let pid = fixture.pid().to_string();
 
@@ -239,7 +239,7 @@ fn list_json_attributes_projects_worktrees_and_packages() {
     };
     let (in_web, in_linked, in_second) = (spawn(&web), spawn(&linked), spawn(&second));
 
-    let output = kosse(&["list", "--json"]);
+    let output = kosse(&["list", "--json", "--port", "0"]);
     let snapshot: Snapshot = serde_json::from_slice(&output.stdout).expect("JSON");
     let observation = snapshot.observation.expect("an observation");
 
@@ -272,7 +272,7 @@ fn list_json_attributes_projects_worktrees_and_packages() {
     assert_eq!(package.path, "packages/web");
 
     // The table shows the same attribution.
-    let table = String::from_utf8(kosse(&["list"]).stdout).expect("UTF-8");
+    let table = String::from_utf8(kosse(&["list", "--port", "0"]).stdout).expect("UTF-8");
     let row = table
         .lines()
         .find(|line| line.split_whitespace().next() == Some(&in_web.pid().to_string()))
@@ -293,7 +293,10 @@ fn list_rejects_unknown_flags_as_usage_errors() {
 
 #[test]
 fn closed_stdout_and_stderr_do_not_crash_list() {
-    for args in [&["list"][..], &["list", "--json"][..]] {
+    for args in [
+        &["list", "--port", "0"][..],
+        &["list", "--json", "--port", "0"][..],
+    ] {
         // Both read ends are closed before kosse starts, so every write fails with EPIPE.
         let (stdout_reader, stdout_writer) = std::io::pipe().expect("stdout pipe");
         let (stderr_reader, stderr_writer) = std::io::pipe().expect("stderr pipe");

@@ -323,7 +323,7 @@ fn a_one_shot_list_reports_candidates_as_pending() {
     let title = spawn_in(&dir, Serve::Title, &[V4]);
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_kosse"))
         .env("KOSSE_CONFIG_DIR", "/var/empty/kosse-tests")
-        .args(["list", "--json"])
+        .args(["list", "--json", "--port", "0"])
         .output()
         .expect("run list");
     assert!(output.status.success());

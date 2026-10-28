@@ -50,6 +50,7 @@ mise trust && mise install
 bun install --frozen-lockfile
 bun run check   # full non-mutating gate, same as CI
 bun run dev     # backend + Vite on http://127.0.0.1:47833/
+bun run build && target/release/kosse   # menu-bar app + dashboard window (or: kosse open)
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for all commands and conventions, and [AGENTS.md](AGENTS.md) for the rules coding agents follow in this repository.

@@ -1,5 +1,6 @@
-//! `kosse` entry point: parses the command line, owns the async runtime, maps failures to
-//! exit codes (0 success, 1 runtime failure, 2 usage error via clap).
+//! `kosse` entry point: parses the command line, picks the mode (menu-bar app, `open`, `serve`,
+//! `list`, `config`, the internal `window`), maps failures to exit codes (0 success, 1 runtime
+//! failure, 2 usage error via clap).
 
 /// `eprintln!` without its panic: diagnostics to a closed stderr (`kosse … 2>&-`, or a
 /// pipe whose reader exited) are dropped instead of aborting the process.
@@ -11,36 +12,40 @@ macro_rules! report {
 }
 
 mod actions;
+mod activation;
 mod api;
 mod assets;
 mod cli;
 mod config;
 mod customize;
 mod guard;
+mod instance;
+mod launcher;
 mod list;
+mod menu;
+mod open;
+mod opener;
 mod prober;
+mod route;
+mod running;
 mod scheduler;
 mod server;
+mod text;
+mod tray;
+mod window;
 
-use std::{io, process::ExitCode, sync::Arc};
+use std::{io, process::ExitCode};
 
 use clap::Parser;
-use kosse_core::profiles::{CentralStore, StoreError};
+use kosse_core::{contract::InstanceMode, profiles::StoreError};
 
 use crate::{
-    actions::Actions,
-    api::AppState,
     cli::{Cli, Command, ServeArgs},
-    customize::Customize,
-    guard::{ActionToken, Policy},
     list::ListError,
-    prober::{Probes, Scope},
-    scheduler::{SCAN_INTERVAL, Scheduler},
+    running::Running,
     server::ServeError,
+    tray::TrayError,
 };
-
-/// How long shutdown waits for a scan in progress (normally milliseconds).
-const SCANNER_STOP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(3);
 
 #[derive(Debug, thiserror::Error)]
 enum AppError {
@@ -58,10 +63,20 @@ enum AppError {
     Scanner(#[source] io::Error),
     #[error("could not create the action token: {0}")]
     Token(#[source] io::Error),
+    #[error(transparent)]
+    Tray(#[from] TrayError),
+    #[error(transparent)]
+    Instance(#[from] instance::InstanceError),
+    #[error("the server task stopped unexpectedly")]
+    Stopped,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    // The window reports a failure to its owner, which says why; it writes no stderr line itself.
+    if let Some(Command::Window(args)) = &cli.command {
+        return window::run(args);
+    }
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
@@ -73,65 +88,32 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<(), AppError> {
     match cli.command {
-        Command::Serve(args) => {
-            // Built explicitly rather than via #[tokio::main]: the macOS tray must later own the
-            // main thread.
-            let runtime = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(AppError::Runtime)?;
-            runtime.block_on(serve(args))
-        }
-        Command::List(args) => Ok(list::run(&args)?),
-        Command::Config(command) => Ok(config::run(&command)?),
+        None => tray::run(&cli.app),
+        Some(Command::Open(args)) => open::run(&args),
+        Some(Command::Serve(args)) => runtime()?.block_on(serve(args)),
+        Some(Command::List(args)) => Ok(list::run(&args)?),
+        Some(Command::Config(command)) => Ok(config::run(&command)?),
+        Some(Command::Window(_)) => Ok(()),
     }
 }
 
+/// Built explicitly rather than via `#[tokio::main]`: the tray and the window own the main thread.
+fn runtime() -> Result<tokio::runtime::Runtime, AppError> {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(AppError::Runtime)
+}
+
 async fn serve(args: ServeArgs) -> Result<(), AppError> {
-    let listener = server::bind(args.port).await?;
-    let addr = listener.local_addr().map_err(|source| ServeError::Bind {
-        addr: (std::net::Ipv4Addr::LOCALHOST, args.port).into(),
-        source,
-    })?;
-    let url = format!("http://{addr}/");
-    let token = ActionToken::generate().map_err(AppError::Token)?;
-    let policy = Arc::new(Policy::new(addr.port(), dev_mode(&args), token));
-    // The only scanner of this instance; every route reads its snapshots.
-    let probes = Arc::new(Probes::new(probe_scope(&args)));
-    let store = CentralStore::from_env()?;
-    let scheduler = Scheduler::start(SCAN_INTERVAL, Arc::clone(&probes), store.clone())
-        .map_err(AppError::Scanner)?;
-    let (stopping, stopping_receiver) = tokio::sync::watch::channel(false);
-    let probing = tokio::spawn(prober::run(
-        Arc::clone(&probes),
-        scheduler.handle().subscribe(),
-        stopping_receiver.clone(),
-    ));
-    let actions = Arc::new(Actions::new(action_scope(&args)));
-    let app = server::router(
-        AppState::new(
-            scheduler.handle(),
-            policy,
-            probes,
-            actions,
-            stopping_receiver,
-        ),
-        Customize::new(scheduler.handle(), store),
-    );
+    let running =
+        Running::start(&args.server, dev_mode(&args), InstanceMode::Headless, None).await?;
+    let url = running.url().to_owned();
     report!("kosse {} listening on {url}", env!("CARGO_PKG_VERSION"));
     if !args.no_open {
-        open_in_browser(&url);
+        opener::open_or_report(&url);
     }
-    let served = server::run(listener, app, stopping).await;
-    probing.abort();
-    // Waiting for a scan in progress blocks, so keep it off the async workers.
-    let stopped = tokio::task::spawn_blocking(move || scheduler.shutdown(SCANNER_STOP_DEADLINE))
-        .await
-        .unwrap_or(false);
-    if !stopped {
-        report!("kosse: the scanner is still busy; exiting without waiting for it");
-    }
-    served?;
+    running.run(std::future::pending()).await?;
     report!("kosse stopped");
     Ok(())
 }
@@ -152,37 +134,5 @@ fn dev_mode(args: &ServeArgs) -> bool {
     {
         let _ = args;
         false
-    }
-}
-
-/// Automatic probing covers every candidate, except in debug builds given `--probe-only`.
-fn probe_scope(args: &ServeArgs) -> Scope {
-    #[cfg(debug_assertions)]
-    if let Some(pids) = &args.probe_only {
-        return Scope::Only(pids.0.iter().copied().collect());
-    }
-    let _ = args;
-    Scope::All
-}
-
-/// Every eligible process may be signalled, except in debug builds given `--act-only`.
-fn action_scope(args: &ServeArgs) -> actions::Scope {
-    #[cfg(debug_assertions)]
-    if let Some(pids) = &args.act_only {
-        return actions::Scope::only(&pids.0);
-    }
-    let _ = args;
-    actions::Scope::All
-}
-
-/// Best effort: the server is already useful without a browser window, so failures only warn.
-fn open_in_browser(url: &str) {
-    let opened = std::process::Command::new("/usr/bin/open")
-        .arg(url)
-        .status();
-    match opened {
-        Ok(status) if status.success() => {}
-        Ok(status) => report!("kosse: could not open {url} in a browser ({status})"),
-        Err(error) => report!("kosse: could not open {url} in a browser: {error}"),
     }
 }

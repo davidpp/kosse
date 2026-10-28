@@ -5,22 +5,61 @@ use clap::{Parser, Subcommand};
 pub const DEFAULT_PORT: u16 = 47831;
 
 /// Local homepage for the development services already running on this machine.
+///
+/// Without a command, runs the menu-bar app: the tray menu plus the dashboard server, opening the
+/// dashboard window. If the menu-bar app already runs on the port, brings its window forward.
 #[derive(Debug, Parser)]
-#[command(name = "kosse", version, about, arg_required_else_help = true)]
+#[command(name = "kosse", version, about, args_conflicts_with_subcommands = true)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
+
+    #[command(flatten)]
+    pub app: AppArgs,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Serve the dashboard and API in the foreground until interrupted.
+    /// Open the dashboard window without a resident app: shows the menu-bar app's window when it
+    /// runs on the port, or serves the dashboard until the window closes.
+    Open(OpenArgs),
+    /// Serve the dashboard and API in the foreground until interrupted (no tray).
     Serve(ServeArgs),
-    /// Scan once and print the TCP listeners on this machine and their processes.
+    /// Print the TCP listeners on this machine and their processes: the running instance's
+    /// snapshot, or a one-shot scan when none runs.
     List(ListArgs),
     /// Project profiles: the schema, the configuration file, moved projects.
     #[command(subcommand)]
     Config(ConfigCommand),
+    /// Internal: the dashboard window (a `WKWebView` on a running instance's loopback URL), started
+    /// by the app and `kosse open`.
+    #[command(hide = true)]
+    Window(WindowArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct AppArgs {
+    /// Do not open the dashboard window at launch (for example when started at login).
+    #[arg(long)]
+    pub no_open: bool,
+
+    #[command(flatten)]
+    pub server: ServerArgs,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct OpenArgs {
+    #[command(flatten)]
+    pub server: ServerArgs,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct WindowArgs {
+    /// The dashboard URL: `http://127.0.0.1:<port>/…` only.
+    pub url: String,
+    /// The window title.
+    #[arg(long, default_value = "Kossé")]
+    pub title: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -49,14 +88,15 @@ pub struct ListArgs {
     /// Print the scan as JSON: the versioned `Snapshot` contract; see its `schemaVersion`.
     #[arg(long)]
     pub json: bool,
+
+    /// The port of the running instance to ask; scans once when no Kossé answers there (or with
+    /// 0).
+    #[arg(long, default_value_t = DEFAULT_PORT)]
+    pub port: u16,
 }
 
 #[derive(Debug, clap::Args)]
 pub struct ServeArgs {
-    /// Loopback port to listen on (0 picks a free port).
-    #[arg(long, default_value_t = DEFAULT_PORT)]
-    pub port: u16,
-
     /// Do not open the dashboard in the default browser.
     #[arg(long)]
     pub no_open: bool,
@@ -66,6 +106,17 @@ pub struct ServeArgs {
     #[cfg(debug_assertions)]
     #[arg(long, hide = true)]
     pub dev: bool,
+
+    #[command(flatten)]
+    pub server: ServerArgs,
+}
+
+/// Where an instance listens, plus the debug-only test scopes.
+#[derive(Debug, clap::Args)]
+pub struct ServerArgs {
+    /// Loopback port to listen on (0 picks a free port).
+    #[arg(long, default_value_t = DEFAULT_PORT)]
+    pub port: u16,
 
     /// Tests only: probe these PIDs automatically and nothing else (`--probe-only=` probes
     /// nothing), so a test never probes the machine's real services. Not present in release

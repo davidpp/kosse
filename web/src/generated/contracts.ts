@@ -2,9 +2,14 @@
 // Regenerate with `bun run contracts`.
 
 /**
+ * How the instance runs, so a second launch knows what it can ask of it.
+ */
+export type InstanceMode = "resident" | "ephemeral" | "headless";
+
+/**
  * Identifies the Kossé instance answering on this endpoint.
  */
-export type Health = { name: string, version: string, };
+export type Health = { name: string, version: string, mode: InstanceMode, };
 
 /**
  * The per-instance action token. Unsafe API requests carry it in the `X-Kosse-Token`
@@ -12,7 +17,7 @@ export type Health = { name: string, version: string, };
  */
 export type Session = { token: string, };
 
-export type ApiErrorCode = "hostNotAllowed" | "originNotAllowed" | "tokenRequired" | "unsupportedMediaType" | "payloadTooLarge" | "invalidPayload" | "rateLimited" | "staleIdentity" | "notProbeable" | "scannerBusy" | "scannerStopped" | "invalidProfile" | "unknownProject" | "configUnavailable" | "configWriteFailed";
+export type ApiErrorCode = "hostNotAllowed" | "originNotAllowed" | "tokenRequired" | "unsupportedMediaType" | "payloadTooLarge" | "invalidPayload" | "rateLimited" | "staleIdentity" | "notProbeable" | "scannerBusy" | "scannerStopped" | "invalidProfile" | "unknownProject" | "configUnavailable" | "configWriteFailed" | "notResident";
 
 /**
  * The body of every API error response.
@@ -183,6 +188,17 @@ export type SaveProfileRequest = { root: string, profile: ProjectProfile | null,
  * The central profile of `root` as stored; the next snapshot applies it.
  */
 export type SavedProfile = { root: string, profile: ProjectProfile | null, };
+
+/**
+ * A dashboard address; the identity routes name a process by PID and start time.
+ */
+export type WindowRoute = { "kind": "dashboard" } | { "kind": "inspect", pid: number, startedAtSecs: bigint, } | { "kind": "stop", pid: number, startedAtSecs: bigint, };
+
+/**
+ * `POST /api/window`: show the resident app's dashboard window at `route` and bring it forward.
+ * Only a [`InstanceMode::Resident`] instance accepts it (`409 notResident` otherwise).
+ */
+export type WindowRequest = { route: WindowRoute, };
 
 export type GitHead = { "kind": "branch", name: string, } | { "kind": "detached", commit: string, } | { "kind": "unknown" };
 

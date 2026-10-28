@@ -1,7 +1,7 @@
 //! API handlers. They read the scheduler's shared snapshot and never scan; the writes ask the
 //! scheduler for a scan or the prober for one probe, and are rate-limited.
 //!
-//! - `GET /api/health`: name and version.
+//! - `GET /api/health`: name, version and [`InstanceMode`].
 //! - `GET /api/session`: the action token for unsafe requests ([`Session`]).
 //! - `GET /api/snapshot`: the latest [`Snapshot`].
 //! - `GET /api/events`: Server-Sent Events, one `snapshot` event per publication, starting with
@@ -13,6 +13,8 @@
 //! - `POST /api/stop` and `POST /api/force` ([`ActionRequest`]): `SIGTERM`, or `SIGKILL` after a
 //!   `stillRunning` stop, to one revalidated process; returns an [`ActionResult`] (see
 //!   [`crate::actions`]).
+//! - `POST /api/window` ([`WindowRequest`]): the menu-bar app shows its dashboard window at that
+//!   route and brings it forward; other instances answer `409 notResident`.
 //!
 //! Each snapshot is serialized once per revision and shared by every reader and event stream.
 
@@ -34,7 +36,9 @@ use axum::{
 use futures_util::stream::{self, Stream};
 use kosse_core::{
     action::{ActionRequest, ActionResult},
-    contract::{ApiErrorCode, Health, ProbeRequest, Session},
+    contract::{
+        ApiErrorCode, Health, InstanceMode, ProbeRequest, Session, WindowRequest, WindowRoute,
+    },
     model::Snapshot,
     probe, profiles,
     signal::Signal,
@@ -67,7 +71,14 @@ pub struct AppState {
     json: Arc<SnapshotJson>,
     /// Turns true when the server starts shutting down; open event streams then end.
     stopping: watch::Receiver<bool>,
+    mode: InstanceMode,
+    /// The resident app's window, on its main thread; `None` for other modes.
+    window: Option<WindowSink>,
+    window_limit: Arc<RateLimit>,
 }
+
+/// Hands a route to the resident app's main thread (it shows or focuses its window there).
+pub type WindowSink = Arc<dyn Fn(WindowRoute) + Send + Sync>;
 
 impl AppState {
     pub fn new(
@@ -87,7 +98,18 @@ impl AppState {
             action_limit: Arc::new(RateLimit::default()),
             json: Arc::new(SnapshotJson::default()),
             stopping,
+            mode: InstanceMode::Headless,
+            window: None,
+            window_limit: Arc::new(RateLimit::default()),
         }
+    }
+
+    /// How this instance runs; only a resident one has a `window`.
+    #[must_use]
+    pub fn with_mode(mut self, mode: InstanceMode, window: Option<WindowSink>) -> Self {
+        self.mode = mode;
+        self.window = window;
+        self
     }
 }
 
@@ -130,11 +152,37 @@ impl SnapshotJson {
     }
 }
 
-pub async fn health() -> Json<Health> {
+pub async fn health(State(state): State<AppState>) -> Json<Health> {
     Json(Health {
         name: env!("CARGO_PKG_NAME").to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
+        mode: state.mode,
     })
+}
+
+/// Shows the resident app's window at the route. Nothing is signalled or scanned: the dashboard
+/// at that route does the rest (a Stop route opens its confirmation).
+pub async fn window(
+    State(state): State<AppState>,
+    body: Result<Json<WindowRequest>, JsonRejection>,
+) -> Response {
+    let request = match body {
+        Ok(Json(request)) => request,
+        Err(rejection) => return body_refusal(&rejection),
+    };
+    let Some(window) = &state.window else {
+        return Refusal::new(
+            StatusCode::CONFLICT,
+            ApiErrorCode::NotResident,
+            "this Kossé is not the menu-bar app and has no window; open the dashboard in a browser",
+        )
+        .into_response();
+    };
+    if !state.window_limit.try_acquire() {
+        return rate_limited("the window was asked for less than a second ago");
+    }
+    window(request.route);
+    StatusCode::NO_CONTENT.into_response()
 }
 
 pub async fn session(State(state): State<AppState>) -> Json<Session> {
