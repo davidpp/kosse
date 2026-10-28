@@ -5,12 +5,13 @@ This is the dependency/specification index, not a second status tracker. Live st
 | Plan | Work package | Depends on |
 |---|---|---|
 | S01 | Scaffold Rust/React workspace and executable quality gates | — |
+| S01b | Slim the web stack onto the TanStack Redact runtime within the performance budget | S01 |
 | S02 | Validate macOS discovery and build owned-process fixture harness | S01 |
 | S03 | Implement project attribution, shared snapshots and process metrics | S02 |
 | S04 | Add secure local API, SSE and bounded HTTP enrichment | S03 |
 | S05 | Implement identity-safe stop and explicit force escalation | S04 |
 | S06 | Add central project profiles and optional repo metadata | S03 |
-| S07 | Build the browser homepage and verify real service workflows | S04, S05, S06 |
+| S07 | Build the slim dashboard and verify real service workflows | S01b, S04, S05, S06 |
 | S08 | Add native macOS tray lifecycle and single-instance behavior | S07 |
 | S09 | Implement local packaging, install/uninstall and opt-in login startup | S08 |
 | S10 | Run installed-entrypoint acceptance audit and complete operator docs | S09 |
@@ -19,11 +20,11 @@ This is the dependency/specification index, not a second status tracker. Live st
 
 ```text
 S01 → S02 → S03 → S04 → S05 ─┐
-               └→ S06 ──────┼→ S07 → S08 → S09 → S10
-                      S04 ──┘
+ │             └→ S06 ──────┼→ S07 → S08 → S09 → S10
+ └→ S01b ───────────────────┘
 ```
 
-S06 may proceed independently of S04/S05 after S03; use separate worktrees only when explicitly coordinated. Default loop order is table order. Required v1 includes passive project metadata; external proxy/port allocator integration is limited to declared friendly links, not management.
+S01b (web only, after S01) and S06 (after S03) may proceed independently of S04/S05; use separate worktrees only when explicitly coordinated. Default loop order is table order. Required v1 includes passive project metadata; external proxy/port allocator integration is limited to declared friendly links, not management.
 
 ## S01
 
@@ -34,6 +35,18 @@ Create Cargo core/app workspace and web via supported current Vite/React + TanSt
 ### Acceptance
 
 From a clean dependency install, dev serves a minimal page through the intended dev proxy; production binary serves embedded page; actual check/build/test/fmt:check commands pass. Generated type staleness fails a test/check. Hook is non-mutating and CI uses same checks. Document versions, commands, and missing platform prerequisites; the public remote exists, so CI runs on push. Read current docs and inspect existing files first.
+
+## S01b
+
+Added 2026-10-28 by owner direction: Stackscan is a resident tool and must stay nimble; the S01 web scaffold (React, TanStack Router/Query, shadcn/Base UI, Geist) shipped ~103 kB gzipped JS for one status line.
+
+### Scope
+
+Move the web app onto the slim stack in architecture.md: React APIs on the TanStack Redact runtime (Vite plugin, also in Vitest so tests run what ships), TanStack Query, Tailwind v4 (build-time), per-icon Lucide, system fonts; remove shadcn/Base UI, Geist and other runtime weight. Measure the bundle with and without TanStack Router and keep it only within budget, recording the numbers. Keep the S01 behaviour (health page, dev proxy, embedded build, contract freshness) and gates. Add an enforced bundle-size budget to `check`. Remove dependencies that no longer have users. Establish the Impeccable design context for the dashboard (no full dashboard yet; that is S07).
+
+### Acceptance
+
+`bun run check` passes from a clean install; the budget check fails when exceeded (demonstrated) and the shipped bundle is within 50 kB gzipped; `bun run dev` and the release binary serve the page with the health result; web tests run with Vitest + Testing Library under the Redact runtime; docs and generators updated; evidence records before/after sizes.
 
 ## S02
 
@@ -89,7 +102,7 @@ Fixture tests cover traversal/symlinks, ambiguity, multiple processes in cwd, po
 
 ### Scope
 
-Use Impeccable and preferred React stack to implement dense grouped dashboard, search, endpoint links, metrics, inspect route, all-listeners/noise controls, aliases, metadata provenance, explicit stop/force dialogs, responsive/theme/accessibility/error/stale/empty states. TanStack Query owns cache with SSE integration. Wire “Customize this project” and persisted central profiles/preferences through guarded API; consume generated contracts. Display effective metadata provenance and declared custom-domain links without falsely verifying them.
+Use Impeccable (design context, then craft, critique and audit) and the slim Redact stack in architecture.md, within its performance budget, to implement dense grouped dashboard, search, endpoint links, metrics, inspect route, all-listeners/noise controls, aliases, metadata provenance, explicit stop/force dialogs, responsive/theme/accessibility/error/stale/empty states. TanStack Query owns server state with SSE integration (revision-ordered). Wire “Customize this project” and persisted central profiles/preferences through guarded API; consume generated contracts. Display effective metadata provenance and declared custom-domain links without falsely verifying them.
 
 ### Acceptance
 
@@ -99,11 +112,11 @@ Playwright against real Rust backend + owned fixtures verifies discover→filter
 
 ### Scope
 
-Implement tray-icon with documented macOS main-thread event loop and existing async runtime/core. Native grouped menu, dashboard/open/inspect/stop routing to same confirmed action UI, app-only quit. Default app mode vs headless serve; second launch verifies existing instance and opens it without duplicate scanner. No graphical popover or duplicated action policy.
+Implement tray-icon with documented macOS main-thread event loop and existing async runtime/core, plus the `stackscan window` child process (wry + tao WKWebView, focus-or-spawn, browser fallback). Native grouped menu, dashboard/open/inspect/stop routing to same confirmed action UI, app-only quit. Default app mode vs headless serve; second launch verifies existing instance and opens it without duplicate scanner. No graphical popover or duplicated action policy.
 
 ### Acceptance
 
-Run actual app on macOS: tray visible with owned fixture services, Open/Inspect reaches browser routes, Stop invokes same confirmation, Quit leaves fixtures alive. Headless serves without tray. Second launch no duplicate scanner; unrelated port occupant not treated as trusted instance. Capture automation or explicit human evidence; absent GUI access is waiting, never passed.
+Run actual app on macOS: tray visible with owned fixture services, Open Dashboard/Inspect reach the dashboard window routes (and browser fallback), Stop invokes same confirmation, Quit leaves fixtures alive. Headless serves without tray. Second launch no duplicate scanner; unrelated port occupant not treated as trusted instance. Capture automation or explicit human evidence; absent GUI access is waiting, never passed.
 
 ## S09
 

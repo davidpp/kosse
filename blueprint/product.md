@@ -2,7 +2,7 @@
 
 ## Primary jobs
 
-1. Open my homepage or tray menu and immediately see which projects are running.
+1. Open the dashboard or tray menu and immediately see which projects are running.
 2. Recognize the repository, worktree/branch, and package behind an unfamiliar port.
 3. Open a valid local HTTP(S) service without remembering its port.
 4. Inspect PID, working directory, bound addresses, process age, CPU and memory.
@@ -10,7 +10,9 @@
 
 No project registration or modified launch commands should be necessary. Optional machine-local project profiles improve attribution and links without touching repositories. UI customization writes centrally; repo-local metadata is an optional shareable alternative. See [project metadata](project-metadata.md). Observed runtime facts always remain distinguishable from declared intent.
 
-## Main browser surface
+## Dashboard surface
+
+Served on loopback; shown in Stackscan's own window (opened from the tray or on explicit launch) and reachable from any browser at the same URL.
 
 One calm, dense dashboard grouped by repository/worktree, with package/service rows. Search matches project, package, command name and port. Default view filters known system noise; a visible “all listeners” option makes exclusions reversible.
 
@@ -22,7 +24,7 @@ Keyboard navigation, visible focus, accessible confirmation dialog, responsive n
 
 ## Tray surface
 
-A native macOS menu with project/service grouping, recognizable names/ports, Open, Inspect in browser, Stop, Open Dashboard, and Quit. Stop must use the same confirmation and identity policy as the browser (opening the browser confirmation is acceptable). No alternate unguarded destructive path.
+A native macOS menu with project/service grouping, recognizable names/ports, Open, Inspect (opens the dashboard window on that service), Stop, Open Dashboard, and Quit. Stop must use the same confirmation and identity policy as the dashboard (opening the dashboard's confirmation is acceptable). No alternate unguarded destructive path.
 
 Tray stays useful with browser closed. Initial discovery failure is visible. Quit stops Stackscan only, never discovered services. Headless mode has no tray requirement.
 

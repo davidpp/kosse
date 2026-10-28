@@ -12,3 +12,6 @@
 .env.*
 !.env.example
 /node_modules/
+
+# agent worktrees created by Claude Code
+/.claude/worktrees/

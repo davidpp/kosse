@@ -1,6 +1,6 @@
 # Stackscan
 
-A local homepage and native macOS tray menu for the development services you already run: **discover, identify, open, inspect, stop.**
+A native macOS tray menu and a lightweight local dashboard for the development services you already run: **discover, identify, open, inspect, stop.**
 
 You start dev servers from terminals, scripts and coding agents. A day later there are a dozen listeners on unremembered ports, some from worktrees you forgot. Stackscan shows them grouped by repository, worktree and package, with honest observations (listening, reachable over HTTP, or neither) and current CPU and memory. It stops a forgotten process only after confirming its exact identity. It never asks you to register projects or change how you launch them.
 
@@ -20,12 +20,14 @@ crates/core   listener discovery · process identity · project attribution · s
      │        (no UI, router or HTTP-server dependency)
 crates/app    one scanner scheduler → Axum API + SSE (loopback) → embedded SPA · CLI · macOS tray
      │
-web/          Vite + React + TanStack Router/Query + Tailwind v4 + shadcn/ui, embedded into the binary
+web/          slim dashboard embedded into the binary, shown in a lightweight WKWebView window
+              or any browser (moving to the TanStack Redact runtime, ≤ 50 kB gzipped: slice S01b)
 
-crates/fixtures   test-only: owned listener processes with an identity manifest, lsof ground truth
+crates/fixtures   test-only: owned listener processes with an identity manifest, disposable Git
+                  repositories, lsof ground truth
 ```
 
-Every view (browser, tray and CLI) reads the same snapshot and uses the same action policy. Rust contract types generate the TypeScript types the UI consumes, and CI fails on drift. Details: [architecture](blueprint/architecture.md), [product contract](blueprint/product.md), [verification gates](blueprint/verification.md).
+Every view (dashboard, tray and CLI) reads the same snapshot and uses the same action policy. Rust contract types generate the TypeScript types the UI consumes, and CI fails on drift. Details: [architecture](blueprint/architecture.md), [product contract](blueprint/product.md), [verification gates](blueprint/verification.md).
 
 ## Development
 
