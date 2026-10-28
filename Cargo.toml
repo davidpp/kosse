@@ -1,0 +1,47 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+repository = "https://github.com/davidpp/stackscan"
+publish = false
+
+[workspace.dependencies]
+stackscan-core = { path = "crates/core" }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+clap = { version = "4.6.7", features = ["derive"] }
+# debug-embed: debug builds embed assets too, so tests exercise the shipped code path.
+rust-embed = { version = "8.13.0", features = ["debug-embed", "mime-guess"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
+ts-rs = "12.0.1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+dbg_macro = "warn"
+expect_used = "warn"
+panic = "warn"
+print_stdout = "warn"
+todo = "warn"
+unwrap_used = "warn"
+# Pedantic lints that fight idiomatic code here; `check` turns every remaining warning into an error.
+missing_errors_doc = "allow"
+module_name_repetitions = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

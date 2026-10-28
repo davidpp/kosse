@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "sortTailwindcss": {
+    "stylesheet": "web/src/styles.css",
+    "functions": ["cn", "cva"]
+  },
+  "ignorePatterns": ["blueprint/**", "web/src/generated/**", "web/src/routeTree.gen.ts"]
+}

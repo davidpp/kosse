@@ -1,0 +1,4 @@
+# https://nexte.st/docs/configuration/
+[profile.default]
+# Tests spawn real server processes; a hung one is reported at 10s and killed at 30s.
+slow-timeout = { period = "10s", terminate-after = 3 }

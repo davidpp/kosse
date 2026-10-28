@@ -1,0 +1,10 @@
+# Contributor toolchain, resolved per repository (no global defaults needed).
+# Keep rust in sync with rust-toolchain.toml and bun with package.json "packageManager".
+# Node is needed only by the web test/build tooling (Vitest); the shipped binary needs neither.
+[tools]
+rust = "1.99.1"
+bun = "1.4.2"
+node = "24.21.0"
+cargo-deny = "0.20.2"
+zizmor = "1.31.1"
+"github:nextest-rs/nextest" = { version = "0.9.149", version_prefix = "cargo-nextest-" }

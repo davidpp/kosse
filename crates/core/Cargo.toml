@@ -1,0 +1,16 @@
+[package]
+name = "stackscan-core"
+description = "Service model and contracts for Stackscan, independent of any UI or HTTP layer."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+ts-rs.workspace = true
+
+[lints]
+workspace = true

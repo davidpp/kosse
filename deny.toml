@@ -1,0 +1,34 @@
+# Dependency policy, checked by `bun run audit` and the CI audit job.
+# https://embarkstudios.github.io/cargo-deny/checks/cfg.html
+
+[graph]
+# v1 ships macOS arm64 only; evaluate the graph for that target.
+targets = ["aarch64-apple-darwin"]
+all-features = true
+
+[advisories]
+# Vulnerabilities are always errors; unmaintained/yanked crates in our graph too.
+unmaintained = "all"
+yanked = "deny"
+ignore = []
+
+[licenses]
+# Permissive licenses compatible with distributing an MIT-licensed binary. Kept to the set actually
+# in the graph; add others deliberately when a new dependency needs them.
+allow = ["Apache-2.0", "BSD-3-Clause", "MIT", "Unicode-3.0"]
+confidence-threshold = 0.9
+exceptions = []
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
