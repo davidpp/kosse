@@ -11,8 +11,12 @@
 //! `--` are ignored: they give the process a chosen command line (fake secrets, markup).
 //!
 //! `--listen 127.0.0.1` binds one ephemeral port; `--listen 127.0.0.1,::1` binds one port shared by
-//! both addresses. Repeat `--listen` for more ports. `--port` binds the (single) group on that
-//! port instead.
+//! both addresses. Repeat `--listen` for more ports. `--port` (once per group, in order) binds
+//! the groups on those ports instead. `--title` replaces the default page title (sent as given).
+//!
+//! When `KOSSE_FIXTURE_ARGS` holds a JSON array of these options, they are read from it and the
+//! whole command line is ignored, so what others observe (`ps`, Kossé's Inspect) is only the
+//! command line the driver chose, without harness flags.
 //!
 //! Signals: by default `SIGTERM` ends the fixture; `--ignore-term` catches and ignores it (only
 //! `SIGKILL` stops it). `--supervise` runs a supervisor that listens on nothing itself: it starts a
@@ -38,6 +42,7 @@ use std::{
 use clap::Parser;
 use kosse_fixtures::protocol::{BANNER, HUGE_BODY, REDIRECT_PATH, Ready, Serve as Mode, TITLE};
 
+const CONFIG_ENV: &str = "KOSSE_FIXTURE_ARGS";
 /// Attempts to find one port free on every address of a group before giving up.
 const SHARED_PORT_ATTEMPTS: usize = 32;
 /// Largest request head read (and recorded) per connection.
@@ -73,9 +78,14 @@ struct Args {
     #[arg(long)]
     record: bool,
 
-    /// Bind the single `--listen` group on this port instead of an ephemeral one.
+    /// Bind the `--listen` groups on these ports (one per group, in order) instead of ephemeral
+    /// ones.
     #[arg(long)]
-    port: Option<u16>,
+    port: Vec<u16>,
+
+    /// The `<title>` of HTML pages, sent as given (the default carries an entity and markup).
+    #[arg(long)]
+    title: Option<String>,
 
     /// Catch and ignore `SIGTERM`.
     #[arg(long)]
@@ -88,6 +98,19 @@ struct Args {
     /// Ignored; sets the command line others observe.
     #[arg(last = true)]
     _extra: Vec<String>,
+}
+
+/// Options from `KOSSE_FIXTURE_ARGS` (see the module docs), else from the command line.
+fn options() -> Result<Args, String> {
+    match std::env::var(CONFIG_ENV) {
+        Ok(json) => {
+            let list: Vec<String> = serde_json::from_str(&json)
+                .map_err(|error| format!("{CONFIG_ENV} is not a JSON string array: {error}"))?;
+            Args::try_parse_from(std::iter::once("kosse-fixture".to_owned()).chain(list))
+                .map_err(|error| error.to_string())
+        }
+        Err(_) => Ok(Args::parse()),
+    }
 }
 
 fn parse_group(value: &str) -> Result<Vec<IpAddr>, String> {
@@ -103,9 +126,15 @@ fn parse_group(value: &str) -> Result<Vec<IpAddr>, String> {
 }
 
 fn main() -> ExitCode {
-    let args = Args::parse();
-    if args.port.is_some() && args.groups.len() != 1 {
-        eprintln!("kosse-fixture: --port needs exactly one --listen group");
+    let args = match options() {
+        Ok(args) => args,
+        Err(error) => {
+            eprintln!("kosse-fixture: {error}");
+            return ExitCode::from(2);
+        }
+    };
+    if !args.port.is_empty() && args.port.len() != args.groups.len() {
+        eprintln!("kosse-fixture: give --port once per --listen group");
         return ExitCode::from(2);
     }
     if args.supervise {
@@ -129,8 +158,8 @@ fn main() -> ExitCode {
         None
     };
     let mut listeners = Vec::new();
-    for group in &args.groups {
-        match bind_group(group, args.port) {
+    for (index, group) in args.groups.iter().enumerate() {
+        match bind_group(group, args.port.get(index).copied()) {
             Ok(bound) => listeners.extend(bound),
             Err(error) => {
                 eprintln!("kosse-fixture: could not bind {group:?}: {error}");
@@ -155,6 +184,7 @@ fn main() -> ExitCode {
             mode: args.serve,
             record: args.record,
             tls: tls.clone(),
+            title: Arc::from(args.title.as_deref().unwrap_or(TITLE)),
         };
         thread::spawn(move || server.accept(&listener));
     }
@@ -260,11 +290,12 @@ fn supervise(args: &Args) -> ExitCode {
     }
     let deadline = Instant::now() + Duration::from_secs(args.max_lifetime_secs);
     let done = || stopping.load(Ordering::SeqCst) || Instant::now() >= deadline;
-    let mut port = args.port;
+    let mut port = args.port.first().copied();
     let mut announced = false;
     while !done() {
         let Ok(mut child) = Command::new(&exe)
             .args(child_args(args, port))
+            .env_remove(CONFIG_ENV)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -327,6 +358,10 @@ fn child_args(args: &Args, port: Option<u16>) -> Vec<String> {
     if args.record {
         child.push("--record".to_owned());
     }
+    if let Some(title) = &args.title {
+        child.push("--title".to_owned());
+        child.push(title.clone());
+    }
     child.push("--serve".to_owned());
     child.push(args.serve.as_arg().to_owned());
     child.push("--max-lifetime-secs".to_owned());
@@ -361,6 +396,7 @@ struct Server {
     mode: Mode,
     record: bool,
     tls: Option<Arc<rustls::ServerConfig>>,
+    title: Arc<str>,
 }
 
 impl Server {
@@ -397,7 +433,7 @@ impl Server {
                 let mut tls = rustls::StreamOwned::new(connection, stream);
                 let request = read_head(&mut tls);
                 self.save(port, &request);
-                respond(&mut tls, Mode::Title, port)
+                respond(&mut tls, Mode::Title, port, &self.title)
             }
             (mode, _) => {
                 let request = read_head(&mut stream);
@@ -408,7 +444,7 @@ impl Server {
                     let _ = stream.read_to_end(&mut Vec::new());
                     return Ok(());
                 }
-                respond(&mut stream, mode, port)
+                respond(&mut stream, mode, port, &self.title)
             }
         }
     }
@@ -438,7 +474,7 @@ fn read_head(stream: &mut impl Read) -> Vec<u8> {
     head
 }
 
-fn respond(stream: &mut impl Write, mode: Mode, port: u16) -> io::Result<()> {
+fn respond(stream: &mut impl Write, mode: Mode, port: u16, title: &str) -> io::Result<()> {
     let (status, headers, body): (&str, String, String) = match mode {
         Mode::NotFound => (
             "404 Not Found",
@@ -472,7 +508,7 @@ fn respond(stream: &mut impl Write, mode: Mode, port: u16) -> io::Result<()> {
             "200 OK",
             "Content-Type: text/html; charset=utf-8\r\n".into(),
             format!(
-                "<!doctype html><html><head><TITLE>\n  {TITLE}\n</TITLE></head><body>ok</body></html>"
+                "<!doctype html><html><head><TITLE>\n  {title}\n</TITLE></head><body>ok</body></html>"
             ),
         ),
     };

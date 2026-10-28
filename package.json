@@ -9,21 +9,25 @@
   "workspaces": [
     "web"
   ],
+  "type": "module",
   "scripts": {
     "dev": "bun scripts/dev.ts",
     "build": "bun run --cwd web build && bun run budget && cargo build --release --locked -p kosse",
     "check": "bun run fmt:check && bun run lint && bun run typecheck && bun run test && cargo build --release --locked -p kosse",
     "test": "bun run --cwd web test && bun run --cwd web build && bun run budget && cargo nextest run --workspace --locked && cargo test --doc --workspace --locked",
+    "test:e2e": "bun run --cwd web build && cargo build --locked -p kosse -p kosse-fixtures --bins && playwright test --config e2e/playwright.config.ts",
+    "screenshots": "KOSSE_SCREENSHOTS=1 bun run test:e2e e2e/screenshots.spec.ts --project webkit && oxipng -o 4 --strip safe -q -r docs/screenshots",
     "budget": "bun scripts/bundle-budget.ts",
     "lint": "bun run lint:web && cargo clippy --workspace --all-targets --locked -- -D warnings",
     "lint:web": "oxlint --deny-warnings",
-    "typecheck": "bun run --cwd web typecheck && tsc --noEmit",
+    "typecheck": "bun run --cwd web typecheck && tsc --noEmit && tsc --noEmit -p e2e",
     "fmt": "cargo fmt --all && oxfmt",
     "fmt:check": "cargo fmt --all --check && oxfmt --check",
     "contracts": "KOSSE_UPDATE_CONTRACTS=1 cargo nextest run --locked -p kosse-core --test contracts --test profile_schema",
     "audit": "cargo deny check && zizmor --offline .github"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@types/bun": "^1.4.4",
     "lefthook": "^2.2.2",
     "oxfmt": "^0.74.0",

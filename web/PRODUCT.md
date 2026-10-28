@@ -3,10 +3,8 @@
 <!-- impeccable:product-schema 1 -->
 
 <!--
-Recorded during slice S01b from the repository (README.md, blueprint/product.md,
-blueprint/architecture.md) and the owner's slice brief. The Impeccable interview was not run with
-the owner in this session; facts marked (inferred) are derived from those documents and need the
-owner's confirmation before S07 builds the dashboard on them.
+Recorded in S01b from the repository and the owner's slice brief; confirmed by the owner on
+2026-10-28 for S07 (usage, layout and voice below).
 -->
 
 ## Platform
@@ -21,9 +19,10 @@ quickly: what is running on this machine, and from which project? The dashboard 
 views; the other is a native macOS tray menu over the same core.
 
 The primary dashboard surface is Kossé's own lightweight window (a WKWebView on the loopback
-URL), opened from the tray. The same page also works in any browser. It is opened many times a
-day for a few seconds each time, next to an editor and terminals (inferred), on both light and
-dark system appearances.
+URL), opened from the tray. The same page also works in any browser. It is a quick glance: opened
+many times a day for a few seconds each time, next to an editor and terminals, on both light and
+dark system appearances. Find the port or project, act, close. Instant scanning, the keyboard and a
+fast first paint matter most, and the page must cost nothing while it is closed.
 
 ## Product Purpose
 
@@ -43,14 +42,17 @@ status, including 404), or a specific failure, with unknown shown as unknown.
 - A resident local tool: one Rust process serves the dashboard on loopback; the UI is embedded in
   the binary and loads no remote assets.
 - The user reaches the dashboard from the tray: its window opens, is read or acted on, and is
-  closed again (inferred). It must stay cheap while closed and quick to open; a browser tab on the
-  same URL is the secondary path.
+  closed again. It must stay cheap while closed and quick to open; a browser tab on the same URL
+  is the secondary path.
 - The user arrives with a port number, a project name or a vague "something is still running", and
   leaves by opening a link, reading process facts, or stopping one process.
 - Observation is continuous; the page shows live and stale states rather than a one-off report.
 
 ## Capabilities and Constraints
 
+- Layout (owner, 2026-10-28): one card per project/worktree with its service rows (state shape,
+  name, ports, HTTP result, metrics); Inspect opens as a side sheet (a full pane on narrow widths);
+  search filters cards and rows.
 - Required interactions: search across project, package, command and port; grouping by
   repository/worktree; Open / Inspect / Stop per service; an "all listeners" control that reverses
   default noise filtering; explicit stop confirmation, then a separate confirmation to force.
@@ -66,14 +68,18 @@ status, including 404), or a specific failure, with unknown shown as unknown.
 
 ## Brand Commitments
 
-- Name: Kossé. No logo or mark exists yet; do not invent one.
-- Voice: plain, factual, calm. State what was observed and what to do next; no hype and no
-  alarm beyond what the observation warrants (inferred from the README and product contract).
+- Identity: [brand/BRAND.md](../brand/BRAND.md) (mark, Fleuve palette, roles in
+  [brand/tokens.json](../brand/tokens.json)). Use the mark's geometry; never substitute a font K.
+- Voice (owner, 2026-10-28): strictly plain, calm and factual, written like a developer tool for
+  developers looking after their own dev services. State what was observed and what to do next; no
+  hype, no alarm beyond the observation, no Québécois flavour or French in the interface. « Kossé »
+  is the name's etymology, not positioning or a tagline.
 
 ## Evidence on Hand
 
-- Real data comes only from the running backend (`/api/health` today; the snapshot API arrives in
-  S04). There are no screenshots, testimonials or usage figures; do not fabricate them.
+- Real data comes only from the running backend (`/api/snapshot` and `/api/events`). There are no
+  testimonials or usage figures; do not fabricate them. Screenshots in `docs/screenshots/` show
+  fixture processes only (`bun run screenshots`).
 - Owned fixture processes (`crates/fixtures`) provide real, labelled services for demonstrations
   and browser tests.
 

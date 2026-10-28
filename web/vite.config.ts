@@ -12,8 +12,24 @@ export default defineConfig({
     react(),
     // React APIs on the Redact runtime, in the build and in Vitest alike. Only features that
     // neither the app nor its dependencies use are dropped: the app is client-rendered with
-    // `createRoot` (`hydrateRoot` would throw), and nothing renders `<Activity>` or Fragment refs.
-    redact({ features: { hydration: false, activity: false, fragmentRefs: false } }),
+    // `createRoot` (`hydrateRoot` would throw); nothing renders `<Activity>`, `<Suspense>`,
+    // `lazy`, `memo`, portals, view transitions, Fragment refs or class components; and nothing
+    // passes a ref to a Lucide icon (its `forwardRef` wrapper still renders). Context stays:
+    // TanStack Query and Lucide use it.
+    redact({
+      features: {
+        hydration: false,
+        activity: false,
+        fragmentRefs: false,
+        suspense: false,
+        lazy: false,
+        memo: false,
+        portal: false,
+        viewTransitions: false,
+        classComponents: false,
+        forwardRef: false,
+      },
+    }),
     tailwindcss(),
   ],
   server: {

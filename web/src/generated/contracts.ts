@@ -174,8 +174,8 @@ services: { [key in string]: ServiceProfile }, };
  * `POST /api/profile` ("Customize this project"): saves (`profile` set) or removes (`null`) the
  * central profile of `root`, which must be a project in the current snapshot or one that already
  * has a central profile. Only Kossé's own configuration is written, never the project. Fields
- * the dashboard does not know are kept from the profile being replaced: per service ID, and per
- * link by URL (a link whose URL changes loses them).
+ * the dashboard does not know, and `$schema`, are kept from the profile being replaced: per
+ * service ID, and per link by URL (a link whose URL changes loses them).
  */
 export type SaveProfileRequest = { root: string, profile: ProjectProfile | null, };
 

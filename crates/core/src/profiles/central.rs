@@ -378,13 +378,17 @@ mod tests {
     fn unknown_fields_are_kept_on_rewrite() {
         let (_dir, store) = store();
         fs::create_dir_all(&store.dir).expect("dir");
-        let original = r#"{"version":1,"preferences":{"theme":"dark"},"projects":{"/work/app":{"version":1,"name":"Old","later":true}}}"#;
+        let original = r#"{"version":1,"preferences":{"theme":"dark"},"projects":{"/work/app":{"$schema":"./kosse.schema.json","version":1,"name":"Old","later":true}}}"#;
         fs::write(store.file(), original).expect("write");
         store.save("/work/app", Some(profile("New"))).expect("save");
         let written: Value =
             serde_json::from_slice(&fs::read(store.file()).expect("read")).expect("json");
         assert_eq!(written["preferences"]["theme"], "dark");
         assert_eq!(written["projects"]["/work/app"]["later"], true);
+        assert_eq!(
+            written["projects"]["/work/app"]["$schema"],
+            "./kosse.schema.json"
+        );
         assert_eq!(written["projects"]["/work/app"]["name"], "New");
     }
 

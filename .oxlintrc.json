@@ -32,8 +32,23 @@
           },
           {
             "name": "react",
-            "importNames": ["Activity", "unstable_Activity"],
-            "message": "Redact's activity feature is off (web/vite.config.ts); enable it there first."
+            "importNames": [
+              "Activity",
+              "unstable_Activity",
+              "Suspense",
+              "lazy",
+              "memo",
+              "Component",
+              "PureComponent",
+              "ViewTransition",
+              "unstable_ViewTransition"
+            ],
+            "message": "This Redact feature is off (web/vite.config.ts); enable it there first."
+          },
+          {
+            "name": "react-dom",
+            "importNames": ["createPortal"],
+            "message": "Redact's portal feature is off (web/vite.config.ts); enable it there first."
           }
         ]
       }

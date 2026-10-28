@@ -179,9 +179,13 @@ impl ProjectProfile {
     /// replaces, wherever this one does not set them: at the profile level, per service ID, and per
     /// link by URL (so reordering or removing links never moves fields to another link; a link
     /// whose URL changed starts without them). Saving from the dashboard thus never drops what a
-    /// newer Kossé or a hand edit added.
+    /// newer Kossé or a hand edit added. `$schema` (editor metadata the snapshot never shows, so
+    /// the dashboard cannot send it back) is kept the same way.
     pub fn keep_unknown_from(&mut self, previous: &Self) {
         keep_missing(&mut self.unknown, &previous.unknown);
+        if self.schema.is_none() {
+            self.schema.clone_from(&previous.schema);
+        }
         for (id, service) in &mut self.services {
             let Some(old) = previous.services.get(id) else {
                 continue;

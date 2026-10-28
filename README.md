@@ -9,6 +9,13 @@ A native macOS tray menu and a lightweight local dashboard for the development s
 
 You start dev servers from terminals, scripts and coding agents. A day later there are a dozen listeners on unremembered ports, some from worktrees you forgot. Kossé shows them grouped by repository, worktree and package, with honest observations (listening, reachable over HTTP, or neither) and current CPU and memory. It stops a forgotten process only after confirming its exact identity. It never asks you to register projects or change how you launch them.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-dark.png">
+  <img src="docs/screenshots/dashboard-light.png" alt="The Kossé dashboard: project cards for two checkouts of one repository and a package directory, each listing processes with their ports, what an HTTP probe saw (200, 404, an untrusted TLS certificate, a database that was not probed), uptime, CPU, memory and Inspect and Stop actions." width="900">
+</picture>
+
+<sub>Fixture processes from the browser suite (`bun run screenshots`).</sub>
+
 > **Status: in development, not yet usable.** v1 targets macOS on Apple silicon. Progress is tracked slice by slice in the [implementation plan](blueprint/implementation-plan.md), with evidence for each slice in [`docs/evidence/`](docs/evidence/).
 
 ## Principles

@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./app";
 import "./styles.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
 
 const rootElement = document.getElementById("app");
 if (!rootElement) {
@@ -15,7 +15,7 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App pathname={window.location.pathname} />
+      <App />
     </QueryClientProvider>
   </StrictMode>,
 );
