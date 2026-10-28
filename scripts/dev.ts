@@ -101,7 +101,8 @@ if (!existsSync(vite)) {
 
 const executable = await buildBackend();
 const backend = await spawn(
-  [executable, "serve", "--no-open", "--port", String(devPorts.backend)],
+  // --dev (debug builds only) admits the Vite authority in the backend's Host/Origin policy.
+  [executable, "serve", "--no-open", "--dev", "--port", String(devPorts.backend)],
   root,
   ["ignore", "inherit", "inherit"],
 );

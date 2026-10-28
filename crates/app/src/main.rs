@@ -10,19 +10,25 @@ macro_rules! report {
     }};
 }
 
+mod api;
 mod assets;
 mod cli;
+mod guard;
 mod list;
+mod prober;
 mod scheduler;
 mod server;
 
-use std::{io, process::ExitCode};
+use std::{io, process::ExitCode, sync::Arc};
 
 use clap::Parser;
 
 use crate::{
+    api::AppState,
     cli::{Cli, Command, ServeArgs},
+    guard::{ActionToken, Policy},
     list::ListError,
+    prober::{Probes, Scope},
     scheduler::{SCAN_INTERVAL, Scheduler},
     server::ServeError,
 };
@@ -40,6 +46,8 @@ enum AppError {
     List(#[from] ListError),
     #[error("could not start the scanner: {0}")]
     Scanner(#[source] io::Error),
+    #[error("could not create the action token: {0}")]
+    Token(#[source] io::Error),
 }
 
 fn main() -> ExitCode {
@@ -75,13 +83,30 @@ async fn serve(args: ServeArgs) -> Result<(), AppError> {
         source,
     })?;
     let url = format!("http://{addr}/");
+    let token = ActionToken::generate().map_err(AppError::Token)?;
+    let policy = Arc::new(Policy::new(addr.port(), dev_mode(&args), token));
+    // The only scanner of this instance; every route reads its snapshots.
+    let probes = Arc::new(Probes::new(probe_scope(&args)));
+    let scheduler =
+        Scheduler::start(SCAN_INTERVAL, Arc::clone(&probes)).map_err(AppError::Scanner)?;
+    let (stopping, stopping_receiver) = tokio::sync::watch::channel(false);
+    let probing = tokio::spawn(prober::run(
+        Arc::clone(&probes),
+        scheduler.handle().subscribe(),
+        stopping_receiver.clone(),
+    ));
+    let app = server::router(AppState::new(
+        scheduler.handle(),
+        policy,
+        probes,
+        stopping_receiver,
+    ));
     report!("stackscan {} listening on {url}", env!("CARGO_PKG_VERSION"));
-    // The only scanner of this instance; S04's API reads its snapshots.
-    let scheduler = Scheduler::start(SCAN_INTERVAL).map_err(AppError::Scanner)?;
     if !args.no_open {
         open_in_browser(&url);
     }
-    let served = server::run(listener).await;
+    let served = server::run(listener, app, stopping).await;
+    probing.abort();
     // Waiting for a scan in progress blocks, so keep it off the async workers.
     let stopped = tokio::task::spawn_blocking(move || scheduler.shutdown(SCANNER_STOP_DEADLINE))
         .await
@@ -92,6 +117,35 @@ async fn serve(args: ServeArgs) -> Result<(), AppError> {
     served?;
     report!("stackscan stopped");
     Ok(())
+}
+
+/// Development mode (admitting the Vite dev server's authority) exists only in debug builds.
+fn dev_mode(args: &ServeArgs) -> bool {
+    #[cfg(debug_assertions)]
+    {
+        if args.dev {
+            report!(
+                "stackscan: development mode: also answering for {}",
+                guard::DEV_AUTHORITY
+            );
+        }
+        args.dev
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = args;
+        false
+    }
+}
+
+/// Automatic probing covers every candidate, except in debug builds given `--probe-only`.
+fn probe_scope(args: &ServeArgs) -> Scope {
+    #[cfg(debug_assertions)]
+    if let Some(pids) = &args.probe_only {
+        return Scope::Only(pids.0.iter().copied().collect());
+    }
+    let _ = args;
+    Scope::All
 }
 
 /// Best effort: the server is already useful without a browser window, so failures only warn.

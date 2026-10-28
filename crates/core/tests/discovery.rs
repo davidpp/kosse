@@ -330,6 +330,7 @@ fn withheld_metadata_is_unknown_not_guessed() {
     assert_eq!(service.process.identity.started_at_secs, None);
     assert_eq!(service.process.user_id, None);
     assert_eq!(service.process.cwd, None);
+    assert_eq!(service.process.command, None);
     assert_eq!(service.process.metrics.cpu, CpuUsage::Unavailable);
     assert_eq!(service.process.metrics.memory_bytes, None);
     assert_eq!(service.project, None, "no cwd, no guessed project");
@@ -341,6 +342,7 @@ fn withheld_metadata_is_unknown_not_guessed() {
                 fields: vec![
                     ProcessField::StartTime,
                     ProcessField::User,
+                    ProcessField::Command,
                     ProcessField::Cwd,
                     ProcessField::Cpu,
                     ProcessField::Memory,

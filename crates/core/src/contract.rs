@@ -1,5 +1,6 @@
 //! Types serialized to the browser. TypeScript declarations are generated from these definitions,
-//! so the web client never hand-maintains a copy of the model.
+//! so the web client never hand-maintains a copy of the model. The service model itself is in
+//! [`crate::model`]; this module adds the API's own request and response types.
 
 use std::{any::TypeId, collections::HashSet};
 
@@ -14,12 +15,71 @@ pub struct Health {
     pub version: String,
 }
 
+/// The per-instance action token. Unsafe API requests carry it in the `X-Stackscan-Token`
+/// header. It is served only to same-origin requests and changes on every restart.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Session {
+    pub token: String,
+}
+
+/// `POST /api/probe`: probe one endpoint now ("try HTTP"). The identity must match the current
+/// snapshot, and the endpoint must allow requests (see `ProbeSkip`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProbeRequest {
+    pub identity: crate::model::ProcessIdentity,
+    pub port: u16,
+}
+
+/// The body of every API error response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiError {
+    pub error: ApiErrorCode,
+    /// A human-readable explanation; not meant for parsing.
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum ApiErrorCode {
+    /// The `Host` (or request-target authority) is not this instance's loopback authority.
+    HostNotAllowed,
+    /// A cross-origin request, or an unsafe one without this instance's exact `Origin`.
+    OriginNotAllowed,
+    /// An unsafe request without the current action token (see [`Session`]).
+    TokenRequired,
+    /// Unsafe requests must send `Content-Type: application/json`.
+    UnsupportedMediaType,
+    /// The body exceeds 16 KiB: refused before reading when `Content-Length` says so, and while
+    /// reading for a chunked body.
+    PayloadTooLarge,
+    /// The JSON body does not match the request type.
+    InvalidPayload,
+    /// Too many refreshes or requested probes; retry after the `Retry-After` seconds.
+    RateLimited,
+    /// The process identity (PID + start time) or port is not in the current snapshot: the
+    /// process ended or the PID was reused. Refresh and retry.
+    StaleIdentity,
+    /// This endpoint may not be probed: another user's process, or not on loopback.
+    NotProbeable,
+    /// No scan finished in time (the scanner is busy or stalled); the last snapshot still
+    /// stands.
+    ScannerBusy,
+    /// The scanner stopped; restart Stackscan.
+    ScannerStopped,
+}
+
 /// Every contract type in one TypeScript module.
 #[must_use]
 pub fn typescript_bindings() -> String {
     let mut module = BindingsModule::new();
     // Roots: the types API handlers serialize. Types they reference are included automatically.
     module.add::<Health>();
+    module.add::<Session>();
+    module.add::<ApiError>();
+    module.add::<ProbeRequest>();
     module.add::<crate::model::Snapshot>();
     module.finish()
 }

@@ -24,7 +24,7 @@ use serde::Serialize;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tempfile::TempDir;
 
-use crate::protocol::Ready;
+use crate::protocol::{Ready, Serve};
 
 const BINARY: &str = "stackscan-fixture";
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -42,6 +42,9 @@ pub struct FixtureSpec {
     executable_name: Option<String>,
     cwd: Option<PathBuf>,
     busy: bool,
+    serve: Serve,
+    record: bool,
+    extra_args: Vec<String>,
 }
 
 impl Default for FixtureSpec {
@@ -59,6 +62,9 @@ impl FixtureSpec {
             executable_name: None,
             cwd: None,
             busy: false,
+            serve: Serve::Banner,
+            record: false,
+            extra_args: Vec::new(),
         }
     }
 
@@ -96,6 +102,27 @@ impl FixtureSpec {
     #[must_use]
     pub fn busy(mut self) -> Self {
         self.busy = true;
+        self
+    }
+
+    /// What every connection gets (default: a non-HTTP banner).
+    #[must_use]
+    pub fn serve(mut self, serve: Serve) -> Self {
+        self.serve = serve;
+        self
+    }
+
+    /// Records what each connection sent; see [`Fixture::received`].
+    #[must_use]
+    pub fn record(mut self) -> Self {
+        self.record = true;
+        self
+    }
+
+    /// Extra, ignored arguments, so the process has this command line (after `--`).
+    #[must_use]
+    pub fn args(mut self, args: &[&str]) -> Self {
+        self.extra_args = args.iter().map(|&arg| arg.to_owned()).collect();
         self
     }
 }
@@ -190,9 +217,15 @@ impl Fixture {
         if spec.busy {
             command.arg("--busy");
         }
+        if spec.record {
+            command.arg("--record");
+        }
+        command.arg("--serve").arg(spec.serve.as_arg());
         command
             .arg("--max-lifetime-secs")
             .arg(spec.max_lifetime.as_secs().max(1).to_string())
+            .arg("--")
+            .args(&spec.extra_args)
             .current_dir(&canonical_cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -278,6 +311,22 @@ impl Fixture {
     #[must_use]
     pub fn pid(&self) -> u32 {
         self.record.pid
+    }
+
+    /// What connections to `port` sent so far, one entry per connection, when spawned with
+    /// [`FixtureSpec::record`]. Empty if nothing connected.
+    #[must_use]
+    pub fn received(&self, port: u16) -> Vec<String> {
+        let log = self.record.cwd.join(format!("received-{port}.log"));
+        std::fs::read(log).map_or_else(
+            |_| Vec::new(),
+            |bytes| {
+                let text = String::from_utf8_lossy(&bytes).into_owned();
+                let mut entries: Vec<String> = text.split("\n--\n").map(str::to_owned).collect();
+                entries.pop(); // after the last separator
+                entries
+            },
+        )
     }
 
     /// Mutable access for tests that must exercise the identity check with a wrong record.

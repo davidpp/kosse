@@ -1,8 +1,10 @@
-//! Process metadata via `sysinfo`: start time, parent, owner, working directory, resident memory
-//! and accumulated CPU time.
+//! Process metadata via `sysinfo`: start time, parent, owner, command line, working directory,
+//! resident memory and accumulated CPU time. The command line is redacted here, so the raw
+//! argument vector never leaves this module.
 
 use std::collections::{HashMap, HashSet};
 
+use crate::{model::CommandLine, redact};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
 
 /// What the OS disclosed about a running process. `None` fields were withheld.
@@ -12,6 +14,8 @@ pub struct ProcessDetails {
     pub parent_pid: Option<u32>,
     pub user_id: Option<u32>,
     pub effective_user_id: Option<u32>,
+    /// Redacted; `None` when the OS withheld the arguments (other users' processes).
+    pub command: Option<CommandLine>,
     pub cwd: Option<String>,
     /// Resident memory and total CPU time so far, both from one task-info read; `None` when
     /// the OS withheld it (it does for other users' processes).
@@ -67,6 +71,8 @@ impl ProcessInspector {
             true,
             ProcessRefreshKind::nothing()
                 .with_user(UpdateKind::Always)
+                // A process's arguments are read once; argv rewrites after start are not seen.
+                .with_cmd(UpdateKind::OnlyIfNotSet)
                 .with_cwd(UpdateKind::Always)
                 .with_cpu()
                 .with_memory(),
@@ -121,6 +127,9 @@ impl ProcessInspector {
             parent_pid: process.parent().map(Pid::as_u32),
             user_id: process.user_id().map(|uid| **uid),
             effective_user_id: process.effective_user_id().map(|uid| **uid),
+            command: Some(process.cmd())
+                .filter(|args| !args.is_empty())
+                .map(redact::command_line),
             cwd: process
                 .cwd()
                 .map(|cwd| cwd.to_string_lossy().into_owned())
@@ -136,12 +145,13 @@ impl ProcessInspector {
         })
     }
 
-    /// Whether this process runs with root privileges, and so can see every user's sockets.
-    /// `None` when even our own process could not be inspected.
-    pub fn running_as_root(&mut self) -> Option<bool> {
+    /// The effective user ID of this process: root (0) sees every user's sockets, and only
+    /// this user's processes are probed automatically. `None` when even our own process could not
+    /// be inspected.
+    pub fn own_effective_user(&mut self) -> Option<u32> {
         let me = sysinfo::get_current_pid().ok()?;
         match self.inspect(&[me.as_u32()]).remove(&me.as_u32()) {
-            Some(ProcessState::Running(details)) => details.effective_user_id.map(|uid| uid == 0),
+            Some(ProcessState::Running(details)) => details.effective_user_id,
             _ => None,
         }
     }

@@ -4,14 +4,18 @@ use std::{collections::BTreeMap, net::IpAddr};
 
 use crate::{
     model::{Endpoint, Exposure, TransportProtocol},
+    probe,
     sockets::ListenSocket,
 };
 
 /// Groups one process's sockets by port. IPv4 and IPv6 sockets on the same port (a typical
-/// `localhost` dual bind) become one endpoint listing both addresses.
+/// `localhost` dual bind) become one endpoint listing both addresses. Each endpoint starts as an
+/// HTTP candidate or a skipped one (see [`probe`]).
 pub fn endpoints_of<'a>(sockets: impl IntoIterator<Item = &'a ListenSocket>) -> Vec<Endpoint> {
     let mut by_port: BTreeMap<u16, Vec<IpAddr>> = BTreeMap::new();
+    let mut process_name = None;
     for socket in sockets {
+        process_name = process_name.or(socket.process_name.as_deref());
         by_port
             .entry(socket.port)
             .or_default()
@@ -27,6 +31,7 @@ pub fn endpoints_of<'a>(sockets: impl IntoIterator<Item = &'a ListenSocket>) -> 
                 protocol: TransportProtocol::Tcp,
                 port,
                 exposure: exposure_of(&addresses),
+                http: probe::initial_state(port, &addresses, process_name),
                 bind_addresses: addresses.iter().map(ToString::to_string).collect(),
             }
         })

@@ -25,6 +25,8 @@ use stackscan_core::{
 };
 use tokio::sync::{oneshot, watch};
 
+use crate::prober::Probes;
+
 /// Target time between scans (blueprint/architecture.md).
 pub const SCAN_INTERVAL: Duration = Duration::from_secs(3);
 /// Longest a [`SchedulerHandle::refresh`] waits. A scan normally takes milliseconds; the bound
@@ -35,19 +37,15 @@ pub const REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
 pub type Latest = Option<Arc<Snapshot>>;
 
 /// One scan attempt, as the worker sees it.
-type Scan = Box<dyn FnMut() -> Result<Observation, String> + Send>;
+pub(crate) type Scan = Box<dyn FnMut() -> Result<Observation, String> + Send>;
 /// Builds a fresh scan (with fresh retained state); called again after a panic.
-type MakeScan = Box<dyn Fn() -> Scan + Send>;
+pub(crate) type MakeScan = Box<dyn Fn() -> Scan + Send>;
 
 enum Request {
     Refresh(oneshot::Sender<Arc<Snapshot>>),
     Shutdown,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "returned by refresh, which the S04 API calls")
-)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum RefreshError {
     #[error("the scanner has stopped")]
@@ -56,7 +54,7 @@ pub enum RefreshError {
     TimedOut,
 }
 
-/// What request handlers (S04) and the tray (S08) hold: read the latest snapshot, wait for
+/// What request handlers and the tray (S08) hold: read the latest snapshot, wait for
 /// changes, or ask for a fresh scan. Cloning is cheap; it never scans by itself.
 #[derive(Clone)]
 pub struct SchedulerHandle {
@@ -65,40 +63,24 @@ pub struct SchedulerHandle {
 }
 
 impl SchedulerHandle {
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by the S04 API and the S08 tray")
-    )]
     #[must_use]
     pub fn latest(&self) -> Latest {
         self.latest.borrow().clone()
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by the S04 API and the S08 tray")
-    )]
     /// A receiver that wakes on every publication.
     #[must_use]
     pub fn subscribe(&self) -> watch::Receiver<Latest> {
         self.latest.clone()
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by the S04 API and the S08 tray")
-    )]
     /// The snapshot of a scan that started after this call, within [`REFRESH_TIMEOUT`].
-    /// Requests are coalesced, not queued per caller, but every one still triggers a scan soon:
-    /// an HTTP refresh endpoint (S04) should rate-limit callers.
+    /// Requests are coalesced, not queued per caller, but every one still triggers a scan soon,
+    /// so the HTTP refresh endpoint rate-limits its callers.
     pub async fn refresh(&self) -> Result<Arc<Snapshot>, RefreshError> {
         self.refresh_within(REFRESH_TIMEOUT).await
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by the S04 API and the S08 tray")
-    )]
     pub async fn refresh_within(&self, timeout: Duration) -> Result<Arc<Snapshot>, RefreshError> {
         let (reply, done) = oneshot::channel();
         self.requests
@@ -119,12 +101,18 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    /// Starts the scanner thread; the first scan begins immediately.
-    pub fn start(interval: Duration) -> io::Result<Self> {
-        Self::start_with(interval, Box::new(scanner_scan))
+    /// Starts the scanner thread; the first scan begins immediately. Each observation carries the
+    /// HTTP probe results known to `probes` at the time.
+    pub fn start(interval: Duration, probes: Arc<Probes>) -> io::Result<Self> {
+        Self::start_with(
+            interval,
+            Box::new(move || scanner_scan(Arc::clone(&probes))),
+        )
     }
 
-    fn start_with(interval: Duration, make_scan: MakeScan) -> io::Result<Self> {
+    /// [`Scheduler::start`] with an injected scan (tests script outcomes the OS cannot produce
+    /// on demand).
+    pub(crate) fn start_with(interval: Duration, make_scan: MakeScan) -> io::Result<Self> {
         let (requests, inbox) = mpsc::channel();
         let (publisher, latest) = watch::channel(None);
         let worker = thread::Builder::new()
@@ -148,10 +136,6 @@ impl Scheduler {
         })
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by the S04 API and the S08 tray")
-    )]
     #[must_use]
     pub fn handle(&self) -> SchedulerHandle {
         self.handle.clone()
@@ -184,9 +168,13 @@ impl Drop for Scheduler {
 }
 
 /// The production scan: one [`Scanner`], built on first use inside the worker's panic guard.
-fn scanner_scan() -> Scan {
+fn scanner_scan(probes: Arc<Probes>) -> Scan {
     let mut scanner = Scanner::new();
-    Box::new(move || scanner.scan().map_err(|error| error.to_string()))
+    Box::new(move || {
+        let mut observation = scanner.scan().map_err(|error| error.to_string())?;
+        probes.annotate(&mut observation);
+        Ok(observation)
+    })
 }
 
 struct Worker {
@@ -326,6 +314,13 @@ mod tests {
 
     const LONG: Duration = Duration::from_secs(3600);
 
+    /// Scheduler tests never probe (no prober task runs, and the scope is empty anyway).
+    fn no_probes() -> Arc<Probes> {
+        Arc::new(Probes::new(crate::prober::Scope::Only(
+            std::collections::HashSet::new(),
+        )))
+    }
+
     fn runtime() -> tokio::runtime::Runtime {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -344,7 +339,7 @@ mod tests {
 
     #[test]
     fn scans_immediately_and_publishes_increasing_revisions() {
-        let scheduler = Scheduler::start(LONG).expect("start");
+        let scheduler = Scheduler::start(LONG, no_probes()).expect("start");
         let handle = scheduler.handle();
         runtime().block_on(async {
             let first = first_snapshot(&handle).await;
@@ -361,7 +356,7 @@ mod tests {
 
     #[test]
     fn concurrent_refreshes_coalesce_into_scans_that_started_after_them() {
-        let scheduler = Scheduler::start(LONG).expect("start");
+        let scheduler = Scheduler::start(LONG, no_probes()).expect("start");
         let handle = scheduler.handle();
         runtime().block_on(async {
             first_snapshot(&handle).await;
@@ -403,7 +398,7 @@ mod tests {
                 .busy(),
         )
         .expect("busy fixture");
-        let scheduler = Scheduler::start(Duration::from_millis(500)).expect("start");
+        let scheduler = Scheduler::start(Duration::from_millis(500), no_probes()).expect("start");
         let handle = scheduler.handle();
         let cpu_at = |snapshot: &Snapshot| {
             snapshot
@@ -444,7 +439,7 @@ mod tests {
 
     #[test]
     fn shutdown_stops_the_thread_and_refresh_reports_it() {
-        let scheduler = Scheduler::start(LONG).expect("start");
+        let scheduler = Scheduler::start(LONG, no_probes()).expect("start");
         let handle = scheduler.handle();
         assert!(scheduler.shutdown(LONG));
         runtime().block_on(async {

@@ -5,7 +5,7 @@ Stackscan observes local development services (listeners, processes, projects) a
 ## Commands
 
 - `bun run check` — the full non-mutating gate (CI runs the same; the pre-commit hook runs a fast subset). Run it before claiming work is done.
-- `bun run dev` — backend on `127.0.0.1:47832`, Vite on `127.0.0.1:47833` with a same-origin `/api` proxy.
+- `bun run dev` — backend (`serve --dev`, debug builds only) on `127.0.0.1:47832`, Vite on `127.0.0.1:47833` with a same-origin `/api` proxy.
 - `cargo nextest run --workspace <filter>` runs matching Rust tests (`--workspace` also builds the `stackscan-fixture` binary that fixture tests spawn; with `-p` alone they fail on a clean target, or run a stale fixture binary on a warm one); `bun run --cwd web test <file-pattern>` runs matching web test files.
 - `bun run contracts` regenerates `web/src/generated/contracts.ts` after a contract type changes. Never hand-edit generated files (`contracts.ts`, `routeTree.gen.ts`).
 - `bun run fmt` and `bun run contracts` rewrite tracked files. Vite (`dev`, `build`, and so `check`) regenerates `web/src/routeTree.gen.ts` when routes change; commit it with the route. CI fails if `check` leaves the tree dirty.
@@ -15,10 +15,11 @@ Stackscan observes local development services (listeners, processes, projects) a
 - One scanner per running application. Views, request handlers and the tray read the shared snapshot; they never scan.
 - All views use the same service model and action policy. No alternate destructive path.
 - A destructive action needs a fresh PID + start-time identity and explicit confirmation. Never signal process groups, parents, other users' processes, or Stackscan itself.
-- Bind loopback only. Unsafe HTTP methods require the Host/Origin/token checks in blueprint/architecture.md; never relax them for development beyond the documented dev authority.
-- Every displayed or logged command line passes central redaction. Process-derived strings are untrusted text.
+- Bind loopback only. Every route passes `crates/app/src/guard.rs` (exact Host, cross-origin refusal, unsafe-method Origin/JSON/size/token checks, CSP); never relax it for development beyond the `--dev` authority, which exists only in debug builds. No CORS headers.
+- Every displayed, served or logged command line passes `stackscan_core::redact` (applied once, in `inspect.rs`); raw argv never leaves that module. Process- and probe-derived strings are untrusted text. Request handlers log nothing per request.
+- HTTP probes only connect to loopback addresses (never a resolved name), never follow redirects, cap time and body, and never disable TLS verification (rustls, offline). Automatic probes go only to own-user, project-attributed processes; other users' processes are never probed. The only URLs emitted are `prober::open_url`'s `http(s)://localhost:<port>/`. Tests never probe real services: `serve` in tests runs with the debug-only `--probe-only=<fixture PIDs>`.
 - `crates/core` has no UI, router or HTTP-server dependency.
-- Socket enumeration, process name and executable path come from `listeners` (patched, vendored in `vendor/listeners`) only inside `crates/core/src/sockets.rs`; start time, parent, user and cwd come from `sysinfo` in `crates/core/src/inspect.rs`. Never drop a socket for missing metadata: unknown is `null` plus a snapshot warning, never a silent omission or an empty success.
+- Socket enumeration, process name and executable path come from `listeners` (patched, vendored in `vendor/listeners`) only inside `crates/core/src/sockets.rs`; start time, parent, user, command line (redacted there) and cwd come from `sysinfo` in `crates/core/src/inspect.rs`. Never drop a socket for missing metadata: unknown is `null` plus a snapshot warning, never a silent omission or an empty success.
 - Project attribution never parses `.git` or manifest contents itself: a stat-only walk (stopping before the home directory, the filesystem root or another filesystem) finds candidates, and `git` runs only through `crates/core/src/git.rs` (developer-directory binary, timeout, no inherited `GIT_*`). Separate worktrees are separate projects; an unknown cwd is no project, never a guess.
 - CPU is never a fabricated zero: `warmingUp` until a second observation of the same PID + start identity, `unavailable` when withheld.
 - Rust: expected failures are typed `Result`s; no `unwrap`/`expect`/`panic` on OS data or process races. Use `#[expect(lint, reason = "…")]`, not `#[allow]`.

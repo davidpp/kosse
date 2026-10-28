@@ -21,6 +21,7 @@ use crate::{
         CpuUsage, Observation, ProcessField, ProcessIdentity, ProcessMetrics, ProcessRecord,
         Project, ScanWarning, Service,
     },
+    probe,
     sockets::{ListenSocket, SocketsError, tcp_listen_sockets},
 };
 
@@ -29,7 +30,8 @@ pub struct Scanner {
     inspector: ProcessInspector,
     attributor: Attributor,
     cpu: CpuSampler,
-    running_as_root: bool,
+    /// Our effective user; `None` (unknown) probes nothing automatically.
+    own_user: Option<u32>,
 }
 
 /// Cumulative work counters, for checking that scans do not repeat work.
@@ -62,14 +64,12 @@ impl Scanner {
     #[must_use]
     pub fn with_attributor(attributor: Attributor) -> Self {
         let mut inspector = ProcessInspector::new();
-        // Unknown privileges are treated as unprivileged: the warning then errs on the side of
-        // saying listeners may be missing.
-        let running_as_root = inspector.running_as_root().unwrap_or(false);
+        let own_user = inspector.own_effective_user();
         Self {
             inspector,
             attributor,
             cpu: CpuSampler::default(),
-            running_as_root,
+            own_user,
         }
     }
 
@@ -121,7 +121,9 @@ impl Scanner {
         let enumerated_at_secs = scanned_at_ms / 1000;
 
         let mut warnings = Vec::new();
-        if !self.running_as_root {
+        // Unknown privileges are treated as unprivileged: the warning then errs on the side of
+        // saying listeners may be missing.
+        if self.own_user != Some(0) {
             warnings.push(ScanWarning::OtherUsersNotVisible);
         }
         let live = live_owners(by_pid, &mut states, enumerated_at_secs, &mut warnings);
@@ -179,9 +181,14 @@ impl Scanner {
                 }
                 None => (None, None),
             };
+            let own_user = process.user_id.is_some() && process.user_id == self.own_user;
+            let mut endpoints = endpoints_of(sockets);
+            for endpoint in &mut endpoints {
+                endpoint.http = probe::restrict(endpoint.http.clone(), own_user, project.is_some());
+            }
             services.push(Service {
                 process,
-                endpoints: endpoints_of(sockets),
+                endpoints,
                 project,
                 package,
             });
@@ -253,6 +260,7 @@ fn record(
         identity,
         name: first.and_then(|socket| socket.process_name.clone()),
         executable: first.and_then(|socket| socket.executable.clone()),
+        command: details.command.clone(),
         cwd: details.cwd.clone(),
         parent_pid: details.parent_pid,
         user_id: details.user_id,
@@ -274,6 +282,7 @@ fn missing_fields(process: &ProcessRecord) -> Vec<ProcessField> {
             ProcessField::StartTime,
         ),
         (process.user_id.is_none(), ProcessField::User),
+        (process.command.is_none(), ProcessField::Command),
         (process.cwd.is_none(), ProcessField::Cwd),
         (
             process.metrics.cpu == CpuUsage::Unavailable,

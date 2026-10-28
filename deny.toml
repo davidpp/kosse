@@ -17,7 +17,20 @@ ignore = []
 # in the graph; add others deliberately when a new dependency needs them.
 allow = ["Apache-2.0", "BSD-3-Clause", "MIT", "Unicode-3.0"]
 confidence-threshold = 0.9
-exceptions = []
+# ISC, only for the TLS stack the release binary ships for HTTP probes (S04): rustls's ring
+# provider and webpki certificate verifier. Permissive and MIT-compatible; allowed per crate rather
+# than globally so a new ISC dependency is a deliberate decision.
+exceptions = [
+  { crate = "ring", allow = [
+    "ISC",
+  ] },
+  { crate = "rustls-webpki", allow = [
+    "ISC",
+  ] },
+  { crate = "untrusted", allow = [
+    "ISC",
+  ] },
+]
 
 [licenses.private]
 ignore = true

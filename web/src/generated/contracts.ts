@@ -6,6 +6,39 @@
  */
 export type Health = { name: string, version: string, };
 
+/**
+ * The per-instance action token. Unsafe API requests carry it in the `X-Stackscan-Token`
+ * header. It is served only to same-origin requests and changes on every restart.
+ */
+export type Session = { token: string, };
+
+export type ApiErrorCode = "hostNotAllowed" | "originNotAllowed" | "tokenRequired" | "unsupportedMediaType" | "payloadTooLarge" | "invalidPayload" | "rateLimited" | "staleIdentity" | "notProbeable" | "scannerBusy" | "scannerStopped";
+
+/**
+ * The body of every API error response.
+ */
+export type ApiError = { error: ApiErrorCode, 
+/**
+ * A human-readable explanation; not meant for parsing.
+ */
+message: string, };
+
+/**
+ * A PID plus the evidence that it still names the same process. A PID alone can be recycled.
+ */
+export type ProcessIdentity = { pid: number, 
+/**
+ * Process start time in Unix seconds; `null` when the OS would not disclose it. Without it
+ * the identity is not eligible for destructive actions.
+ */
+startedAtSecs: number | null, };
+
+/**
+ * `POST /api/probe`: probe one endpoint now ("try HTTP"). The identity must match the current
+ * snapshot, and the endpoint must allow requests (see `ProbeSkip`).
+ */
+export type ProbeRequest = { identity: ProcessIdentity, port: number, };
+
 export type GitHead = { "kind": "branch", name: string, } | { "kind": "detached", commit: string, } | { "kind": "unknown" };
 
 /**
@@ -28,12 +61,66 @@ linked: boolean, head: GitHead, };
 
 export type AttributionFailure = "cwdUnavailable" | "gitUnavailable" | "gitTimedOut" | "gitFailed" | "deferred";
 
-export type ProcessField = "name" | "startTime" | "user" | "cwd" | "cpu" | "memory";
+export type ProcessField = "name" | "startTime" | "user" | "command" | "cwd" | "cpu" | "memory";
 
 /**
  * Who can reach an endpoint, judged from its bind addresses alone (no firewall knowledge).
  */
 export type Exposure = "loopback" | "interface" | "allInterfaces";
+
+export type TlsFailure = "certificate" | "handshake";
+
+/**
+ * The outcome of one bounded `GET /`. Redirects are recorded, never followed.
+ */
+export type ProbeResult = { "kind": "response", 
+/**
+ * The `http://` or `https://` loopback URL that answered, for opening the service.
+ */
+url: string, status: number, 
+/**
+ * The HTML `<title>`, whitespace-collapsed; untrusted text.
+ */
+title: string | null, 
+/**
+ * A redirect's `Location` header, redacted and as sent: untrusted text, not a link.
+ */
+location: string | null, 
+/**
+ * The response arrived over TLS whose certificate verified against the keychains' trusted
+ * roots (checked offline, in process).
+ */
+tls: boolean, 
+/**
+ * Only the first 64 KiB of the body were read.
+ */
+bodyTruncated: boolean, } | { "kind": "timedOut" } | { "kind": "refused" } | { "kind": "closed" } | { "kind": "tlsFailed", failure: TlsFailure, 
+/**
+ * The TLS library's description: untrusted text (it can quote the peer's certificate).
+ */
+reason: string, } | { "kind": "notHttp" };
+
+/**
+ * Why an endpoint is not probed automatically. Only the current user's processes that run in
+ * a project are probed on their own; `otherUser` and `notOnLoopback` are never probed, the rest
+ * can be probed on request ("try HTTP").
+ */
+export type ProbeSkip = "notOnLoopback" | "otherUser" | "knownNonHttpPort" | "knownNonHttpProcess" | "notAttributed";
+
+/**
+ * Whether an endpoint was probed over HTTP, and what was seen.
+ */
+export type HttpProbe = { "state": "skipped", reason: ProbeSkip, } | { "state": "pending" } | { "state": "probed", 
+/**
+ * When the request started, in Unix milliseconds. Results are reused for a while
+ * (probing is slower than scanning), so this can be older than the scan.
+ */
+probedAtMs: number, 
+/**
+ * The user asked for this probe (`POST /api/probe`, "try HTTP") on an endpoint that is
+ * not probed automatically; `false` for automatic probes.
+ */
+requested: boolean, result: ProbeResult, };
 
 export type TransportProtocol = "tcp";
 
@@ -45,7 +132,11 @@ export type Endpoint = { protocol: TransportProtocol, port: number,
  * Canonical IP text (IPv4-mapped IPv6 shown as IPv4), IPv4 first, each once. Separate
  * IPv4/IPv6 sockets on one port share an endpoint but keep their addresses here.
  */
-bindAddresses: Array<string>, exposure: Exposure, };
+bindAddresses: Array<string>, exposure: Exposure, 
+/**
+ * Bounded HTTP enrichment. Listening is a fact; this only says what an HTTP request saw.
+ */
+http: HttpProbe, };
 
 /**
  * Recognised package manifests. Only their presence is checked; contents are never read.
@@ -70,14 +161,21 @@ name: string,
 manifests: Array<Manifest>, };
 
 /**
- * A PID plus the evidence that it still names the same process. A PID alone can be recycled.
+ * A redacted command line.
  */
-export type ProcessIdentity = { pid: number, 
+export type CommandLine = { 
 /**
- * Process start time in Unix seconds; `null` when the OS would not disclose it. Without it
- * the identity is not eligible for destructive actions.
+ * Arguments, `argv[0]` first, with secret values replaced by `[redacted]`.
  */
-startedAtSecs: number | null, };
+args: Array<string>, 
+/**
+ * At least one value was hidden.
+ */
+redacted: boolean, 
+/**
+ * Arguments or characters beyond the display limits were dropped (after redaction).
+ */
+truncated: boolean, };
 
 /**
  * CPU use needs two observations of the same process; it is never reported as a made-up zero.
@@ -101,7 +199,12 @@ export type ProcessRecord = { identity: ProcessIdentity,
  * Short process name as reported by the OS: untrusted text, truncated by the kernel to 31
  * bytes and decoded lossily (U+FFFD for a cut character).
  */
-name: string | null, executable: string | null, cwd: string | null, parentPid: number | null, 
+name: string | null, executable: string | null, 
+/**
+ * The argument vector after central redaction (see `redact`); `null` when the OS withheld
+ * it. Untrusted text: display it, never execute it.
+ */
+command: CommandLine | null, cwd: string | null, parentPid: number | null, 
 /**
  * Real user ID of the process owner.
  */

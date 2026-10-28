@@ -227,6 +227,9 @@ pub struct ProcessRecord {
     /// bytes and decoded lossily (U+FFFD for a cut character).
     pub name: Option<String>,
     pub executable: Option<String>,
+    /// The argument vector after central redaction (see `redact`); `null` when the OS withheld
+    /// it. Untrusted text: display it, never execute it.
+    pub command: Option<CommandLine>,
     pub cwd: Option<String>,
     pub parent_pid: Option<u32>,
     /// Real user ID of the process owner.
@@ -235,6 +238,18 @@ pub struct ProcessRecord {
     #[ts(type = "number | null")]
     pub age_secs: Option<u64>,
     pub metrics: ProcessMetrics,
+}
+
+/// A redacted command line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandLine {
+    /// Arguments, `argv[0]` first, with secret values replaced by `[redacted]`.
+    pub args: Vec<String>,
+    /// At least one value was hidden.
+    pub redacted: bool,
+    /// Arguments or characters beyond the display limits were dropped (after redaction).
+    pub truncated: bool,
 }
 
 /// Resource use of a process at scan time.
@@ -274,6 +289,101 @@ pub struct Endpoint {
     /// IPv4/IPv6 sockets on one port share an endpoint but keep their addresses here.
     pub bind_addresses: Vec<String>,
     pub exposure: Exposure,
+    /// Bounded HTTP enrichment. Listening is a fact; this only says what an HTTP request saw.
+    pub http: HttpProbe,
+}
+
+/// Whether an endpoint was probed over HTTP, and what was seen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "state",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum HttpProbe {
+    /// Not an HTTP candidate, so never probed.
+    Skipped { reason: ProbeSkip },
+    /// A candidate without a result yet. A one-shot `stackscan list` never probes.
+    Pending,
+    Probed {
+        /// When the request started, in Unix milliseconds. Results are reused for a while
+        /// (probing is slower than scanning), so this can be older than the scan.
+        #[ts(type = "number")]
+        probed_at_ms: u64,
+        /// The user asked for this probe (`POST /api/probe`, "try HTTP") on an endpoint that is
+        /// not probed automatically; `false` for automatic probes.
+        requested: bool,
+        result: ProbeResult,
+    },
+}
+
+/// Why an endpoint is not probed automatically. Only the current user's processes that run in
+/// a project are probed on their own; `otherUser` and `notOnLoopback` are never probed, the rest
+/// can be probed on request ("try HTTP").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum ProbeSkip {
+    /// Bound only to non-loopback addresses; Stackscan probes loopback only.
+    NotOnLoopback,
+    /// Owned by another user or the system (or the owner is unknown).
+    OtherUser,
+    /// The port of a protocol that is not HTTP (databases, mail, SSH, …).
+    KnownNonHttpPort,
+    /// The process is a known non-HTTP server (databases, caches, SSH, …).
+    KnownNonHttpProcess,
+    /// The process does not run in a project, so it is not presumed to be a dev server.
+    NotAttributed,
+}
+
+impl ProbeSkip {
+    /// Whether the user may still ask for a probe of an endpoint skipped for this reason.
+    #[must_use]
+    pub fn allows_request(self) -> bool {
+        !matches!(self, Self::NotOnLoopback | Self::OtherUser)
+    }
+}
+
+/// The outcome of one bounded `GET /`. Redirects are recorded, never followed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum ProbeResult {
+    /// An HTTP response arrived: the service is reachable HTTP, whatever the status (404 and
+    /// 500 included).
+    Response {
+        /// The `http://` or `https://` loopback URL that answered, for opening the service.
+        url: String,
+        status: u16,
+        /// The HTML `<title>`, whitespace-collapsed; untrusted text.
+        title: Option<String>,
+        /// A redirect's `Location` header, redacted and as sent: untrusted text, not a link.
+        location: Option<String>,
+        /// The response arrived over TLS whose certificate verified against the keychains' trusted
+        /// roots (checked offline, in process).
+        tls: bool,
+        /// Only the first 64 KiB of the body were read.
+        body_truncated: bool,
+    },
+    /// No response within the time limit (the connection may have been accepted).
+    TimedOut,
+    /// The connection was refused: nothing listens there any more.
+    Refused,
+    /// The connection was accepted, then closed or reset without any answer (over plain HTTP
+    /// and over TLS).
+    Closed,
+    /// The endpoint speaks TLS, but the handshake or certificate check failed (for example a
+    /// self-signed certificate). Verification is never disabled.
+    TlsFailed {
+        failure: TlsFailure,
+        /// The TLS library's description: untrusted text (it can quote the peer's certificate).
+        reason: String,
+    },
+    /// The endpoint answered with something other than HTTP, or spoke before being asked (as
+    /// SSH, SMTP or MySQL do); no request was sent then.
+    NotHttp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -292,6 +402,16 @@ pub enum Exposure {
     Interface,
     /// Bound to a wildcard address (`0.0.0.0` or `::`): every interface.
     AllInterfaces,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum TlsFailure {
+    /// The certificate was not accepted: untrusted issuer, wrong name, expired, ….
+    Certificate,
+    /// The TLS handshake itself failed (protocol version, cipher suites, alerts, malformed
+    /// records).
+    Handshake,
 }
 
 /// Partial data in a snapshot: something that exists but could not be observed.
@@ -338,6 +458,7 @@ pub enum ProcessField {
     Name,
     StartTime,
     User,
+    Command,
     Cwd,
     Cpu,
     Memory,
@@ -372,6 +493,7 @@ impl fmt::Display for ProcessField {
             Self::Name => "name",
             Self::StartTime => "start time",
             Self::User => "user",
+            Self::Command => "command line",
             Self::Cwd => "working directory",
             Self::Cpu => "CPU",
             Self::Memory => "memory",
