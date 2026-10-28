@@ -190,9 +190,7 @@ write(
 
 ## Idea
 
-Kosse asks what is running on your computer and connects local endpoints to their owning process. The name comes from Québécois “kossé ?”. Write **Kosse** in prose and **kosse** in packages and the wordmark.
-
-« Kosse qui roule sur mon ordi ? »
+Kosse shows the development services running on your Mac and connects each endpoint to the process and project that own it. The name comes from Québécois “kossé ?” (“what's that?”), the question you ask about a port you don't recognise. That is etymology, not a tagline: Kosse has none. Write **Kosse** in prose and **kosse** in packages and the wordmark.
 
 ## Mark
 
@@ -230,12 +228,11 @@ The 18 pt template has black RGB and transparent alpha, a 14 pt tall glyph in a 
 
 ## Voice
 
-Plain, specific and unhurried. Never infer “forgotten”, “safe” or “healthy” from observations alone. One short line of French is enough.
+Strictly plain, specific and unhurried, written for a developer looking after their own services. Never infer “forgotten”, “safe” or “healthy” from observations alone. No French in the interface; the name carries the Québec link.
 
 - Empty after a successful scan: “No listeners found. Start a local service and it will appear here.”
 - Stop confirmation, illustrative values: “Stop node (PID 4821) in storefront? This will request a graceful stop and affect ports :5173 and :5174.” Buttons: **Cancel** / **Stop process**.
 - Unknown cwd: “Project unknown. The working directory isn’t available.”
-- About: “Kosse qui roule sur mon ordi ?”
 
 ## Assets
 
