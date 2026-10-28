@@ -3,5 +3,5 @@
   "sortTailwindcss": {
     "stylesheet": "web/src/styles.css"
   },
-  "ignorePatterns": ["blueprint/**", "web/src/generated/**", "vendor/**"]
+  "ignorePatterns": ["blueprint/**", "web/src/generated/**", "docs/kosse.schema.json", "vendor/**"]
 }

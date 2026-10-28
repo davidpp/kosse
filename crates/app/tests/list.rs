@@ -26,6 +26,7 @@ const V6: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
 
 fn kosse(args: &[&str]) -> Output {
     let output = Command::new(env!("CARGO_BIN_EXE_kosse"))
+        .env("KOSSE_CONFIG_DIR", "/var/empty/kosse-tests")
         .args(args)
         .output()
         .expect("run kosse");
@@ -158,12 +159,13 @@ fn list_table_shows_each_fixture_port_once_with_its_addresses() {
     let endpoints = &fixture.record().endpoints;
     let shared_port = endpoints[0].port().to_string();
     let v6_port = endpoints[2].port().to_string();
-    // The fixture's own temporary cwd is in no project.
+    // The fixture's own temporary cwd is in no project (nor configured service).
     let mut expected = vec![
         vec![
             pid.as_str(),
             "kosse-fixture",
             shared_port.as_str(),
+            "-",
             "-",
             "-",
             "127.0.0.1,",
@@ -173,6 +175,7 @@ fn list_table_shows_each_fixture_port_once_with_its_addresses() {
             pid.as_str(),
             "kosse-fixture",
             v6_port.as_str(),
+            "-",
             "-",
             "-",
             "::1",
@@ -281,6 +284,7 @@ fn list_json_attributes_projects_worktrees_and_packages() {
 #[test]
 fn list_rejects_unknown_flags_as_usage_errors() {
     let output = Command::new(env!("CARGO_BIN_EXE_kosse"))
+        .env("KOSSE_CONFIG_DIR", "/var/empty/kosse-tests")
         .args(["list", "--yaml"])
         .output()
         .expect("run kosse");
@@ -295,6 +299,7 @@ fn closed_stdout_and_stderr_do_not_crash_list() {
         let (stderr_reader, stderr_writer) = std::io::pipe().expect("stderr pipe");
         drop((stdout_reader, stderr_reader));
         let status = Command::new(env!("CARGO_BIN_EXE_kosse"))
+            .env("KOSSE_CONFIG_DIR", "/var/empty/kosse-tests")
             .args(args)
             .stdout(stdout_writer)
             .stderr(stderr_writer)

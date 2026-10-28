@@ -20,6 +20,7 @@ use std::{
 
 use kosse_core::{
     model::{Observation, Snapshot},
+    profiles::{CentralStore, Profiles},
     scan::Scanner,
     snapshot::{AttemptTimer, SnapshotTracker},
 };
@@ -102,11 +103,12 @@ pub struct Scheduler {
 
 impl Scheduler {
     /// Starts the scanner thread; the first scan begins immediately. Each observation carries the
-    /// HTTP probe results known to `probes` at the time.
-    pub fn start(interval: Duration, probes: Arc<Probes>) -> io::Result<Self> {
+    /// project profiles of `store` (and of repository files) and the HTTP probe results known to
+    /// `probes` at the time.
+    pub fn start(interval: Duration, probes: Arc<Probes>, store: CentralStore) -> io::Result<Self> {
         Self::start_with(
             interval,
-            Box::new(move || scanner_scan(Arc::clone(&probes))),
+            Box::new(move || scanner_scan(Arc::clone(&probes), store.clone())),
         )
     }
 
@@ -167,11 +169,15 @@ impl Drop for Scheduler {
     }
 }
 
-/// The production scan: one [`Scanner`], built on first use inside the worker's panic guard.
-fn scanner_scan(probes: Arc<Probes>) -> Scan {
+/// The production scan: one [`Scanner`] and its [`Profiles`], built on first use inside the
+/// worker's panic guard. Profiles apply before probe results: a service declared HTTP can make
+/// an endpoint a probe candidate.
+fn scanner_scan(probes: Arc<Probes>, store: CentralStore) -> Scan {
     let mut scanner = Scanner::new();
+    let mut profiles = Profiles::new(store);
     Box::new(move || {
         let mut observation = scanner.scan().map_err(|error| error.to_string())?;
+        profiles.apply(&mut observation, scanner.own_user());
         probes.annotate(&mut observation);
         Ok(observation)
     })
@@ -321,6 +327,12 @@ mod tests {
         )))
     }
 
+    /// A configuration directory that never exists (and cannot be created): no profiles, and
+    /// never the user's real configuration.
+    fn no_config() -> CentralStore {
+        CentralStore::new("/var/empty/kosse-tests".into())
+    }
+
     fn runtime() -> tokio::runtime::Runtime {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -339,7 +351,7 @@ mod tests {
 
     #[test]
     fn scans_immediately_and_publishes_increasing_revisions() {
-        let scheduler = Scheduler::start(LONG, no_probes()).expect("start");
+        let scheduler = Scheduler::start(LONG, no_probes(), no_config()).expect("start");
         let handle = scheduler.handle();
         runtime().block_on(async {
             let first = first_snapshot(&handle).await;
@@ -356,7 +368,7 @@ mod tests {
 
     #[test]
     fn concurrent_refreshes_coalesce_into_scans_that_started_after_them() {
-        let scheduler = Scheduler::start(LONG, no_probes()).expect("start");
+        let scheduler = Scheduler::start(LONG, no_probes(), no_config()).expect("start");
         let handle = scheduler.handle();
         runtime().block_on(async {
             first_snapshot(&handle).await;
@@ -398,7 +410,8 @@ mod tests {
                 .busy(),
         )
         .expect("busy fixture");
-        let scheduler = Scheduler::start(Duration::from_millis(500), no_probes()).expect("start");
+        let scheduler =
+            Scheduler::start(Duration::from_millis(500), no_probes(), no_config()).expect("start");
         let handle = scheduler.handle();
         let cpu_at = |snapshot: &Snapshot| {
             snapshot
@@ -439,7 +452,7 @@ mod tests {
 
     #[test]
     fn shutdown_stops_the_thread_and_refresh_reports_it() {
-        let scheduler = Scheduler::start(LONG, no_probes()).expect("start");
+        let scheduler = Scheduler::start(LONG, no_probes(), no_config()).expect("start");
         let handle = scheduler.handle();
         assert!(scheduler.shutdown(LONG));
         runtime().block_on(async {
@@ -502,6 +515,7 @@ mod tests {
             services: Vec::new(),
             projects: Vec::new(),
             warnings: Vec::new(),
+            profiles: Vec::new(),
         }
     }
 

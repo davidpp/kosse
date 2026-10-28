@@ -12,7 +12,8 @@
 //! 1. Connect to the loopback address only (never a resolved name, never off-host).
 //! 2. Wait briefly: a server that speaks first (SSH, SMTP, MySQL, banners) is not HTTP, and gets
 //!    no request.
-//! 3. Plain HTTP/1.1 `GET /`, `Host: localhost:<port>`, no credentials or cookies. The head must
+//! 3. Plain HTTP/1.1 `GET /` (or the service profile's validated, origin-relative `probePath`),
+//!    `Host: localhost:<port>`, no credentials or cookies. The head must
 //!    arrive within [`HEAD_TIMEOUT`]; at most [`BODY_LIMIT`] of the body is read, within
 //!    [`BODY_TIMEOUT`]. Redirects are recorded (redacted), never followed.
 //! 4. If the answer looked like TLS (a TLS record, a silent close, or a 400 that asks for HTTPS),
@@ -43,7 +44,7 @@ use hyper::{
 use hyper_util::rt::TokioIo;
 use kosse_core::{
     model::{HttpProbe, Observation, ProbeResult, ProcessIdentity, Snapshot, TlsFailure},
-    probe, redact,
+    probe, profiles, redact,
     scan::unix_millis,
 };
 use tokio::{
@@ -165,8 +166,9 @@ impl Probes {
         state.results.retain(|key, _| live.contains(key));
     }
 
-    /// Candidates in scope with no fresh result and no probe running; each is now in flight.
-    fn claim_due(&self, snapshot: &Snapshot, now: Instant) -> Vec<(Key, SocketAddr)> {
+    /// Candidates in scope with no fresh result and no probe running, with the path to request
+    /// (a profile's `probePath`, else `/`); each is now in flight.
+    fn claim_due(&self, snapshot: &Snapshot, now: Instant) -> Vec<(Key, SocketAddr, String)> {
         let Some(observation) = &snapshot.observation else {
             return Vec::new();
         };
@@ -186,19 +188,20 @@ impl Probes {
                     .get(&key)
                     .is_some_and(|entry| now.duration_since(entry.finished) < PROBE_INTERVAL);
                 if !fresh && state.in_flight.insert(key) {
-                    due.push((key, target));
+                    let path = profiles::probe_path(observation, service, endpoint.port);
+                    due.push((key, target, path.unwrap_or("/").to_owned()));
                 }
             }
         }
         due
     }
 
-    async fn probe(&self, key: Key, target: SocketAddr, requested: bool) -> HttpProbe {
+    async fn probe(&self, key: Key, target: SocketAddr, path: &str, requested: bool) -> HttpProbe {
         let Ok(_permit) = self.limit.acquire().await else {
             return HttpProbe::Pending;
         };
         let probed_at_ms = unix_millis(SystemTime::now());
-        let result = probe_endpoint(target, &self.tls).await;
+        let result = probe_endpoint(target, path, &self.tls).await;
         let mut state = self.lock();
         state.in_flight.remove(&key);
         let entry = Entry {
@@ -214,10 +217,10 @@ impl Probes {
 
     /// One user-requested probe ("try HTTP") of an endpoint that may receive one (see
     /// `probe::requested_target`); the result also appears in the next snapshot, marked
-    /// `requested`.
-    pub async fn request(&self, key: Key, target: SocketAddr) -> HttpProbe {
+    /// `requested`. `path` is the profile's validated `probePath`, else `/`.
+    pub async fn request(&self, key: Key, target: SocketAddr, path: &str) -> HttpProbe {
         self.lock().in_flight.insert(key);
-        self.probe(key, target, true).await
+        self.probe(key, target, path, true).await
     }
 }
 
@@ -241,10 +244,10 @@ pub async fn run(
         while running.try_join_next().is_some() {}
         let latest = snapshots.borrow_and_update().clone();
         if let Some(snapshot) = latest {
-            for (key, target) in probes.claim_due(&snapshot, Instant::now()) {
+            for (key, target, path) in probes.claim_due(&snapshot, Instant::now()) {
                 let probes = Arc::clone(&probes);
                 running.spawn(async move {
-                    probes.probe(key, target, false).await;
+                    probes.probe(key, target, &path, false).await;
                 });
             }
         }
@@ -263,15 +266,15 @@ pub fn open_url(tls: bool, port: u16) -> String {
     format!("{scheme}://{LOOPBACK_NAME}:{port}/")
 }
 
-/// Probes one endpoint as described in the module documentation.
-async fn probe_endpoint(target: SocketAddr, tls: &TlsClient) -> ProbeResult {
-    let plain = match attempt(target, None).await {
+/// Probes one endpoint as described in the module documentation, requesting `path`.
+async fn probe_endpoint(target: SocketAddr, path: &str, tls: &TlsClient) -> ProbeResult {
+    let plain = match attempt(target, path, None).await {
         Attempt::Answered(answer) if answer.asks_for_https => Some(answer.result),
         Attempt::Answered(answer) => return answer.result,
         Attempt::Done(result) => return result,
         Attempt::MaybeTls => None,
     };
-    match attempt(target, Some(tls)).await {
+    match attempt(target, path, Some(tls)).await {
         Attempt::Answered(answer) => answer.result,
         Attempt::Done(failed @ ProbeResult::TlsFailed { .. }) => failed,
         Attempt::Done(result) => plain.unwrap_or(result),
@@ -346,7 +349,7 @@ enum Attempt {
     Done(ProbeResult),
 }
 
-async fn attempt(target: SocketAddr, tls: Option<&TlsClient>) -> Attempt {
+async fn attempt(target: SocketAddr, path: &str, tls: Option<&TlsClient>) -> Attempt {
     let stream = match tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(target)).await {
         Ok(Ok(stream)) => stream,
         Ok(Err(_)) => return Attempt::Done(ProbeResult::Refused),
@@ -361,7 +364,7 @@ async fn attempt(target: SocketAddr, tls: Option<&TlsClient>) -> Attempt {
             Err(_) => {}
         }
         let io = Recorded::new(stream, Arc::clone(&received));
-        return match exchange(io, target.port(), false).await {
+        return match exchange(io, target.port(), path, false).await {
             Ok(answer) => Attempt::Answered(answer),
             Err(Failure::TimedOut) => Attempt::Done(ProbeResult::TimedOut),
             Err(Failure::Protocol) => match received.get() {
@@ -406,7 +409,7 @@ async fn attempt(target: SocketAddr, tls: Option<&TlsClient>) -> Attempt {
         }
         Err(_) => return Attempt::Done(ProbeResult::TimedOut),
     };
-    match exchange(stream, target.port(), true).await {
+    match exchange(stream, target.port(), path, true).await {
         Ok(answer) => Attempt::Answered(answer),
         Err(Failure::TimedOut) => Attempt::Done(ProbeResult::TimedOut),
         Err(Failure::Protocol) => Attempt::Done(ProbeResult::NotHttp),
@@ -433,7 +436,7 @@ impl Drop for AbortOnDrop {
     }
 }
 
-async fn exchange<S>(io: S, port: u16, tls: bool) -> Result<Answer, Failure>
+async fn exchange<S>(io: S, port: u16, path: &str, tls: bool) -> Result<Answer, Failure>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -446,7 +449,7 @@ where
     let _driver = AbortOnDrop(tokio::spawn(async move {
         let _ = connection.await;
     }));
-    let request = Request::get("/")
+    let request = Request::get(path)
         .header(HOST, format!("{LOOPBACK_NAME}:{port}"))
         .header(
             USER_AGENT,

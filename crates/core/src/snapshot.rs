@@ -133,6 +133,7 @@ mod tests {
             services: Vec::new(),
             projects: Vec::new(),
             warnings: Vec::new(),
+            profiles: Vec::new(),
         }
     }
 

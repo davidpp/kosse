@@ -14,6 +14,8 @@ mod actions;
 mod api;
 mod assets;
 mod cli;
+mod config;
+mod customize;
 mod guard;
 mod list;
 mod prober;
@@ -23,11 +25,13 @@ mod server;
 use std::{io, process::ExitCode, sync::Arc};
 
 use clap::Parser;
+use kosse_core::profiles::{CentralStore, StoreError};
 
 use crate::{
     actions::Actions,
     api::AppState,
     cli::{Cli, Command, ServeArgs},
+    customize::Customize,
     guard::{ActionToken, Policy},
     list::ListError,
     prober::{Probes, Scope},
@@ -46,6 +50,10 @@ enum AppError {
     Serve(#[from] ServeError),
     #[error(transparent)]
     List(#[from] ListError),
+    #[error(transparent)]
+    Config(#[from] config::ConfigError),
+    #[error(transparent)]
+    Store(#[from] StoreError),
     #[error("could not start the scanner: {0}")]
     Scanner(#[source] io::Error),
     #[error("could not create the action token: {0}")]
@@ -75,6 +83,7 @@ fn run(cli: Cli) -> Result<(), AppError> {
             runtime.block_on(serve(args))
         }
         Command::List(args) => Ok(list::run(&args)?),
+        Command::Config(command) => Ok(config::run(&command)?),
     }
 }
 
@@ -89,8 +98,9 @@ async fn serve(args: ServeArgs) -> Result<(), AppError> {
     let policy = Arc::new(Policy::new(addr.port(), dev_mode(&args), token));
     // The only scanner of this instance; every route reads its snapshots.
     let probes = Arc::new(Probes::new(probe_scope(&args)));
-    let scheduler =
-        Scheduler::start(SCAN_INTERVAL, Arc::clone(&probes)).map_err(AppError::Scanner)?;
+    let store = CentralStore::from_env()?;
+    let scheduler = Scheduler::start(SCAN_INTERVAL, Arc::clone(&probes), store.clone())
+        .map_err(AppError::Scanner)?;
     let (stopping, stopping_receiver) = tokio::sync::watch::channel(false);
     let probing = tokio::spawn(prober::run(
         Arc::clone(&probes),
@@ -98,13 +108,10 @@ async fn serve(args: ServeArgs) -> Result<(), AppError> {
         stopping_receiver.clone(),
     ));
     let actions = Arc::new(Actions::new(action_scope(&args)));
-    let app = server::router(AppState::new(
-        scheduler.handle(),
-        policy,
-        probes,
-        actions,
-        stopping_receiver,
-    ));
+    let app = server::router(
+        AppState::new(scheduler.handle(), policy, probes, actions, stopping_receiver),
+        Customize::new(scheduler.handle(), store),
+    );
     report!("kosse {} listening on {url}", env!("CARGO_PKG_VERSION"));
     if !args.no_open {
         open_in_browser(&url);

@@ -32,6 +32,25 @@ pub struct ProbeRequest {
     pub port: u16,
 }
 
+/// `POST /api/profile` ("Customize this project"): saves (`profile` set) or removes (`null`) the
+/// central profile of `root`, which must be a project in the current snapshot or one that already
+/// has a central profile. Only Kossé's own configuration is written, never the project. Fields
+/// the dashboard does not know are kept from the profile being replaced.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SaveProfileRequest {
+    pub root: String,
+    pub profile: Option<crate::profiles::ProjectProfile>,
+}
+
+/// The central profile of `root` as stored; the next snapshot applies it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedProfile {
+    pub root: String,
+    pub profile: Option<crate::profiles::ProjectProfile>,
+}
+
 /// The body of every API error response.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -69,6 +88,13 @@ pub enum ApiErrorCode {
     ScannerBusy,
     /// The scanner stopped; restart Kossé.
     ScannerStopped,
+    /// The profile breaks a rule; `message` says which field and why.
+    InvalidProfile,
+    /// The root is neither a project in the current snapshot nor one with a saved profile.
+    UnknownProject,
+    /// The configuration file cannot be read, is invalid or is from a newer Kossé, so it is not
+    /// overwritten; `message` names it. Fix or remove it.
+    ConfigUnavailable,
 }
 
 /// Every contract type in one TypeScript module.
@@ -82,6 +108,8 @@ pub fn typescript_bindings() -> String {
     module.add::<ProbeRequest>();
     module.add::<crate::action::ActionRequest>();
     module.add::<crate::action::ActionResult>();
+    module.add::<SaveProfileRequest>();
+    module.add::<SavedProfile>();
     module.add::<crate::model::Snapshot>();
     module.finish()
 }

@@ -50,6 +50,9 @@ pub struct Observation {
     pub projects: Vec<Project>,
     /// What this observation could not see. Empty only when nothing was missed.
     pub warnings: Vec<ScanWarning>,
+    /// Effective project metadata (central and repository profiles), ordered by root: observed
+    /// projects that have a profile, and saved profiles whose project is not observed.
+    pub profiles: Vec<crate::profiles::view::ProjectMetadata>,
 }
 
 /// How the scanner behind a snapshot is doing.
@@ -86,6 +89,9 @@ pub struct Service {
     /// The nearest package manifest directory at or above the working directory, within the
     /// project.
     pub package: Option<PackageLabel>,
+    /// The configured service (see `Observation.profiles`) this process is; `null` when none
+    /// matches.
+    pub profile: Option<crate::profiles::view::ProfileMatch>,
 }
 
 /// A worktree (or, outside Git, a package directory) that services run in.
@@ -434,6 +440,16 @@ pub enum ScanWarning {
         pid: u32,
         reason: AttributionFailure,
     },
+    /// A profile file is not in use; with `lastGoodRetained` its last good version still is.
+    ProfileUnusable {
+        source: crate::profiles::view::ProfileSource,
+        path: String,
+        problem: crate::profiles::view::ProfileProblem,
+        last_good_retained: bool,
+    },
+    /// A service's `match.cwd` resolves (through a symbolic link) outside its project, so it
+    /// matches nothing.
+    ProfileMatchOutsideProject { root: String, service: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -483,6 +499,23 @@ impl fmt::Display for ScanWarning {
             Self::AttributionUnavailable { pid, reason } => {
                 write!(f, "process {pid}: project unknown ({reason})")
             }
+            Self::ProfileUnusable {
+                source,
+                path,
+                problem,
+                last_good_retained,
+            } => {
+                write!(f, "{source} profile {path} {problem}")?;
+                f.write_str(if *last_good_retained {
+                    "; using its last good version"
+                } else {
+                    "; not applied"
+                })
+            }
+            Self::ProfileMatchOutsideProject { root, service } => write!(
+                f,
+                "profile of {root}: service {service:?} matches a directory outside the project; ignored"
+            ),
         }
     }
 }

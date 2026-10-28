@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Kossé project profile",
+  "description": "Optional metadata about one project (a worktree root). Nothing in it is executed, fetched or\napplied to the system: it names services, narrows which processes they are, and declares\nlinks and a health path.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "Editor metadata only: Kossé never resolves or fetches it.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2048
+    },
+    "name": {
+      "description": "Display name for the project, instead of its directory name.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 100,
+      "minLength": 1
+    },
+    "services": {
+      "description": "Services by ID. IDs are unique; a central entry overrides the repository entry with the\nsame ID field by field.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ServiceProfile"
+      },
+      "maxProperties": 64,
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+      }
+    },
+    "version": {
+      "description": "Profile format version; this build understands `1`.",
+      "type": "integer",
+      "format": "uint32",
+      "const": 1,
+      "minimum": 0
+    }
+  },
+  "required": [
+    "version"
+  ],
+  "$defs": {
+    "DeclaredProtocol": {
+      "type": "string",
+      "enum": [
+        "http",
+        "https",
+        "tcp"
+      ]
+    },
+    "LinkKind": {
+      "oneOf": [
+        {
+          "description": "Served on this machine (directly or through a local proxy such as Portless or `LocalCan`).",
+          "type": "string",
+          "const": "local"
+        },
+        {
+          "description": "Elsewhere: a staging site, documentation.",
+          "type": "string",
+          "const": "external"
+        },
+        {
+          "description": "A public tunnel to a local service.",
+          "type": "string",
+          "const": "tunnel"
+        }
+      ]
+    },
+    "LinkProfile": {
+      "description": "A link shown with the service, opened only on user action.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "Defaults to `local` for loopback and `.localhost` hosts, `external` otherwise.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LinkKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 100,
+          "minLength": 1
+        },
+        "url": {
+          "description": "`http` or `https` only, without credentials. Loopback and `.localhost` hosts count as\nlocal; any other host is shown as declared and never probed.",
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://"
+        }
+      },
+      "required": [
+        "label",
+        "url"
+      ]
+    },
+    "ServiceMatch": {
+      "description": "Narrows the project's processes to this service. Both criteria must hold. A port alone\nmatches only processes of this project: it never attributes another project's process.\nUnknown criteria are refused rather than ignored, since ignoring one would widen the match.",
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "description": "`/`-separated directory relative to the project root (`.` for the root). The process's\nworking directory must be it or inside it. No `..`; symbolic links must stay inside the\nproject.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512,
+          "minLength": 1
+        },
+        "port": {
+          "description": "The process must listen on this port.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "ServiceProfile": {
+      "description": "One service of a project: usually one dev server, possibly several processes.",
+      "type": "object",
+      "properties": {
+        "disabled": {
+          "description": "`true` suppresses an entry with this ID from the other source (and this one).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "links": {
+          "description": "Friendly links. Replaces (never extends) the other source's list.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/LinkProfile"
+          },
+          "maxItems": 16
+        },
+        "match": {
+          "description": "Which of the project's processes this service is. Without it the service is only declared\n(links, name) and never matches a process.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServiceMatch"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "description": "Display name, instead of the process name.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 100,
+          "minLength": 1
+        },
+        "probePath": {
+          "description": "Origin-relative path requested by the HTTP probe instead of `/`, only on an already\nverified loopback endpoint of the user's own process.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512,
+          "pattern": "^/([!-.0-~][!-~]*)?$"
+        },
+        "protocol": {
+          "description": "What the service speaks: a hint (it can make an endpoint an HTTP probe candidate), never\nproof of health.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DeclaredProtocol"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

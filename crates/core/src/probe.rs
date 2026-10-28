@@ -72,6 +72,18 @@ pub fn restrict(state: HttpProbe, own_user: bool, attributed: bool) -> HttpProbe
     }
 }
 
+/// A profile declares this endpoint HTTP: a non-HTTP-looking port or process name no longer
+/// skips it, but the owner and loopback rules still do ([`restrict`]).
+#[must_use]
+pub fn declared_http(state: HttpProbe, own_user: bool) -> HttpProbe {
+    match state {
+        HttpProbe::Skipped {
+            reason: ProbeSkip::KnownNonHttpPort | ProbeSkip::KnownNonHttpProcess,
+        } => restrict(HttpProbe::Pending, own_user, true),
+        other => other,
+    }
+}
+
 /// Where a user-requested probe ("try HTTP") may go: any endpoint except one skipped as
 /// another user's or as not on loopback.
 #[must_use]

@@ -92,6 +92,12 @@ impl Scanner {
         self.assemble(sockets, Instant::now(), enumerated_at)
     }
 
+    /// The effective user this scanner runs as, as [`crate::profiles::Profiles::apply`] needs it.
+    #[must_use]
+    pub fn own_user(&self) -> Option<u32> {
+        self.own_user
+    }
+
     #[must_use]
     pub fn stats(&self) -> ScanStats {
         let (cached_places, cached_worktrees) = self.attributor.cached();
@@ -191,6 +197,7 @@ impl Scanner {
                 endpoints,
                 project,
                 package,
+                profile: None,
             });
         }
         services.sort_by_key(|service| {
@@ -204,6 +211,7 @@ impl Scanner {
             services,
             projects: projects.into_values().collect(),
             warnings,
+            profiles: Vec::new(),
         }
     }
 }

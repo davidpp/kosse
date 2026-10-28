@@ -473,6 +473,7 @@ mod tests {
                 .collect(),
             project: None,
             package: None,
+            profile: None,
         }
     }
 
@@ -485,6 +486,7 @@ mod tests {
             services: vec![service(target, &[3000, 3001])],
             projects: Vec::new(),
             warnings: Vec::new(),
+            profiles: Vec::new(),
         };
         let live = [3001, 3000];
         assert_eq!(

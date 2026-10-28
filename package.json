@@ -20,7 +20,7 @@
     "typecheck": "bun run --cwd web typecheck && tsc --noEmit",
     "fmt": "cargo fmt --all && oxfmt",
     "fmt:check": "cargo fmt --all --check && oxfmt --check",
-    "contracts": "KOSSE_UPDATE_CONTRACTS=1 cargo nextest run --locked -p kosse-core --test contracts",
+    "contracts": "KOSSE_UPDATE_CONTRACTS=1 cargo nextest run --locked -p kosse-core --test contracts --test profile_schema",
     "audit": "cargo deny check && zizmor --offline .github"
   },
   "devDependencies": {

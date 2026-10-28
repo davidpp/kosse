@@ -18,6 +18,25 @@ pub enum Command {
     Serve(ServeArgs),
     /// Scan once and print the TCP listeners on this machine and their processes.
     List(ListArgs),
+    /// Project profiles: the schema, the configuration file, moved projects.
+    #[command(subcommand)]
+    Config(ConfigCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConfigCommand {
+    /// Print the JSON Schema of a project profile (`kosse.json`) to save next to your profiles.
+    Schema,
+    /// Print where central profiles are saved (`$KOSSE_CONFIG_DIR` overrides the directory).
+    Path,
+    /// Attach the profile saved for a project directory that moved to its new directory.
+    /// Profiles are keyed by path and never follow a project by name.
+    Move {
+        /// The old project root, exactly as saved (see `kosse list`).
+        from: String,
+        /// The project's new root directory.
+        to: std::path::PathBuf,
+    },
 }
 
 #[derive(Debug, clap::Args)]

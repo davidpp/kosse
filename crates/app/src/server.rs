@@ -27,6 +27,7 @@ use tokio::{
 use crate::{
     api::{self, AppState},
     assets,
+    customize::{self, Customize},
     guard::{self, MAX_BODY_BYTES},
 };
 
@@ -47,7 +48,7 @@ pub enum ServeError {
     Serve(#[source] io::Error),
 }
 
-pub fn router(state: AppState) -> Router {
+pub fn router(state: AppState, customize: Customize) -> Router {
     let policy = std::sync::Arc::clone(&state.policy);
     Router::new()
         .route("/api/health", get(api::health))
@@ -58,6 +59,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/probe", post(api::probe))
         .route("/api/stop", post(api::stop))
         .route("/api/force", post(api::force))
+        .route("/api/profile", post(customize::save).with_state(customize))
         .route("/api", any(StatusCode::NOT_FOUND))
         .route("/api/{*rest}", any(StatusCode::NOT_FOUND))
         .fallback_service(get(assets::serve))
@@ -185,6 +187,7 @@ mod tests {
             services: Vec::new(),
             projects: Vec::new(),
             warnings: Vec::new(),
+            profiles: Vec::new(),
         }
     }
 
@@ -243,13 +246,13 @@ mod tests {
         let actions = Arc::new(Actions::new(actions::Scope::Only(
             std::collections::HashMap::new(),
         )));
-        let app = router(AppState::new(
-            scheduler.handle(),
-            policy,
-            probes,
-            actions,
-            stopping_receiver,
-        ));
+        let app = router(
+            AppState::new(scheduler.handle(), policy, probes, actions, stopping_receiver),
+            Customize::new(
+                scheduler.handle(),
+                kosse_core::profiles::CentralStore::new("/var/empty/kosse-tests".into()),
+            ),
+        );
         runtime.spawn(async move { axum::serve(listener, app).await });
 
         let (status, body) = request(addr, "GET /api/snapshot HTTP/1.1", "");

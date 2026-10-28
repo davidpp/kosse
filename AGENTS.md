@@ -7,7 +7,7 @@ Kossé observes local development services (listeners, processes, projects) and 
 - `bun run check` — the full non-mutating gate (CI runs the same; the pre-commit hook runs a fast subset). Run it before claiming work is done.
 - `bun run dev` — backend (`serve --dev`, debug builds only) on `127.0.0.1:47832`, Vite on `127.0.0.1:47833` with a same-origin `/api` proxy.
 - `cargo nextest run --workspace <filter>` runs matching Rust tests (`--workspace` also builds the `kosse-fixture` binary that fixture tests spawn; with `-p` alone they fail on a clean target, or run a stale fixture binary on a warm one); `bun run --cwd web test <file-pattern>` runs matching web test files.
-- `bun run contracts` regenerates `web/src/generated/contracts.ts` after a contract type changes. Never hand-edit it.
+- `bun run contracts` regenerates `web/src/generated/contracts.ts` and `docs/kosse.schema.json` after a contract or profile type changes. Never hand-edit them.
 - `bun run budget` checks `web/dist` against the 50 kB gzipped JS + CSS budget (no web fonts); `test` and `build` run it after `vite build`.
 - `bun run fmt` and `bun run contracts` rewrite tracked files. CI fails if `check` leaves the tree dirty.
 
@@ -22,6 +22,7 @@ Kossé observes local development services (listeners, processes, projects) and 
 - `crates/core` has no UI, router or HTTP-server dependency.
 - Socket enumeration, process name and executable path come from `listeners` (patched, vendored in `vendor/listeners`) only inside `crates/core/src/sockets.rs`; start time, parent, user, command line (redacted there) and cwd come from `sysinfo` in `crates/core/src/inspect.rs`. Never drop a socket for missing metadata: unknown is `null` plus a snapshot warning, never a silent omission or an empty success.
 - Project attribution never parses `.git` or manifest contents itself: a stat-only walk (stopping before the home directory, the filesystem root or another filesystem) finds candidates, and `git` runs only through `crates/core/src/git.rs` (developer-directory binary, timeout, no inherited `GIT_*`). Separate worktrees are separate projects; an unknown cwd is no project, never a guess.
+- Project profiles (`crates/core/src/profiles`) are passive data: reading one never runs, fetches, resolves, includes or writes anything. Repository `kosse.json` files are untrusted, read only at a detected project root (no symlink, 64 KiB) and refused as a whole when any rule fails; links are `http(s)` validated in core. Only `CentralStore` writes, and only Kossé's own config file; a corrupt or newer one is never overwritten. Matching never crosses projects. Tests set `KOSSE_CONFIG_DIR` and never touch the user's real configuration.
 - CPU is never a fabricated zero: `warmingUp` until a second observation of the same PID + start identity, `unavailable` when withheld.
 - Rust: expected failures are typed `Result`s; no `unwrap`/`expect`/`panic` on OS data or process races. Use `#[expect(lint, reason = "…")]`, not `#[allow]`.
 - TypeScript: strict, no `any`, `@ts-ignore` or unchecked casts (generated files excepted). The runtime is TanStack Redact, not React; import from `react` as usual. TanStack Query owns server state (snapshot + SSE by revision); components never fetch outside it. Stay within the bundle budget in blueprint/architecture.md.

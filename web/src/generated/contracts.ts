@@ -12,7 +12,7 @@ export type Health = { name: string, version: string, };
  */
 export type Session = { token: string, };
 
-export type ApiErrorCode = "hostNotAllowed" | "originNotAllowed" | "tokenRequired" | "unsupportedMediaType" | "payloadTooLarge" | "invalidPayload" | "rateLimited" | "staleIdentity" | "notProbeable" | "scannerBusy" | "scannerStopped";
+export type ApiErrorCode = "hostNotAllowed" | "originNotAllowed" | "tokenRequired" | "unsupportedMediaType" | "payloadTooLarge" | "invalidPayload" | "rateLimited" | "staleIdentity" | "notProbeable" | "scannerBusy" | "scannerStopped" | "invalidProfile" | "unknownProject" | "configUnavailable";
 
 /**
  * The body of every API error response.
@@ -78,6 +78,110 @@ export type ActionResult = { "outcome": "exited", target: ProcessIdentity, ports
  */
 processExited: boolean, reason: string, } | { "outcome": "stale", reason: StaleReason, } | { "outcome": "forceNotOffered" } | { "outcome": "refused", reason: Ineligible, } | { "outcome": "permissionDenied", target: ProcessIdentity, } | { "outcome": "signalFailed", target: ProcessIdentity, reason: string, } | { "outcome": "internal", reason: string, };
 
+export type LinkKind = "local" | "external" | "tunnel";
+
+export type DeclaredProtocol = "http" | "https" | "tcp";
+
+/**
+ * A link shown with the service, opened only on user action.
+ */
+export type LinkProfile = { label: string, 
+/**
+ * `http` or `https` only, without credentials. Loopback and `.localhost` hosts count as
+ * local; any other host is shown as declared and never probed.
+ */
+url: string, 
+/**
+ * Defaults to `local` for loopback and `.localhost` hosts, `external` otherwise.
+ */
+kind?: LinkKind, };
+
+/**
+ * Narrows the project's processes to this service. Both criteria must hold. A port alone
+ * matches only processes of this project: it never attributes another project's process.
+ * Unknown criteria are refused rather than ignored, since ignoring one would widen the match.
+ */
+export type ServiceMatch = { 
+/**
+ * `/`-separated directory relative to the project root (`.` for the root). The process's
+ * working directory must be it or inside it. No `..`; symbolic links must stay inside the
+ * project.
+ */
+cwd?: string, 
+/**
+ * The process must listen on this port.
+ */
+port?: number, };
+
+/**
+ * One service of a project: usually one dev server, possibly several processes.
+ */
+export type ServiceProfile = { 
+/**
+ * Display name, instead of the process name.
+ */
+name?: string, 
+/**
+ * Which of the project's processes this service is. Without it the service is only declared
+ * (links, name) and never matches a process.
+ */
+match?: ServiceMatch, 
+/**
+ * What the service speaks: a hint (it can make an endpoint an HTTP probe candidate), never
+ * proof of health.
+ */
+protocol?: DeclaredProtocol, 
+/**
+ * Friendly links. Replaces (never extends) the other source's list.
+ */
+links?: Array<LinkProfile>, 
+/**
+ * Origin-relative path requested by the HTTP probe instead of `/`, only on an already
+ * verified loopback endpoint of the user's own process.
+ */
+probePath?: string, 
+/**
+ * `true` suppresses an entry with this ID from the other source (and this one).
+ */
+disabled?: boolean, };
+
+/**
+ * Optional metadata about one project (a worktree root). Nothing in it is executed, fetched or
+ * applied to the system: it names services, narrows which processes they are, and declares
+ * links and a health path.
+ */
+export type ProjectProfile = { 
+/**
+ * Editor metadata only: Kossé never resolves or fetches it.
+ */
+$schema?: string, 
+/**
+ * Profile format version; this build understands `1`.
+ */
+version: number, 
+/**
+ * Display name for the project, instead of its directory name.
+ */
+name?: string, 
+/**
+ * Services by ID. IDs are unique; a central entry overrides the repository entry with the
+ * same ID field by field.
+ */
+services: { [key in string]: ServiceProfile }, };
+
+/**
+ * `POST /api/profile` ("Customize this project"): saves (`profile` set) or removes (`null`) the
+ * central profile of `root`, which must be a project in the current snapshot or one that already
+ * has a central profile. Only Kossé's own configuration is written, never the project. Fields
+ * the dashboard does not know are kept from the profile being replaced.
+ */
+export type SaveProfileRequest = { root: string, profile: ProjectProfile | null, };
+
+/**
+ * The central profile of `root` as stored; the next snapshot applies it.
+ */
+export type SavedProfile = { root: string, profile: ProjectProfile | null, };
+
 export type GitHead = { "kind": "branch", name: string, } | { "kind": "detached", commit: string, } | { "kind": "unknown" };
 
 /**
@@ -98,9 +202,62 @@ repositoryName: string,
  */
 linked: boolean, head: GitHead, };
 
+/**
+ * What a link's host is, judged from its text alone (nothing is resolved or contacted).
+ */
+export type LinkReach = "loopback" | "declared";
+
+/**
+ * A configured link, validated: `http(s)`, no credentials, host shown separately.
+ */
+export type EffectiveLink = { label: string, 
+/**
+ * Scheme and host lowercased. Open only on user action.
+ */
+url: string, 
+/**
+ * Shown next to the label so the destination is always visible.
+ */
+host: string, kind: LinkKind, reach: LinkReach, };
+
+/**
+ * Where an effective value came from. Precedence: central over repository over inference; a
+ * field without a source is not configured and falls back to what was observed.
+ */
+export type ProfileSource = "central" | "repository";
+
+/**
+ * Which source set each field of a [`ConfiguredService`]; `null` when no source set it.
+ */
+export type ServiceSources = { name: ProfileSource | null, match: ProfileSource | null, protocol: ProfileSource | null, probePath: ProfileSource | null, links: ProfileSource | null, disabled: ProfileSource | null, };
+
+/**
+ * One configured service after merging its central and repository entries field by field.
+ */
+export type ConfiguredService = { id: string, name: string | null, match: ServiceMatch | null, protocol: DeclaredProtocol | null, probePath: string | null, 
+/**
+ * Empty when none are configured.
+ */
+links: Array<EffectiveLink>, 
+/**
+ * Suppressed: it matches nothing and only shows that an entry was turned off.
+ */
+disabled: boolean, sources: ServiceSources, 
+/**
+ * Processes this entry matches in the current observation, ordered by PID; each remains its
+ * own action target. Empty means configured, not observed: neither running nor stopped. A
+ * process matched by several entries is listed by each and is ambiguous on its service.
+ */
+matched: Array<ProcessIdentity>, };
+
 export type AttributionFailure = "cwdUnavailable" | "gitUnavailable" | "gitTimedOut" | "gitFailed" | "deferred";
 
 export type ProcessField = "name" | "startTime" | "user" | "command" | "cwd" | "cpu" | "memory";
+
+/**
+ * Why a profile source is not (or no longer) in use.
+ */
+export type ProfileProblem = { "kind": "unreadable", reason: string, } | { "kind": "notAFile" } | { "kind": "tooLarge", limitBytes: number, } | { "kind": "invalid", reason: string, } | { "kind": "newerVersion", version: string, };
 
 /**
  * Who can reach an endpoint, judged from its bind addresses alone (no firewall knowledge).
@@ -254,6 +411,11 @@ userId: number | null,
 ageSecs: number | null, metrics: ProcessMetrics, };
 
 /**
+ * Which configured service a process is, on its `Service`.
+ */
+export type ProfileMatch = { "kind": "matched", service: string, } | { "kind": "ambiguous", services: Array<string>, };
+
+/**
  * A worktree (or, outside Git, a package directory) that services run in.
  */
 export type Project = { 
@@ -273,9 +435,35 @@ name: string,
 git: GitWorktree | null, };
 
 /**
+ * The effective metadata of one project root.
+ */
+export type ProjectMetadata = { 
+/**
+ * Canonical worktree root: the key of a central profile, the directory of a repository file.
+ */
+root: string, 
+/**
+ * The project is in this observation. Otherwise it is known only from a saved central
+ * profile (or a repository file seen within the last minute): configured, not observed.
+ */
+observed: boolean, 
+/**
+ * Sources in effect, in precedence order, each once.
+ */
+sources: Array<ProfileSource>, 
+/**
+ * Display name; `null` keeps the observed directory name.
+ */
+name: string | null, nameSource: ProfileSource | null, 
+/**
+ * Ordered by ID.
+ */
+services: Array<ConfiguredService>, };
+
+/**
  * Partial data in a snapshot: something that exists but could not be observed.
  */
-export type ScanWarning = { "kind": "otherUsersNotVisible" } | { "kind": "processExited", pid: number, ports: Array<number>, } | { "kind": "metadataUnavailable", pid: number, fields: Array<ProcessField>, } | { "kind": "attributionUnavailable", pid: number, reason: AttributionFailure, };
+export type ScanWarning = { "kind": "otherUsersNotVisible" } | { "kind": "processExited", pid: number, ports: Array<number>, } | { "kind": "metadataUnavailable", pid: number, fields: Array<ProcessField>, } | { "kind": "attributionUnavailable", pid: number, reason: AttributionFailure, } | { "kind": "profileUnusable", source: ProfileSource, path: string, problem: ProfileProblem, lastGoodRetained: boolean, } | { "kind": "profileMatchOutsideProject", root: string, service: string, };
 
 /**
  * A process and every TCP port it listens on. One process is one action target.
@@ -294,7 +482,12 @@ project: string | null,
  * The nearest package manifest directory at or above the working directory, within the
  * project.
  */
-package: PackageLabel | null, };
+package: PackageLabel | null, 
+/**
+ * The configured service (see `Observation.profiles`) this process is; `null` when none
+ * matches.
+ */
+profile: ProfileMatch | null, };
 
 /**
  * One successful scan of the machine's TCP listeners, the processes that own them and the
@@ -316,7 +509,12 @@ projects: Array<Project>,
 /**
  * What this observation could not see. Empty only when nothing was missed.
  */
-warnings: Array<ScanWarning>, };
+warnings: Array<ScanWarning>, 
+/**
+ * Effective project metadata (central and repository profiles), ordered by root: observed
+ * projects that have a profile, and saved profiles whose project is not observed.
+ */
+profiles: Array<ProjectMetadata>, };
 
 /**
  * How the scanner behind a snapshot is doing.

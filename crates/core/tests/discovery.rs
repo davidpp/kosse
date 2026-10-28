@@ -128,7 +128,9 @@ fn assert_matches_manifest_and_lsof(snapshot: &Observation, fixture: &Fixture) -
             | ScanWarning::AttributionUnavailable { pid, .. } => {
                 assert_ne!(*pid, fixture.pid(), "unexpected warning {warning}");
             }
-            ScanWarning::OtherUsersNotVisible => {}
+            ScanWarning::OtherUsersNotVisible
+            | ScanWarning::ProfileUnusable { .. }
+            | ScanWarning::ProfileMatchOutsideProject { .. } => {}
         }
     }
     service

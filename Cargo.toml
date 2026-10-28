@@ -26,11 +26,17 @@ hyper-util = { version = "0.1.21", features = ["tokio"] }
 # Socket -> PID enumeration. Confined to crates/core/src/sockets.rs so API churn stays local.
 # Patched below; see vendor/listeners/KOSSE-PATCH.md.
 listeners = "0.6.1"
+# Test-only: validates the shipped profile example against the emitted schema. No remote
+# reference resolution (default features off).
+jsonschema = { version = "0.59.0", default-features = false }
 # Test-only self-signed certificates for the TLS fixture.
 rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }
 # kill(2) with typed errno and a positive-only PID type (process groups need a separate call).
 # Already locked via tempfile (tests); new to the shipped graph with only process + std.
 rustix = { version = "1.1.6", default-features = false, features = ["process", "std"] }
+# JSON Schema for project profiles (`kosse config schema`), derived from the same types as the
+# parser.
+schemars = "1.2.3"
 # debug-embed: debug builds embed assets too, so tests exercise the shipped code path.
 rust-embed = { version = "8.13.0", features = ["debug-embed", "mime-guess"] }
 # TLS for probes (and the test fixture's server): ring provider (smaller than aws-lc-rs), TLS 1.2
@@ -54,7 +60,8 @@ tokio = { version = "1.54.1", features = [
   "time",
 ] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }
-ts-rs = "12.0.1"
+# no-serde-warnings: ts-rs ignores serde attributes it has no use for (`deserialize_with`) silently.
+ts-rs = { version = "12.0.1", features = ["no-serde-warnings"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -36,7 +36,7 @@ use kosse_core::{
     action::{ActionRequest, ActionResult},
     contract::{ApiErrorCode, Health, ProbeRequest, Session},
     model::Snapshot,
-    probe,
+    probe, profiles,
     signal::Signal,
 };
 use tokio::sync::watch;
@@ -93,12 +93,12 @@ impl AppState {
 
 /// At most one accepted call per [`WRITE_MIN_INTERVAL`].
 #[derive(Default)]
-struct RateLimit {
+pub(crate) struct RateLimit {
     last: Mutex<Option<Instant>>,
 }
 
 impl RateLimit {
-    fn try_acquire(&self) -> bool {
+    pub(crate) fn try_acquire(&self) -> bool {
         let mut last = self.last.lock().unwrap_or_else(PoisonError::into_inner);
         let now = Instant::now();
         if last.is_some_and(|at| now.duration_since(at) < WRITE_MIN_INTERVAL) {
@@ -288,7 +288,18 @@ pub async fn probe(
         return rate_limited("a probe was requested less than a second ago");
     }
     let key = (request.identity, request.port);
-    Json(state.probes.request(key, target).await).into_response()
+    let path = snapshot
+        .observation
+        .as_ref()
+        .and_then(|observation| {
+            let service = observation
+                .services
+                .iter()
+                .find(|service| service.process.identity == request.identity)?;
+            profiles::probe_path(observation, service, request.port)
+        })
+        .unwrap_or("/");
+    Json(state.probes.request(key, target, path).await).into_response()
 }
 
 pub async fn stop(

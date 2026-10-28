@@ -1,7 +1,9 @@
 //! `kosse list`: one scan, printed as a table or as the JSON snapshot contract.
 //!
 //! There is no resident instance to ask yet, so this always runs its own one-shot scan (revision 1,
-//! no interval).
+//! no interval), with the central and repository profiles applied as `serve` applies them. The
+//! table names each process's configured service with its source, then lists configured services
+//! that no process matches as "configured, not observed".
 
 use std::{
     collections::HashMap,
@@ -11,6 +13,10 @@ use std::{
 
 use kosse_core::{
     model::{GitHead, Observation, Project, Service, Snapshot},
+    profiles::{
+        CentralStore, Profiles, StoreError,
+        view::{ConfiguredService, ProfileMatch, ProjectMetadata},
+    },
     scan::Scanner,
     snapshot::{AttemptTimer, SnapshotTracker},
     sockets::SocketsError,
@@ -22,14 +28,19 @@ use crate::cli::ListArgs;
 pub enum ListError {
     #[error(transparent)]
     Scan(#[from] SocketsError),
+    #[error(transparent)]
+    Config(#[from] StoreError),
     #[error("could not write the listing: {0}")]
     Write(#[source] io::Error),
 }
 
 pub fn run(args: &ListArgs) -> Result<(), ListError> {
+    let store = CentralStore::from_env()?;
     let timer = AttemptTimer::start();
     // CPU needs two observations of a process, so a one-shot scan reports it as warming up.
-    let observation = Scanner::new().scan()?;
+    let mut scanner = Scanner::new();
+    let mut observation = scanner.scan()?;
+    Profiles::new(store).apply(&mut observation, scanner.own_user());
     let snapshot = SnapshotTracker::new(None).succeeded(observation, timer.finish());
     let observation = snapshot.observation.as_ref();
     let mut stdout = io::stdout().lock();
@@ -51,7 +62,8 @@ pub fn run(args: &ListArgs) -> Result<(), ListError> {
             .iter()
             .flat_map(|observation| &observation.warnings)
         {
-            report!("kosse: warning: {warning}");
+            // Profile warnings can quote a repository file: untrusted text.
+            report!("kosse: warning: {}", printable(&warning.to_string()));
         }
     }
     Ok(())
@@ -70,8 +82,8 @@ fn write_table(out: &mut impl Write, observation: &Observation) -> io::Result<()
         .collect();
     writeln!(
         out,
-        "{:<8} {:<24} {:<6} {:<32} {:<20} ADDRESSES",
-        "PID", "PROCESS", "PORT", "PROJECT", "BRANCH"
+        "{:<8} {:<24} {:<6} {:<32} {:<20} {:<28} ADDRESSES",
+        "PID", "PROCESS", "PORT", "PROJECT", "BRANCH", "SERVICE"
     )?;
     for service in &observation.services {
         let name = service
@@ -84,18 +96,110 @@ fn write_table(out: &mut impl Write, observation: &Observation) -> io::Result<()
             .as_deref()
             .and_then(|root| projects.get(root).copied());
         let (project_label, branch) = labels(service, project);
+        let configured = configured_label(service, &observation.profiles);
         for endpoint in &service.endpoints {
             writeln!(
                 out,
-                "{:<8} {:<24} {:<6} {:<32} {:<20} {}",
+                "{:<8} {:<24} {:<6} {:<32} {:<20} {:<28} {}",
                 service.process.identity.pid,
                 name,
                 endpoint.port,
                 project_label,
                 branch,
+                configured,
                 endpoint.bind_addresses.join(", ")
             )?;
         }
+    }
+    write_unobserved(out, &observation.profiles)
+}
+
+/// The configured service of a process and the source of its name (or of its match):
+/// `Frontend (web) [central]`, `ambiguous: api, web`, or `-`.
+fn configured_label(service: &Service, profiles: &[ProjectMetadata]) -> String {
+    match &service.profile {
+        None => "-".to_owned(),
+        Some(ProfileMatch::Ambiguous { services }) => {
+            printable(&format!("ambiguous: {}", services.join(", ")))
+        }
+        Some(ProfileMatch::Matched { service: id }) => profiles
+            .iter()
+            .filter(|metadata| service.project.as_deref() == Some(metadata.root.as_str()))
+            .flat_map(|metadata| &metadata.services)
+            .find(|entry| &entry.id == id)
+            .map_or_else(|| printable(id), service_label),
+    }
+}
+
+fn service_label(entry: &ConfiguredService) -> String {
+    let source = entry.sources.name.or(entry.sources.matcher);
+    let mut label = match &entry.name {
+        Some(name) => format!("{name} ({})", entry.id),
+        None => entry.id.clone(),
+    };
+    if let Some(source) = source {
+        let _ = write!(label, " [{source}]");
+    }
+    printable(&label)
+}
+
+/// Configured services no process matches, and saved profiles of projects not observed. They are
+/// neither running nor known to be stopped.
+fn write_unobserved(out: &mut impl Write, profiles: &[ProjectMetadata]) -> io::Result<()> {
+    let mut rows = Vec::new();
+    for metadata in profiles {
+        let pending: Vec<&ConfiguredService> = metadata
+            .services
+            .iter()
+            .filter(|entry| !entry.disabled && entry.matched.is_empty())
+            .collect();
+        let project = if metadata.observed {
+            printable(&metadata.root)
+        } else {
+            printable(&format!("{} (project not observed)", metadata.root))
+        };
+        if pending.is_empty() && !metadata.observed {
+            let sources: Vec<String> = metadata.sources.iter().map(ToString::to_string).collect();
+            rows.push((
+                project.clone(),
+                "-".to_owned(),
+                sources.join("+"),
+                "-".to_owned(),
+            ));
+        }
+        for entry in pending {
+            let source = entry
+                .sources
+                .matcher
+                .or(entry.sources.name)
+                .map_or_else(|| "-".to_owned(), |source| source.to_string());
+            let matcher = entry.matcher.as_ref().map_or_else(
+                || "no match (declared only)".to_owned(),
+                |matcher| {
+                    let mut parts = Vec::new();
+                    if let Some(cwd) = &matcher.cwd {
+                        parts.push(format!("cwd {cwd}"));
+                    }
+                    if let Some(port) = matcher.port {
+                        parts.push(format!("port {port}"));
+                    }
+                    printable(&parts.join(", "))
+                },
+            );
+            rows.push((project.clone(), service_label(entry), source, matcher));
+        }
+    }
+    if rows.is_empty() {
+        return Ok(());
+    }
+    writeln!(out, "\nCONFIGURED, NOT OBSERVED")?;
+    writeln!(
+        out,
+        "{:<48} {:<28} {:<12} MATCH",
+        "PROJECT", "SERVICE", "SOURCE"
+    )?;
+    for (project, service, source, matcher) in rows {
+        writeln!(out, "{project:<48} {service:<28} {source:<12} {matcher}")?;
     }
     Ok(())
 }

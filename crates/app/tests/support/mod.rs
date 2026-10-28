@@ -11,6 +11,7 @@ use std::{
     fmt::Write as _,
     io::{BufRead, BufReader, Read, Write},
     net::{SocketAddr, TcpStream},
+    path::Path,
     process::{Child, ChildStderr, Command, ExitStatus, Stdio},
     thread,
     time::{Duration, Instant},
@@ -19,13 +20,22 @@ use std::{
 use kosse_core::{contract::Session, model::Snapshot};
 
 pub const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
+/// The configuration directory of every spawned `kosse` unless a test gives its own: it never
+/// exists and cannot be created, so tests never read or write the user's real profiles.
+pub const NO_CONFIG: &str = "/var/empty/kosse-tests";
 
 /// A spawned `kosse` that is killed (by this handle only) if the test ends early.
 pub struct OwnedChild(pub Child);
 
 impl OwnedChild {
     pub fn spawn(args: &[&str]) -> Self {
+        Self::spawn_configured(Path::new(NO_CONFIG), args)
+    }
+
+    /// With `config_dir` as `KOSSE_CONFIG_DIR`.
+    pub fn spawn_configured(config_dir: &Path, args: &[&str]) -> Self {
         let child = Command::new(env!("CARGO_BIN_EXE_kosse"))
+            .env("KOSSE_CONFIG_DIR", config_dir)
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -81,6 +91,11 @@ impl Server {
     /// server probes nothing (`--probe-only=`) and may signal nothing (`--act-only=`): tests
     /// never probe or signal the machine's real services.
     pub fn start_with(extra: &[&str]) -> Self {
+        Self::start_configured(Path::new(NO_CONFIG), extra)
+    }
+
+    /// [`Server::start_with`] with `config_dir` as `KOSSE_CONFIG_DIR`.
+    pub fn start_configured(config_dir: &Path, extra: &[&str]) -> Self {
         let mut args = vec!["serve", "--no-open", "--port", "0"];
         args.extend_from_slice(extra);
         if !extra.iter().any(|arg| arg.starts_with("--probe-only")) {
@@ -89,7 +104,7 @@ impl Server {
         if !extra.iter().any(|arg| arg.starts_with("--act-only")) {
             args.push("--act-only=");
         }
-        let mut child = OwnedChild::spawn(&args);
+        let mut child = OwnedChild::spawn_configured(config_dir, &args);
         let mut stderr = child.take_stderr();
         let mut line = String::new();
         loop {

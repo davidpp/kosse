@@ -13,4 +13,5 @@ pre-commit:
       glob:
         - "crates/core/**"
         - "web/src/generated/**"
-      run: cargo nextest run --locked -p kosse-core --test contracts
+        - "docs/kosse.schema.json"
+      run: cargo nextest run --locked -p kosse-core --test contracts --test profile_schema -E "test(typescript_bindings_are_current) | test(committed_schema_is_current)"

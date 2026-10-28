@@ -11,13 +11,17 @@ publish.workspace = true
 [dependencies]
 listeners.workspace = true
 rustix.workspace = true
+schemars.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sysinfo.workspace = true
+# Atomic central-config writes: a 0600 temporary file in the target directory, then rename.
+tempfile.workspace = true
 thiserror.workspace = true
 ts-rs.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
+jsonschema.workspace = true
 kosse-fixtures.workspace = true
 
 [lints]
