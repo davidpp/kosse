@@ -1,4 +1,4 @@
-//! Stackscan's observational core: TCP listener discovery ([`sockets`]), process inspection
+//! Kossé's observational core: TCP listener discovery ([`sockets`]), process inspection
 //! ([`inspect`]), project attribution ([`attribution`]), CPU sampling ([`metrics`]), scans into
 //! an [`model::Observation`] ([`scan`]), published [`model::Snapshot`]s ([`snapshot`]), central
 //! secret redaction ([`redact`]), the HTTP probe policy ([`probe`]), and the wire contracts

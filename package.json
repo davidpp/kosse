@@ -1,5 +1,5 @@
 {
-  "name": "stackscan-workspace",
+  "name": "kosse-workspace",
   "private": true,
   "license": "MIT",
   "repository": {
@@ -11,8 +11,8 @@
   ],
   "scripts": {
     "dev": "bun scripts/dev.ts",
-    "build": "bun run --cwd web build && bun run budget && cargo build --release --locked -p stackscan",
-    "check": "bun run fmt:check && bun run lint && bun run typecheck && bun run test && cargo build --release --locked -p stackscan",
+    "build": "bun run --cwd web build && bun run budget && cargo build --release --locked -p kosse",
+    "check": "bun run fmt:check && bun run lint && bun run typecheck && bun run test && cargo build --release --locked -p kosse",
     "test": "bun run --cwd web test && bun run --cwd web build && bun run budget && cargo nextest run --workspace --locked && cargo test --doc --workspace --locked",
     "budget": "bun scripts/bundle-budget.ts",
     "lint": "bun run lint:web && cargo clippy --workspace --all-targets --locked -- -D warnings",
@@ -20,7 +20,7 @@
     "typecheck": "bun run --cwd web typecheck && tsc --noEmit",
     "fmt": "cargo fmt --all && oxfmt",
     "fmt:check": "cargo fmt --all --check && oxfmt --check",
-    "contracts": "STACKSCAN_UPDATE_CONTRACTS=1 cargo nextest run --locked -p stackscan-core --test contracts",
+    "contracts": "KOSSE_UPDATE_CONTRACTS=1 cargo nextest run --locked -p kosse-core --test contracts",
     "audit": "cargo deny check && zizmor --offline .github"
   },
   "devDependencies": {

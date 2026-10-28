@@ -3,8 +3,8 @@
 ## Three levels
 
 1. **Observed:** no config; discover listeners/processes and infer repository/package.
-2. **Annotated (v1):** “Customize this project” saves service names/matches, endpoint intent, probe paths and links centrally in Stackscan's per-user application config directory. Zero repository footprint is the default, including work repositories. Optional repo-local `stackscan.json` is a shareable alternative, never required or written automatically.
-3. **Extended (later):** opt-in integrations for LocalCan, Portless, tunnels, proxies or launch-time port allocation. External providers own those capabilities; Stackscan presents their state and explicit actions. No plugin runtime or managed integration is required for v1.
+2. **Annotated (v1):** “Customize this project” saves service names/matches, endpoint intent, probe paths and links centrally in Kossé's per-user application config directory. Zero repository footprint is the default, including work repositories. Optional repo-local `kosse.json` is a shareable alternative, never required or written automatically.
+3. **Extended (later):** opt-in integrations for LocalCan, Portless, tunnels, proxies or launch-time port allocation. External providers own those capabilities; Kossé presents their state and explicit actions. No plugin runtime or managed integration is required for v1.
 
 Do not change an existing process's port: avoiding conflicts requires participating in launch or receiving a supported runtime registration. Metadata is not a port reservation. An unavailable desired port is reported, not repaired by killing its occupant.
 
@@ -14,7 +14,7 @@ Finalize and generate JSON Schema in the metadata issue; this example is the por
 
 ```json
 {
-  "$schema": "./stackscan.schema.json",
+  "$schema": "./kosse.schema.json",
   "version": 1,
   "name": "Acme",
   "services": {
@@ -40,7 +40,7 @@ Finalize and generate JSON Schema in the metadata issue; this example is the por
 }
 ```
 
-Ship schema with the application and `stackscan config schema` to emit it; do not require network access for schema resolution. Users choose where to save the emitted file. A schema URL/path is editor metadata only, never fetched by the daemon.
+Ship schema with the application and `kosse config schema` to emit it; do not require network access for schema resolution. Users choose where to save the emitted file. A schema URL/path is editor metadata only, never fetched by the daemon.
 
 ## Matching and precedence
 
@@ -66,12 +66,12 @@ Destructive actions still require observed process identity and confirmation. Me
 
 [Portless](https://github.com/vercel-labs/portless) documents named .localhost URLs, port allocation at launch, optional portless.json and HTTPS. Current default HTTPS setup can install a CA and elevate for privileged ports: never trigger automatically during discovery or tests. [LocalCan](https://www.localcan.com/docs/configuration/projects) describes declarative service targets/local domains, but its documented files are central under ~/.localcan/projects, not repo-local by default.
 
-v1 can display an explicit friendly URL regardless of who manages it. Do not guess Portless's private registry format or shell out to activate it. A future read-only adapter must verify a supported API/CLI, retain provenance, degrade when absent, reconcile stale routes, and test dynamic target-port changes. Stackscan must remain fully functional without it.
+v1 can display an explicit friendly URL regardless of who manages it. Do not guess Portless's private registry format or shell out to activate it. A future read-only adapter must verify a supported API/CLI, retain provenance, degrade when absent, reconcile stale routes, and test dynamic target-port changes. Kossé must remain fully functional without it.
 
 ## Extension direction (not a v1 framework)
 
 Keep observational core independent of providers. Future extensions may contribute endpoints, provenance, status and explicit actions without changing process identity or overriding safety policy. Start with one concrete integration before choosing an ABI, subprocess protocol, WASM, dynamic loading or an SDK; no empty abstractions now.
 
-Tunnels/public exposure are opt-in per project/session. Show destination, exposure, provider, expiration when known, and a clear disconnect action. Credentials belong in OS secure storage/provider tooling, never repo metadata or snapshot JSON. CA trust, privileged bind, command launch and public exposure require explicit capability/consent boundaries. Provider failure must not break discovery. Distinguish imported/external resources from Stackscan-created resources; disconnect/cleanup must never tear down unrelated provider sessions.
+Tunnels/public exposure are opt-in per project/session. Show destination, exposure, provider, expiration when known, and a clear disconnect action. Credentials belong in OS secure storage/provider tooling, never repo metadata or snapshot JSON. CA trust, privileged bind, command launch and public exposure require explicit capability/consent boundaries. Provider failure must not break discovery. Distinguish imported/external resources from Kossé-created resources; disconnect/cleanup must never tear down unrelated provider sessions.
 
 No custom proxy, CA manager, allocator, launch wrapper or generic plugin framework in v1. Scope the first managed integration in a separate epic after the observational product works.

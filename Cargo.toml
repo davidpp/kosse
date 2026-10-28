@@ -13,8 +13,8 @@ repository = "https://github.com/davidpp/stackscan"
 publish = false
 
 [workspace.dependencies]
-stackscan-core = { path = "crates/core" }
-stackscan-fixtures = { path = "crates/fixtures" }
+kosse-core = { path = "crates/core" }
+kosse-fixtures = { path = "crates/fixtures" }
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 clap = { version = "4.6.7", features = ["derive"] }
 # Already in the graph through axum; used directly for the SSE stream.
@@ -24,7 +24,7 @@ http-body-util = "0.1.5"
 hyper = { version = "1.12.0", features = ["client", "http1"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
 # Socket -> PID enumeration. Confined to crates/core/src/sockets.rs so API churn stays local.
-# Patched below; see vendor/listeners/STACKSCAN-PATCH.md.
+# Patched below; see vendor/listeners/KOSSE-PATCH.md.
 listeners = "0.6.1"
 # Test-only self-signed certificates for the TLS fixture.
 rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }

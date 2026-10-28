@@ -53,7 +53,7 @@ impl Serve {
 }
 
 /// The non-HTTP banner of [`Serve::Banner`].
-pub const BANNER: &[u8] = b"stackscan-fixture\n";
+pub const BANNER: &[u8] = b"kosse-fixture\n";
 /// The raw `<title>` text of [`Serve::Title`] and [`Serve::Tls`] pages (an entity and markup).
 pub const TITLE: &str = "Fixture &amp; &lt;Title&gt;";
 /// Where [`Serve::Redirect`] points on its own port: a followed redirect would show up as a

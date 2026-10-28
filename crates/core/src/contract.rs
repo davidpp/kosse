@@ -7,7 +7,7 @@ use std::{any::TypeId, collections::HashSet};
 use serde::{Deserialize, Serialize};
 use ts_rs::{Config, TS, TypeVisitor};
 
-/// Identifies the Stackscan instance answering on this endpoint.
+/// Identifies the Kossé instance answering on this endpoint.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Health {
@@ -15,7 +15,7 @@ pub struct Health {
     pub version: String,
 }
 
-/// The per-instance action token. Unsafe API requests carry it in the `X-Stackscan-Token`
+/// The per-instance action token. Unsafe API requests carry it in the `X-Kosse-Token`
 /// header. It is served only to same-origin requests and changes on every restart.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -67,7 +67,7 @@ pub enum ApiErrorCode {
     /// No scan finished in time (the scanner is busy or stalled); the last snapshot still
     /// stands.
     ScannerBusy,
-    /// The scanner stopped; restart Stackscan.
+    /// The scanner stopped; restart Kossé.
     ScannerStopped,
 }
 

@@ -16,18 +16,18 @@ web
 ## Users
 
 Developers on macOS who start many local services from terminals, scripts and coding agents, often
-across several git worktrees at once. They glance at Stackscan between tasks to answer one question
+across several git worktrees at once. They glance at Kossé between tasks to answer one question
 quickly: what is running on this machine, and from which project? The dashboard is one of two
 views; the other is a native macOS tray menu over the same core.
 
-The primary dashboard surface is Stackscan's own lightweight window (a WKWebView on the loopback
+The primary dashboard surface is Kossé's own lightweight window (a WKWebView on the loopback
 URL), opened from the tray. The same page also works in any browser. It is opened many times a
 day for a few seconds each time, next to an editor and terminals (inferred), on both light and
 dark system appearances.
 
 ## Product Purpose
 
-Stackscan discovers listening services, attributes each to its repository, worktree and package,
+Kossé discovers listening services, attributes each to its repository, worktree and package,
 links to it when it speaks HTTP, shows its process facts and current CPU and memory, and stops a
 forgotten process only after confirming its exact identity. Success is that the user recognises an
 unfamiliar port in seconds and never stops the wrong process.
@@ -66,7 +66,7 @@ status, including 404), or a specific failure, with unknown shown as unknown.
 
 ## Brand Commitments
 
-- Name: Stackscan. No logo or mark exists yet; do not invent one.
+- Name: Kossé. No logo or mark exists yet; do not invent one.
 - Voice: plain, factual, calm. State what was observed and what to do next; no hype and no
   alarm beyond what the observation warrants (inferred from the README and product contract).
 

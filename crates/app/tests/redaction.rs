@@ -1,4 +1,4 @@
-//! Fake secrets in an owned fixture's command line never leave Stackscan raw: not through
+//! Fake secrets in an owned fixture's command line never leave Kossé raw: not through
 //! `list --json`, the table, `/api/snapshot`, the event stream, or the server's stderr.
 #![expect(
     clippy::expect_used,
@@ -14,8 +14,8 @@ use std::{
     time::Duration,
 };
 
-use stackscan_core::model::{CommandLine, Snapshot};
-use stackscan_fixtures::{Fixture, FixtureSpec};
+use kosse_core::model::{CommandLine, Snapshot};
+use kosse_fixtures::{Fixture, FixtureSpec};
 use support::{EventStream, Server};
 
 const MARKUP: &str = "<img src=x onerror=alert(1)>";
@@ -96,7 +96,7 @@ fn command_of(snapshot: &Snapshot, fixture: &Fixture) -> CommandLine {
 fn command_lines_are_redacted_on_every_output() {
     let fixture = fixture();
 
-    let list = Command::new(env!("CARGO_BIN_EXE_stackscan"))
+    let list = Command::new(env!("CARGO_BIN_EXE_kosse"))
         .args(["list", "--json"])
         .output()
         .expect("run list");
@@ -133,7 +133,7 @@ fn command_lines_are_redacted_on_every_output() {
         ]
     );
 
-    let table = Command::new(env!("CARGO_BIN_EXE_stackscan"))
+    let table = Command::new(env!("CARGO_BIN_EXE_kosse"))
         .arg("list")
         .output()
         .expect("run list");

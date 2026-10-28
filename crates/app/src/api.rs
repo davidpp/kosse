@@ -29,7 +29,7 @@ use axum::{
     },
 };
 use futures_util::stream::{self, Stream};
-use stackscan_core::{
+use kosse_core::{
     contract::{ApiErrorCode, Health, ProbeRequest, Session},
     model::Snapshot,
     probe,
@@ -269,7 +269,7 @@ pub async fn probe(
         return Refusal::new(
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiErrorCode::NotProbeable,
-            "Stackscan never probes another user's process or a non-loopback endpoint",
+            "Kossé never probes another user's process or a non-loopback endpoint",
         )
         .into_response();
     };
@@ -329,7 +329,7 @@ fn scanner_stopped() -> Response {
     Refusal::new(
         StatusCode::SERVICE_UNAVAILABLE,
         ApiErrorCode::ScannerStopped,
-        "the scanner has stopped; restart Stackscan",
+        "the scanner has stopped; restart Kossé",
     )
     .into_response()
 }

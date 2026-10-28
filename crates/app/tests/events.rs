@@ -91,7 +91,7 @@ fn open_event_streams_do_not_hold_shutdown() {
         !stderr.contains("dropping connections"),
         "streams ended cleanly: {stderr}"
     );
-    assert!(stderr.contains("stackscan stopped"), "{stderr}");
+    assert!(stderr.contains("kosse stopped"), "{stderr}");
     assert!(
         first.next_snapshot(Duration::from_millis(500)).is_none(),
         "stream ended"

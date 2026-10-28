@@ -1,6 +1,6 @@
 [package]
-name = "stackscan-core"
-description = "Service model and contracts for Stackscan, independent of any UI or HTTP layer."
+name = "kosse-core"
+description = "Service model and contracts for Kossé, independent of any UI or HTTP layer."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,7 +17,7 @@ ts-rs.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
-stackscan-fixtures.workspace = true
+kosse-fixtures.workspace = true
 
 [lints]
 workspace = true

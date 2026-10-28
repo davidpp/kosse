@@ -14,7 +14,7 @@ export function ServerStatus({ query, onRetry }: { query: HealthQueryState; onRe
       return (
         <output className="flex items-center gap-2 text-ink-muted">
           <LoaderCircle className="size-4 animate-spin" aria-hidden />
-          Connecting to the Stackscan server…
+          Connecting to the Kossé server…
         </output>
       );
     case "error":

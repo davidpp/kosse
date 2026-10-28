@@ -1,9 +1,9 @@
 //! Fails when the committed TypeScript bindings no longer match the Rust contracts.
-//! Set `STACKSCAN_UPDATE_CONTRACTS=1` (see `bun run contracts`) to rewrite them instead.
+//! Set `KOSSE_UPDATE_CONTRACTS=1` (see `bun run contracts`) to rewrite them instead.
 
 use std::{env, fs, path::PathBuf};
 
-use stackscan_core::contract::typescript_bindings;
+use kosse_core::contract::typescript_bindings;
 
 const BINDINGS: &str = "web/src/generated/contracts.ts";
 
@@ -18,7 +18,7 @@ fn typescript_bindings_are_current() {
     let generated = typescript_bindings();
     let path = bindings_path();
 
-    if env::var("STACKSCAN_UPDATE_CONTRACTS").as_deref() == Ok("1") {
+    if env::var("KOSSE_UPDATE_CONTRACTS").as_deref() == Ok("1") {
         fs::write(&path, &generated).expect("write generated bindings");
         return;
     }

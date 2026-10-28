@@ -25,7 +25,7 @@ use std::{
 };
 
 use clap::Parser;
-use stackscan_fixtures::protocol::{BANNER, HUGE_BODY, REDIRECT_PATH, Ready, Serve as Mode, TITLE};
+use kosse_fixtures::protocol::{BANNER, HUGE_BODY, REDIRECT_PATH, Ready, Serve as Mode, TITLE};
 
 /// Attempts to find one port free on every address of a group before giving up.
 const SHARED_PORT_ATTEMPTS: usize = 32;
@@ -34,7 +34,7 @@ const MAX_REQUEST: usize = 16 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Parser)]
-#[command(name = "stackscan-fixture")]
+#[command(name = "kosse-fixture")]
 struct Args {
     /// Comma-separated addresses sharing one ephemeral port. Repeat for more ports.
     #[arg(long = "listen", required = true, value_parser = parse_group)]
@@ -79,7 +79,7 @@ fn main() -> ExitCode {
         match self_signed_config() {
             Ok(config) => Some(config),
             Err(error) => {
-                eprintln!("stackscan-fixture: could not set up TLS: {error}");
+                eprintln!("kosse-fixture: could not set up TLS: {error}");
                 return ExitCode::FAILURE;
             }
         }
@@ -91,7 +91,7 @@ fn main() -> ExitCode {
         match bind_group(group) {
             Ok(bound) => listeners.extend(bound),
             Err(error) => {
-                eprintln!("stackscan-fixture: could not bind {group:?}: {error}");
+                eprintln!("kosse-fixture: could not bind {group:?}: {error}");
                 return ExitCode::FAILURE;
             }
         }
@@ -104,7 +104,7 @@ fn main() -> ExitCode {
             .collect(),
     };
     if ready.listeners.len() != listeners.len() || announce(&ready).is_err() {
-        eprintln!("stackscan-fixture: could not report readiness");
+        eprintln!("kosse-fixture: could not report readiness");
         return ExitCode::FAILURE;
     }
 

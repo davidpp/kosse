@@ -1,4 +1,4 @@
-//! `stackscan list`: one scan, printed as a table or as the JSON snapshot contract.
+//! `kosse list`: one scan, printed as a table or as the JSON snapshot contract.
 //!
 //! There is no resident instance to ask yet, so this always runs its own one-shot scan (revision 1,
 //! no interval).
@@ -9,7 +9,7 @@ use std::{
     io::{self, Write},
 };
 
-use stackscan_core::{
+use kosse_core::{
     model::{GitHead, Observation, Project, Service, Snapshot},
     scan::Scanner,
     snapshot::{AttemptTimer, SnapshotTracker},
@@ -40,7 +40,7 @@ pub fn run(args: &ListArgs) -> Result<(), ListError> {
         observation.map_or(Ok(()), |observation| write_table(&mut stdout, observation))
     };
     match written.and_then(|()| stdout.flush()) {
-        // A closed pipe (`stackscan list | head`) just means the reader has seen enough.
+        // A closed pipe (`kosse list | head`) just means the reader has seen enough.
         Err(error) if error.kind() != io::ErrorKind::BrokenPipe => {
             return Err(ListError::Write(error));
         }
@@ -51,7 +51,7 @@ pub fn run(args: &ListArgs) -> Result<(), ListError> {
             .iter()
             .flat_map(|observation| &observation.warnings)
         {
-            report!("stackscan: warning: {warning}");
+            report!("kosse: warning: {warning}");
         }
     }
     Ok(())

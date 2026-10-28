@@ -1,4 +1,4 @@
-//! `stackscan list` through the compiled binary, checked against owned fixtures and `lsof`.
+//! `kosse list` through the compiled binary, checked against owned fixtures and `lsof`.
 //! Only fixture rows are asserted on (or printed); the machine's other listeners are ignored.
 #![expect(
     clippy::expect_used,
@@ -12,11 +12,11 @@ use std::{
     process::{Command, Output},
 };
 
-use stackscan_core::model::{
+use kosse_core::model::{
     CpuUsage, GitHead, Observation, Project, SNAPSHOT_SCHEMA_VERSION, ScanWarning, Service,
     Snapshot,
 };
-use stackscan_fixtures::{
+use kosse_fixtures::{
     Fixture, FixtureSpec, lsof,
     repo::{Sandbox, git, init_repo},
 };
@@ -24,14 +24,14 @@ use stackscan_fixtures::{
 const V4: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const V6: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
 
-fn stackscan(args: &[&str]) -> Output {
-    let output = Command::new(env!("CARGO_BIN_EXE_stackscan"))
+fn kosse(args: &[&str]) -> Output {
+    let output = Command::new(env!("CARGO_BIN_EXE_kosse"))
         .args(args)
         .output()
-        .expect("run stackscan");
+        .expect("run kosse");
     assert!(
         output.status.success(),
-        "stackscan {args:?} failed: {}",
+        "kosse {args:?} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     output
@@ -74,7 +74,7 @@ fn list_json_matches_fixture_manifest_and_lsof() {
     ]
     .map(|fixture| fixture.expect("spawn fixture"));
 
-    let output = stackscan(&["list", "--json"]);
+    let output = kosse(&["list", "--json"]);
     let published: Snapshot =
         serde_json::from_slice(&output.stdout).expect("JSON snapshot contract");
     assert_eq!(published.schema_version, SNAPSHOT_SCHEMA_VERSION);
@@ -146,7 +146,7 @@ fn list_json_matches_fixture_manifest_and_lsof() {
 fn list_table_shows_each_fixture_port_once_with_its_addresses() {
     let fixture =
         Fixture::spawn(&FixtureSpec::new().listen(&[V4, V6]).listen(&[V6])).expect("spawn fixture");
-    let output = stackscan(&["list"]);
+    let output = kosse(&["list"]);
     let table = String::from_utf8(output.stdout).expect("UTF-8 table");
     let pid = fixture.pid().to_string();
 
@@ -162,7 +162,7 @@ fn list_table_shows_each_fixture_port_once_with_its_addresses() {
     let mut expected = vec![
         vec![
             pid.as_str(),
-            "stackscan-fixture",
+            "kosse-fixture",
             shared_port.as_str(),
             "-",
             "-",
@@ -171,7 +171,7 @@ fn list_table_shows_each_fixture_port_once_with_its_addresses() {
         ],
         vec![
             pid.as_str(),
-            "stackscan-fixture",
+            "kosse-fixture",
             v6_port.as_str(),
             "-",
             "-",
@@ -202,7 +202,7 @@ fn path_text(path: &std::path::Path) -> String {
     path.to_str().expect("UTF-8 path").to_owned()
 }
 
-/// The user-facing acceptance path: `stackscan list --json` distinguishes same-name
+/// The user-facing acceptance path: `kosse list --json` distinguishes same-name
 /// repositories, worktrees, packages and detached HEADs of real processes.
 #[test]
 fn list_json_attributes_projects_worktrees_and_packages() {
@@ -236,7 +236,7 @@ fn list_json_attributes_projects_worktrees_and_packages() {
     };
     let (in_web, in_linked, in_second) = (spawn(&web), spawn(&linked), spawn(&second));
 
-    let output = stackscan(&["list", "--json"]);
+    let output = kosse(&["list", "--json"]);
     let snapshot: Snapshot = serde_json::from_slice(&output.stdout).expect("JSON");
     let observation = snapshot.observation.expect("an observation");
 
@@ -269,7 +269,7 @@ fn list_json_attributes_projects_worktrees_and_packages() {
     assert_eq!(package.path, "packages/web");
 
     // The table shows the same attribution.
-    let table = String::from_utf8(stackscan(&["list"]).stdout).expect("UTF-8");
+    let table = String::from_utf8(kosse(&["list"]).stdout).expect("UTF-8");
     let row = table
         .lines()
         .find(|line| line.split_whitespace().next() == Some(&in_web.pid().to_string()))
@@ -280,26 +280,26 @@ fn list_json_attributes_projects_worktrees_and_packages() {
 
 #[test]
 fn list_rejects_unknown_flags_as_usage_errors() {
-    let output = Command::new(env!("CARGO_BIN_EXE_stackscan"))
+    let output = Command::new(env!("CARGO_BIN_EXE_kosse"))
         .args(["list", "--yaml"])
         .output()
-        .expect("run stackscan");
+        .expect("run kosse");
     assert_eq!(output.status.code(), Some(2));
 }
 
 #[test]
 fn closed_stdout_and_stderr_do_not_crash_list() {
     for args in [&["list"][..], &["list", "--json"][..]] {
-        // Both read ends are closed before stackscan starts, so every write fails with EPIPE.
+        // Both read ends are closed before kosse starts, so every write fails with EPIPE.
         let (stdout_reader, stdout_writer) = std::io::pipe().expect("stdout pipe");
         let (stderr_reader, stderr_writer) = std::io::pipe().expect("stderr pipe");
         drop((stdout_reader, stderr_reader));
-        let status = Command::new(env!("CARGO_BIN_EXE_stackscan"))
+        let status = Command::new(env!("CARGO_BIN_EXE_kosse"))
             .args(args)
             .stdout(stdout_writer)
             .stderr(stderr_writer)
             .status()
-            .expect("run stackscan");
-        assert_eq!(status.code(), Some(0), "stackscan {args:?}: {status}");
+            .expect("run kosse");
+        assert_eq!(status.code(), Some(0), "kosse {args:?}: {status}");
     }
 }

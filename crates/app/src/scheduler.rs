@@ -18,7 +18,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use stackscan_core::{
+use kosse_core::{
     model::{Observation, Snapshot},
     scan::Scanner,
     snapshot::{AttemptTimer, SnapshotTracker},
@@ -116,7 +116,7 @@ impl Scheduler {
         let (requests, inbox) = mpsc::channel();
         let (publisher, latest) = watch::channel(None);
         let worker = thread::Builder::new()
-            .name("stackscan-scanner".into())
+            .name("kosse-scanner".into())
             .spawn(move || {
                 let mut worker = Worker {
                     interval,
@@ -256,8 +256,8 @@ impl Worker {
     /// The loop itself failed: say so in a last snapshot (keeping the last good observation),
     /// then end. Pending refreshes and later ones report [`RefreshError::Stopped`].
     fn stopped(&mut self) {
-        let failure = "the scanner stopped unexpectedly; restart Stackscan".to_owned();
-        report!("stackscan: {failure}");
+        let failure = "the scanner stopped unexpectedly; restart Kossé".to_owned();
+        report!("kosse: {failure}");
         let snapshot = self.tracker.failed(failure, AttemptTimer::start().finish());
         self.publisher.send_replace(Some(Arc::new(snapshot)));
     }
@@ -276,7 +276,7 @@ fn transition_notes(snapshot: &Snapshot, previous_failures: u32, overran: bool) 
     let mut notes = Vec::new();
     match (&status.failure, previous_failures) {
         (Some(failure), 0) => notes.push(format!(
-            "stackscan: scan failed: {failure}; {}",
+            "kosse: scan failed: {failure}; {}",
             if snapshot.observation.is_some() {
                 "keeping the last good snapshot"
             } else {
@@ -284,13 +284,13 @@ fn transition_notes(snapshot: &Snapshot, previous_failures: u32, overran: bool) 
             }
         )),
         (None, failures) if failures > 0 => notes.push(format!(
-            "stackscan: scanning recovered after {failures} failed attempts"
+            "kosse: scanning recovered after {failures} failed attempts"
         )),
         _ => {}
     }
     if overran {
         notes.push(format!(
-            "stackscan: scan took {:.0} ms, longer than the {} ms interval ({} overruns so far)",
+            "kosse: scan took {:.0} ms, longer than the {} ms interval ({} overruns so far)",
             status.last_attempt_duration_ms,
             status.interval_ms.unwrap_or_default(),
             status.overruns
@@ -307,8 +307,8 @@ mod tests {
         net::{IpAddr, Ipv4Addr},
     };
 
-    use stackscan_core::model::CpuUsage;
-    use stackscan_fixtures::{Fixture, FixtureSpec};
+    use kosse_core::model::CpuUsage;
+    use kosse_fixtures::{Fixture, FixtureSpec};
 
     use super::*;
 
@@ -360,7 +360,7 @@ mod tests {
         let handle = scheduler.handle();
         runtime().block_on(async {
             first_snapshot(&handle).await;
-            let requested_at = stackscan_core::scan::unix_millis(std::time::SystemTime::now());
+            let requested_at = kosse_core::scan::unix_millis(std::time::SystemTime::now());
             // Spawned together, so every request is queued before any reply is awaited.
             let tasks: Vec<_> = (0..20)
                 .map(|_| {
@@ -497,7 +497,7 @@ mod tests {
 
     fn empty_observation() -> Observation {
         Observation {
-            scanned_at_ms: stackscan_core::scan::unix_millis(std::time::SystemTime::now()),
+            scanned_at_ms: kosse_core::scan::unix_millis(std::time::SystemTime::now()),
             scan_duration_ms: 0.1,
             services: Vec::new(),
             projects: Vec::new(),
@@ -637,7 +637,7 @@ mod tests {
     #[test]
     fn transitions_are_noted_once() {
         let mut tracker = SnapshotTracker::new(Some(Duration::from_secs(3)));
-        let attempt = |millis| stackscan_core::snapshot::Attempt {
+        let attempt = |millis| kosse_core::snapshot::Attempt {
             started_at_ms: 1,
             duration: Duration::from_millis(millis),
         };
@@ -651,7 +651,7 @@ mod tests {
         let recovered = tracker.succeeded(empty_observation(), attempt(1));
         assert_eq!(
             transition_notes(&recovered, 2, false),
-            ["stackscan: scanning recovered after 2 failed attempts"]
+            ["kosse: scanning recovered after 2 failed attempts"]
         );
         let steady = tracker.succeeded(empty_observation(), attempt(1));
         assert_eq!(transition_notes(&steady, 0, false), Vec::<String>::new());

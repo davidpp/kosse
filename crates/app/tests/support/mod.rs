@@ -1,4 +1,4 @@
-//! Shared by the binary-level suites: an owned `stackscan` child and a raw HTTP/1.1 client, so
+//! Shared by the binary-level suites: an owned `kosse` child and a raw HTTP/1.1 client, so
 //! tests control every header (forged `Host`, `Origin`, content types) exactly.
 #![expect(
     clippy::expect_used,
@@ -16,22 +16,22 @@ use std::{
     time::{Duration, Instant},
 };
 
-use stackscan_core::{contract::Session, model::Snapshot};
+use kosse_core::{contract::Session, model::Snapshot};
 
 pub const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// A spawned `stackscan` that is killed (by this handle only) if the test ends early.
+/// A spawned `kosse` that is killed (by this handle only) if the test ends early.
 pub struct OwnedChild(pub Child);
 
 impl OwnedChild {
     pub fn spawn(args: &[&str]) -> Self {
-        let child = Command::new(env!("CARGO_BIN_EXE_stackscan"))
+        let child = Command::new(env!("CARGO_BIN_EXE_kosse"))
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
-            .expect("spawn stackscan");
+            .expect("spawn kosse");
         Self(child)
     }
 
@@ -45,7 +45,7 @@ impl OwnedChild {
             if let Some(status) = self.0.try_wait().expect("poll child") {
                 return status;
             }
-            assert!(Instant::now() < deadline, "stackscan did not exit in time");
+            assert!(Instant::now() < deadline, "kosse did not exit in time");
             thread::sleep(Duration::from_millis(20));
         }
     }
@@ -91,7 +91,7 @@ impl Server {
         loop {
             line.clear();
             stderr.read_line(&mut line).expect("read startup line");
-            assert!(!line.is_empty(), "stackscan exited before listening");
+            assert!(!line.is_empty(), "kosse exited before listening");
             if line.contains("listening on") {
                 break;
             }
@@ -144,7 +144,7 @@ impl Server {
                 .host(&self.authority())
                 .header("Origin", &self.origin())
                 .header("Content-Type", "application/json")
-                .header("X-Stackscan-Token", token)
+                .header("X-Kosse-Token", token)
                 .body(body),
         )
     }

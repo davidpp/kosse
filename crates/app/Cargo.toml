@@ -1,5 +1,5 @@
 [package]
-name = "stackscan"
+name = "kosse"
 description = "Local homepage for the development services already running on this machine."
 version.workspace = true
 edition.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-stackscan-core.workspace = true
+kosse-core.workspace = true
 axum.workspace = true
 clap.workspace = true
 futures-util.workspace = true
@@ -25,7 +25,7 @@ tokio.workspace = true
 tokio-rustls.workspace = true
 
 [dev-dependencies]
-stackscan-fixtures.workspace = true
+kosse-fixtures.workspace = true
 
 [lints]
 workspace = true

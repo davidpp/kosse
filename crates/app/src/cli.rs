@@ -6,7 +6,7 @@ pub const DEFAULT_PORT: u16 = 47831;
 
 /// Local homepage for the development services already running on this machine.
 #[derive(Debug, Parser)]
-#[command(name = "stackscan", version, about, arg_required_else_help = true)]
+#[command(name = "kosse", version, about, arg_required_else_help = true)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,

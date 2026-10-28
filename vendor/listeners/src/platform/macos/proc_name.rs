@@ -32,7 +32,7 @@ impl ProcName {
             buf.set_len(usize::try_from(ret)?);
         }
 
-        // stackscan patch: the kernel truncates names to 31 bytes, possibly mid-codepoint;
+        // kosse patch: the kernel truncates names to 31 bytes, possibly mid-codepoint;
         // decode lossily instead of failing.
         Ok(Self::new(String::from_utf8_lossy(&buf).into_owned()))
     }

@@ -26,13 +26,13 @@ use tempfile::TempDir;
 
 use crate::protocol::{Ready, Serve};
 
-const BINARY: &str = "stackscan-fixture";
+const BINARY: &str = "kosse-fixture";
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
 const GRACEFUL_TIMEOUT: Duration = Duration::from_secs(3);
 const KILL_TIMEOUT: Duration = Duration::from_secs(3);
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 /// Spaces and non-ASCII on purpose: cwd reporting must survive both.
-const CWD_PREFIX: &str = "stackscan fixture é-";
+const CWD_PREFIX: &str = "kosse fixture é-";
 
 /// What to launch: each group is one port shared by its addresses.
 #[derive(Debug, Clone)]
@@ -158,7 +158,7 @@ pub enum Cleanup {
 #[derive(Debug, thiserror::Error)]
 pub enum FixtureError {
     #[error(
-        "fixture binary not found at {0}; workspace test runs build it (or run `cargo build -p stackscan-fixtures`)"
+        "fixture binary not found at {0}; workspace test runs build it (or run `cargo build -p kosse-fixtures`)"
     )]
     BinaryMissing(PathBuf),
     #[error("could not launch the fixture: {0}")]
@@ -453,7 +453,7 @@ pub fn live_start_time(pid: u32) -> Option<u64> {
     Some(process.start_time()).filter(|&secs| secs > 0)
 }
 
-/// `stackscan-fixture` next to the running test executable (`target/<profile>/deps/…`).
+/// `kosse-fixture` next to the running test executable (`target/<profile>/deps/…`).
 fn binary_path() -> Result<PathBuf, FixtureError> {
     let exe = env::current_exe()?;
     let profile_dir = exe

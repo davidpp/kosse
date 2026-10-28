@@ -13,4 +13,4 @@ pre-commit:
       glob:
         - "crates/core/**"
         - "web/src/generated/**"
-      run: cargo nextest run --locked -p stackscan-core --test contracts
+      run: cargo nextest run --locked -p kosse-core --test contracts

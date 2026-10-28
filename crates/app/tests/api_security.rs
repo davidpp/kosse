@@ -4,7 +4,7 @@
 
 mod support;
 
-use stackscan_core::model::Snapshot;
+use kosse_core::model::Snapshot;
 use support::{HttpResponse, RawRequest, Server};
 
 const DEV_AUTHORITY: &str = "127.0.0.1:47833";
@@ -210,7 +210,7 @@ fn preflights_get_no_cors_permission() {
             .header("Access-Control-Request-Method", "POST")
             .header(
                 "Access-Control-Request-Headers",
-                "content-type,x-stackscan-token",
+                "content-type,x-kosse-token",
             ),
     );
     assert_refused(&response, 403, "originNotAllowed");
@@ -228,7 +228,7 @@ fn unsafe_requests_need_exact_origin_json_and_the_current_token() {
             .body("{}")
     };
     let json = |request: RawRequest| request.header("Content-Type", "application/json");
-    let with_token = |request: RawRequest| request.header("X-Stackscan-Token", &token);
+    let with_token = |request: RawRequest| request.header("X-Kosse-Token", &token);
     let origin = server.origin();
 
     // Origin: missing, opaque, foreign, the other loopback name, a different port.
@@ -269,10 +269,10 @@ fn unsafe_requests_need_exact_origin_json_and_the_current_token() {
         403,
         "tokenRequired",
     );
-    let wrong = json(base().header("Origin", &origin)).header("X-Stackscan-Token", "0");
+    let wrong = json(base().header("Origin", &origin)).header("X-Kosse-Token", "0");
     assert_refused(&server.send(&wrong), 403, "tokenRequired");
     let stale = Server::start().token();
-    let stale = json(base().header("Origin", &origin)).header("X-Stackscan-Token", &stale);
+    let stale = json(base().header("Origin", &origin)).header("X-Kosse-Token", &stale);
     assert_refused(&server.send(&stale), 403, "tokenRequired");
     // The token is never accepted from the URL.
     let in_query = server.send(&json(
@@ -304,7 +304,7 @@ fn payloads_are_bounded_and_validated() {
             .host(&server.authority())
             .header("Origin", &server.origin())
             .header("Content-Type", "application/json")
-            .header("X-Stackscan-Token", &token)
+            .header("X-Kosse-Token", &token)
             .chunked(&huge),
     );
     assert_refused(&chunked, 413, "payloadTooLarge");
@@ -358,7 +358,7 @@ fn the_dev_authority_is_admitted_only_in_dev_mode() {
             .host(DEV_AUTHORITY)
             .header("Origin", &format!("http://{DEV_AUTHORITY}"))
             .header("Content-Type", "application/json")
-            .header("X-Stackscan-Token", &token)
+            .header("X-Kosse-Token", &token)
             .body("{}"),
     );
     assert_eq!(refresh.status, 200, "{}", refresh.text());
@@ -368,7 +368,7 @@ fn the_dev_authority_is_admitted_only_in_dev_mode() {
             .host(DEV_AUTHORITY)
             .header("Origin", &dev.origin())
             .header("Content-Type", "application/json")
-            .header("X-Stackscan-Token", &token)
+            .header("X-Kosse-Token", &token)
             .body("{}"),
     );
     assert_refused(&mismatch, 403, "originNotAllowed");

@@ -1,6 +1,6 @@
 [package]
-name = "stackscan-fixtures"
-description = "Owned listener processes and ground-truth helpers for Stackscan's tests. Never shipped."
+name = "kosse-fixtures"
+description = "Owned listener processes and ground-truth helpers for Kossé's tests. Never shipped."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

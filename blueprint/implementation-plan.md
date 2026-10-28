@@ -38,7 +38,7 @@ From a clean dependency install, dev serves a minimal page through the intended 
 
 ## S01b
 
-Added 2026-10-28 by owner direction: Stackscan is a resident tool and must stay nimble; the S01 web scaffold (React, TanStack Router/Query, shadcn/Base UI, Geist) shipped ~103 kB gzipped JS for one status line.
+Added 2026-10-28 by owner direction: Kossé is a resident tool and must stay nimble; the S01 web scaffold (React, TanStack Router/Query, shadcn/Base UI, Geist) shipped ~103 kB gzipped JS for one status line.
 
 ### Scope
 
@@ -52,7 +52,7 @@ Move the web app onto the slim stack in architecture.md: React APIs on the TanSt
 
 ### Scope
 
-Implement TCP listener→PID discovery and process inspection; evaluate listeners vs lsof fixture ground truth, fallback netstat2 only with evidence. Add owned fixture process manifest/identity cleanup, IPv4/IPv6, multi-port, non-HTTP, process-exit races, unavailable metadata, timed child teardown. Add stackscan list --json with actual local observations; no real user service signaling.
+Implement TCP listener→PID discovery and process inspection; evaluate listeners vs lsof fixture ground truth, fallback netstat2 only with evidence. Add owned fixture process manifest/identity cleanup, IPv4/IPv6, multi-port, non-HTTP, process-exit races, unavailable metadata, timed child teardown. Add kosse list --json with actual local observations; no real user service signaling.
 
 ### Acceptance
 
@@ -112,7 +112,7 @@ Playwright against real Rust backend + owned fixtures verifies discover→filter
 
 ### Scope
 
-Implement tray-icon with documented macOS main-thread event loop and existing async runtime/core, plus the `stackscan window` child process (wry + tao WKWebView, focus-or-spawn, browser fallback). Native grouped menu, dashboard/open/inspect/stop routing to same confirmed action UI, app-only quit. Default app mode vs headless serve; second launch verifies existing instance and opens it without duplicate scanner. No graphical popover or duplicated action policy.
+Implement tray-icon with documented macOS main-thread event loop and existing async runtime/core, plus the `kosse window` child process (wry + tao WKWebView, focus-or-spawn, browser fallback). Native grouped menu, dashboard/open/inspect/stop routing to same confirmed action UI, app-only quit. Default app mode vs headless serve; second launch verifies existing instance and opens it without duplicate scanner. No graphical popover or duplicated action policy.
 
 ### Acceptance
 

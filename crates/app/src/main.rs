@@ -1,7 +1,7 @@
-//! `stackscan` entry point: parses the command line, owns the async runtime, maps failures to
+//! `kosse` entry point: parses the command line, owns the async runtime, maps failures to
 //! exit codes (0 success, 1 runtime failure, 2 usage error via clap).
 
-/// `eprintln!` without its panic: diagnostics to a closed stderr (`stackscan … 2>&-`, or a
+/// `eprintln!` without its panic: diagnostics to a closed stderr (`kosse … 2>&-`, or a
 /// pipe whose reader exited) are dropped instead of aborting the process.
 macro_rules! report {
     ($($arg:tt)*) => {{
@@ -55,7 +55,7 @@ fn main() -> ExitCode {
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            report!("stackscan: {error}");
+            report!("kosse: {error}");
             ExitCode::FAILURE
         }
     }
@@ -101,7 +101,7 @@ async fn serve(args: ServeArgs) -> Result<(), AppError> {
         probes,
         stopping_receiver,
     ));
-    report!("stackscan {} listening on {url}", env!("CARGO_PKG_VERSION"));
+    report!("kosse {} listening on {url}", env!("CARGO_PKG_VERSION"));
     if !args.no_open {
         open_in_browser(&url);
     }
@@ -112,10 +112,10 @@ async fn serve(args: ServeArgs) -> Result<(), AppError> {
         .await
         .unwrap_or(false);
     if !stopped {
-        report!("stackscan: the scanner is still busy; exiting without waiting for it");
+        report!("kosse: the scanner is still busy; exiting without waiting for it");
     }
     served?;
-    report!("stackscan stopped");
+    report!("kosse stopped");
     Ok(())
 }
 
@@ -125,7 +125,7 @@ fn dev_mode(args: &ServeArgs) -> bool {
     {
         if args.dev {
             report!(
-                "stackscan: development mode: also answering for {}",
+                "kosse: development mode: also answering for {}",
                 guard::DEV_AUTHORITY
             );
         }
@@ -155,7 +155,7 @@ fn open_in_browser(url: &str) {
         .status();
     match opened {
         Ok(status) if status.success() => {}
-        Ok(status) => report!("stackscan: could not open {url} in a browser ({status})"),
-        Err(error) => report!("stackscan: could not open {url} in a browser: {error}"),
+        Ok(status) => report!("kosse: could not open {url} in a browser ({status})"),
+        Err(error) => report!("kosse: could not open {url} in a browser: {error}"),
     }
 }

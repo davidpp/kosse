@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use stackscan_fixtures::{Cleanup, Fixture, FixtureError, FixtureSpec, live_start_time, lsof};
+use kosse_fixtures::{Cleanup, Fixture, FixtureError, FixtureSpec, live_start_time, lsof};
 
 const V4: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const V6: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
@@ -36,7 +36,7 @@ fn spawned_fixture_is_listening_and_recorded() {
     assert!(record.cwd.is_dir(), "fixture cwd exists while it runs");
     assert_eq!(record.cleanup, Cleanup::Running);
     for &endpoint in &record.endpoints {
-        assert_eq!(banner(endpoint), "stackscan-fixture\n");
+        assert_eq!(banner(endpoint), "kosse-fixture\n");
     }
 
     let expected: Vec<_> = record
@@ -83,7 +83,7 @@ fn mismatched_identity_is_refused_and_leaves_the_process_alone() {
         fixture.kill(),
         Err(FixtureError::IdentityMismatch { .. })
     ));
-    assert_eq!(banner(endpoint), "stackscan-fixture\n", "still serving");
+    assert_eq!(banner(endpoint), "kosse-fixture\n", "still serving");
     assert_eq!(fixture.record().cleanup, Cleanup::Running);
 
     fixture.record_mut().started_at_secs = real_start;

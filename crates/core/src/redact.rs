@@ -1,4 +1,4 @@
-//! Central secret redaction for process-derived text. Every command line Stackscan displays,
+//! Central secret redaction for process-derived text. Every command line Kossé displays,
 //! serves or logs passes through [`command_line`]; probe redirect targets pass through [`text`].
 //!
 //! Redaction is heuristic and errs towards hiding: a value is replaced when its key looks

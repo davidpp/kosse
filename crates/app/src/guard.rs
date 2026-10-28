@@ -23,10 +23,10 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use stackscan_core::contract::{ApiError, ApiErrorCode};
+use kosse_core::contract::{ApiError, ApiErrorCode};
 
 /// The header that carries the action token on unsafe requests.
-pub const TOKEN_HEADER: &str = "x-stackscan-token";
+pub const TOKEN_HEADER: &str = "x-kosse-token";
 /// Largest request body accepted (and the router's body limit).
 pub const MAX_BODY_BYTES: usize = 16 * 1024;
 /// The Vite dev server's authority (`web/dev-ports.ts`), admitted only in development mode.
@@ -160,7 +160,7 @@ fn check(policy: &Policy, request: &Request, is_api: bool) -> Result<(), Refusal
         .ok_or(Refusal::new(
             StatusCode::MISDIRECTED_REQUEST,
             ApiErrorCode::HostNotAllowed,
-            "this Stackscan instance only answers for its own loopback address",
+            "this Kossé instance only answers for its own loopback address",
         ))?;
     if let Some(authority) = request.uri().authority()
         && !authority.as_str().eq_ignore_ascii_case(host)

@@ -31,7 +31,7 @@ pub(crate) fn get_all() -> crate::Result<HashSet<Listener>> {
             continue;
         };
         for fd in &SocketFd::get_all_of_pid(pid).unwrap_or_default() {
-            // stackscan patch: never drop a socket because its process name is unavailable;
+            // kosse patch: never drop a socket because its process name is unavailable;
             // report an empty name instead.
             if let Ok(proto_listener) = ProtoListener::from_pid_fd(pid, fd) {
                 let name = proc_names_cache

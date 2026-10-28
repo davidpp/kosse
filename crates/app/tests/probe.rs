@@ -1,5 +1,5 @@
 //! HTTP enrichment through the real binary: owned fixtures in every `--serve` mode, observed via
-//! `/api/snapshot` of a running `stackscan serve`. Each server probes only its own test's fixtures
+//! `/api/snapshot` of a running `kosse serve`. Each server probes only its own test's fixtures
 //! (`--probe-only`), so request counts are exact and no real service is ever probed.
 #![expect(
     clippy::expect_used,
@@ -15,8 +15,8 @@ use std::{
     time::Duration,
 };
 
-use stackscan_core::model::{HttpProbe, ProbeResult, ProbeSkip, Snapshot, TlsFailure};
-use stackscan_fixtures::{
+use kosse_core::model::{HttpProbe, ProbeResult, ProbeSkip, Snapshot, TlsFailure};
+use kosse_fixtures::{
     Fixture, FixtureSpec,
     protocol::{REDIRECT_PATH, Serve},
     repo::Sandbox,
@@ -306,7 +306,7 @@ fn only_attributed_processes_are_probed_automatically_and_try_http_is_explicit()
             .host(&server.authority())
             .header("Origin", "https://evil.example")
             .header("Content-Type", "application/json")
-            .header("X-Stackscan-Token", &token)
+            .header("X-Kosse-Token", &token)
             .body(&body(started)),
     );
     assert_eq!(foreign.error_code(), "originNotAllowed");
@@ -321,7 +321,7 @@ fn only_attributed_processes_are_probed_automatically_and_try_http_is_explicit()
 fn a_one_shot_list_reports_candidates_as_pending() {
     let (_sandbox, dir) = project();
     let title = spawn_in(&dir, Serve::Title, &[V4]);
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_stackscan"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_kosse"))
         .args(["list", "--json"])
         .output()
         .expect("run list");

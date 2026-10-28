@@ -1,6 +1,6 @@
 //! Disposable directory trees and Git repositories for attribution tests.
 //!
-//! Test repositories are built with the same `git` Stackscan uses (the active developer
+//! Test repositories are built with the same `git` Kossé uses (the active developer
 //! directory's, from `xcode-select -p`), isolated from the user's configuration (no global or
 //! system config, so no signing, hooks or templates apply) and from any inherited `GIT_*`
 //! variables (a test run from a hook or `rebase -x` must not touch the enclosing repository),
@@ -15,7 +15,7 @@ use std::{
 use tempfile::TempDir;
 
 /// Spaces and non-ASCII on purpose: attribution must survive both.
-const SANDBOX_PREFIX: &str = "stackscan repos é-";
+const SANDBOX_PREFIX: &str = "kosse repos é-";
 
 #[derive(Debug, thiserror::Error)]
 pub enum RepoError {
@@ -70,7 +70,7 @@ impl Sandbox {
     }
 }
 
-/// `git` from the active developer directory, as `stackscan_core`'s attribution runs it.
+/// `git` from the active developer directory, as `kosse_core`'s attribution runs it.
 fn developer_git() -> Result<PathBuf, RepoError> {
     let output = Command::new("/usr/bin/xcode-select").arg("-p").output()?;
     let developer_dir = String::from_utf8_lossy(&output.stdout).trim().to_owned();
@@ -95,9 +95,9 @@ pub fn git(dir: &Path, args: &[&str]) -> Result<String, RepoError> {
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .args([
             "-c",
-            "user.name=Stackscan Tests",
+            "user.name=Kosse Tests",
             "-c",
-            "user.email=tests@stackscan.invalid",
+            "user.email=tests@kosse.invalid",
             "-c",
             "init.defaultBranch=main",
             // Local paths as submodule URLs.

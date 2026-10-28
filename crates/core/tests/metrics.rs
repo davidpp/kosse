@@ -7,12 +7,12 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use stackscan_core::{
+use kosse_core::{
     model::{CpuUsage, Observation, ProcessMetrics},
     scan::Scanner,
     sockets::tcp_listen_sockets,
 };
-use stackscan_fixtures::{Fixture, FixtureSpec};
+use kosse_fixtures::{Fixture, FixtureSpec};
 
 const V4: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const V6: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);

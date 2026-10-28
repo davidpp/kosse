@@ -69,7 +69,7 @@ async function spawn(
 /** Builds the backend and returns the executable cargo reports, so any target-dir config holds. */
 async function buildBackend(): Promise<string> {
   const build = await spawn(
-    ["cargo", "build", "--locked", "-p", "stackscan", "--message-format=json-render-diagnostics"],
+    ["cargo", "build", "--locked", "-p", "kosse", "--message-format=json-render-diagnostics"],
     root,
     ["ignore", "pipe", "inherit"],
   );
@@ -92,7 +92,7 @@ async function buildBackend(): Promise<string> {
       return message.executable;
     }
   }
-  return fail("cargo build did not report the stackscan executable");
+  return fail("cargo build did not report the kosse executable");
 }
 
 if (!existsSync(vite)) {

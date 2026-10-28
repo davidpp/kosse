@@ -13,13 +13,13 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use stackscan_core::{
+use kosse_core::{
     inspect::{ProcessInspector, ProcessState},
     model::{CpuUsage, Exposure, Observation, ProcessField, ScanWarning, Service},
     scan::Scanner,
     sockets::{ListenSocket, tcp_listen_sockets},
 };
-use stackscan_fixtures::{Fixture, FixtureSpec, lsof};
+use kosse_fixtures::{Fixture, FixtureSpec, lsof};
 
 const V4: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const V6: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
@@ -152,7 +152,7 @@ fn fixture_listeners_match_manifest_and_lsof() {
 
     let service = assert_matches_manifest_and_lsof(&snapshot, &ipv4);
     assert_eq!(service.endpoints[0].bind_addresses, ["127.0.0.1"]);
-    assert_eq!(service.process.name.as_deref(), Some("stackscan-fixture"));
+    assert_eq!(service.process.name.as_deref(), Some("kosse-fixture"));
 
     let service = assert_matches_manifest_and_lsof(&snapshot, &ipv6_only);
     assert_eq!(service.endpoints[0].bind_addresses, ["::1"]);

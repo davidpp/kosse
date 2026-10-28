@@ -1,6 +1,6 @@
 //! Bounded `git` subprocesses. Git's own discovery handles every `.git` form (directory, gitfile
 //! of a linked worktree or submodule, `--separate-git-dir`) and ref storage (files or reftable),
-//! so Stackscan never parses `.git` contents itself.
+//! so Kossé never parses `.git` contents itself.
 //!
 //! `git` is run from the developer directory reported by `xcode-select -p`, never through the
 //! `/usr/bin/git` shim: without the Command Line Tools the shim opens an installation dialog,

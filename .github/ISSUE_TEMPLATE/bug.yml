@@ -1,5 +1,5 @@
 name: Bug report
-description: Something Stackscan shows or does is wrong.
+description: Something Kossé shows or does is wrong.
 labels: [bug]
 body:
   - type: textarea
@@ -18,7 +18,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: "`stackscan --version`"
+      label: "`kosse --version`"
     validations:
       required: true
   - type: input
@@ -32,5 +32,5 @@ body:
     id: details
     attributes:
       label: Extra details
-      description: Logs or `stackscan list --json` output. Remove anything private (paths, tokens, command lines) before posting.
+      description: Logs or `kosse list --json` output. Remove anything private (paths, tokens, command lines) before posting.
       render: text

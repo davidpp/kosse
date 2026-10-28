@@ -1,7 +1,7 @@
 //! Bounded HTTP enrichment of observed endpoints.
 //!
 //! A task follows the scheduler's snapshots and probes candidate endpoints (see
-//! `stackscan_core::probe`: the user's own processes that run in a project) with one `GET /`
+//! `kosse_core::probe`: the user's own processes that run in a project) with one `GET /`
 //! each, at most [`MAX_CONCURRENT`] at a time and at most once per [`PROBE_INTERVAL`] per process
 //! identity and port. The user may also ask for one probe of an endpoint that is not probed
 //! automatically ([`Probes::request`], "try HTTP"). Results land in [`Probes`], which the scanner
@@ -41,7 +41,7 @@ use hyper::{
     header::{ACCEPT, CONNECTION, CONTENT_TYPE, HOST, LOCATION, USER_AGENT},
 };
 use hyper_util::rt::TokioIo;
-use stackscan_core::{
+use kosse_core::{
     model::{HttpProbe, Observation, ProbeResult, ProcessIdentity, Snapshot, TlsFailure},
     probe, redact,
     scan::unix_millis,
@@ -82,6 +82,13 @@ pub enum Scope {
     All,
     /// Only these PIDs; empty probes nothing. Debug builds' `--probe-only`, so that tests only
     /// ever probe their own fixtures, never the machine's real services.
+    #[cfg_attr(
+        not(debug_assertions),
+        expect(
+            dead_code,
+            reason = "only the debug-only `--probe-only` flag constructs it"
+        )
+    )]
     Only(HashSet<u32>),
 }
 
@@ -443,7 +450,7 @@ where
         .header(HOST, format!("{LOOPBACK_NAME}:{port}"))
         .header(
             USER_AGENT,
-            concat!("stackscan/", env!("CARGO_PKG_VERSION"), " (probe)"),
+            concat!("kosse/", env!("CARGO_PKG_VERSION"), " (probe)"),
         )
         .header(ACCEPT, "text/html,*/*;q=0.8")
         .header(CONNECTION, "close")

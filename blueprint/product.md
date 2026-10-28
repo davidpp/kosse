@@ -12,7 +12,7 @@ No project registration or modified launch commands should be necessary. Optiona
 
 ## Dashboard surface
 
-Served on loopback; shown in Stackscan's own window (opened from the tray or on explicit launch) and reachable from any browser at the same URL.
+Served on loopback; shown in Kossé's own window (opened from the tray or on explicit launch) and reachable from any browser at the same URL.
 
 One calm, dense dashboard grouped by repository/worktree, with package/service rows. Search matches project, package, command name and port. Default view filters known system noise; a visible “all listeners” option makes exclusions reversible.
 
@@ -26,7 +26,7 @@ Keyboard navigation, visible focus, accessible confirmation dialog, responsive n
 
 A native macOS menu with project/service grouping, recognizable names/ports, Open, Inspect (opens the dashboard window on that service), Stop, Open Dashboard, and Quit. Stop must use the same confirmation and identity policy as the dashboard (opening the dashboard's confirmation is acceptable). No alternate unguarded destructive path.
 
-Tray stays useful with browser closed. Initial discovery failure is visible. Quit stops Stackscan only, never discovered services. Headless mode has no tray requirement.
+Tray stays useful with browser closed. Initial discovery failure is visible. Quit stops Kossé only, never discovered services. Headless mode has no tray requirement.
 
 ## Observations, not unjustified health claims
 

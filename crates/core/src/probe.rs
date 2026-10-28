@@ -58,7 +58,7 @@ fn skip_reason(port: u16, binds: &[IpAddr], process_name: Option<&str>) -> Optio
 }
 
 /// Narrows a [`HttpProbe::Pending`] endpoint to the automatic-probe rule: the process belongs to
-/// the user Stackscan runs as, and runs in a project.
+/// the user Kossé runs as, and runs in a project.
 #[must_use]
 pub fn restrict(state: HttpProbe, own_user: bool, attributed: bool) -> HttpProbe {
     match state {

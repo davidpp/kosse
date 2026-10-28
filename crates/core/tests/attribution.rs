@@ -13,12 +13,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use stackscan_core::{
+use kosse_core::{
     attribution::{Attributor, HEAD_TTL, LAYOUT_TTL},
     model::{AttributionFailure, GitHead, Manifest, Observation, Project, ScanWarning, Service},
     scan::Scanner,
 };
-use stackscan_fixtures::{
+use kosse_fixtures::{
     Fixture, FixtureSpec,
     repo::{Sandbox, git, init_repo},
 };
@@ -360,7 +360,7 @@ fn deleted_working_directory_is_a_warning_not_a_guess() {
 fn broken_gitfile_is_a_cached_failure() {
     let tree = sandbox();
     let broken = tree.dir("broken").expect("dir");
-    tree.file("broken/.git", "gitdir: /nonexistent/stackscan\n")
+    tree.file("broken/.git", "gitdir: /nonexistent/kosse\n")
         .expect("file");
     let cwd = text(&broken);
 
@@ -463,7 +463,7 @@ fn spent_git_budget_defers_new_worktrees_and_keeps_stale_ones() {
     );
 
     // Deferral is not cached: the next scan with budget resolves it.
-    attributor.set_git_budget(stackscan_core::attribution::GIT_BUDGET);
+    attributor.set_git_budget(kosse_core::attribution::GIT_BUDGET);
     let resolved = attributor.attribute([known.as_str(), fresh.as_str()], later);
     assert!(matches!(resolved[fresh.as_str()], Ok(Some(_))));
 }

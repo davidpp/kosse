@@ -1,5 +1,5 @@
 ---
-name: Stackscan
+name: Kossé
 description: A calm, dense, keyboard-first local dashboard for development services.
 colors:
   canvas: "oklch(0.985 0.002 250)"
@@ -67,7 +67,7 @@ components:
 round for the dashboard is S07's, with the owner; re-run `$impeccable document` after S07 so this
 file describes the built dashboard. Tokens here are normative for anything built before then. -->
 
-# Design System: Stackscan
+# Design System: Kossé
 
 ## Overview
 

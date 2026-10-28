@@ -10,13 +10,13 @@ describe("ServerStatus", () => {
       <ServerStatus
         query={{
           status: "success",
-          data: { name: "stackscan", version: "1.2.3" },
+          data: { name: "kosse", version: "1.2.3" },
         }}
         onRetry={vi.fn<() => void>()}
       />,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent("Connected to stackscan 1.2.3");
+    expect(screen.getByRole("status")).toHaveTextContent("Connected to kosse 1.2.3");
   });
 
   it("reports an unreachable server and retries on request", async () => {

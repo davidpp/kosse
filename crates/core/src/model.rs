@@ -11,7 +11,7 @@ use ts_rs::TS;
 /// metrics.
 pub const SNAPSHOT_SCHEMA_VERSION: u32 = 2;
 
-/// What one Stackscan instance currently knows: the last successful observation plus how the
+/// What one Kossé instance currently knows: the last successful observation plus how the
 /// scanner has fared since. Views never scan; they read the latest published snapshot.
 ///
 /// Staleness: the observation is current when `scanner.failure` is `null` and it is younger than
@@ -22,7 +22,7 @@ pub const SNAPSHOT_SCHEMA_VERSION: u32 = 2;
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub schema_version: u32,
-    /// Opaque ID of the publishing Stackscan process; it changes on every restart. Order
+    /// Opaque ID of the publishing Kossé process; it changes on every restart. Order
     /// snapshots by `revision` only within one instance: a new `instance` is a restart (revisions
     /// start again at 1), not an out-of-order event.
     pub instance: String,
@@ -56,7 +56,7 @@ pub struct Observation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ScannerStatus {
-    /// Target time between scans; `null` for a one-shot scan (`stackscan list`).
+    /// Target time between scans; `null` for a one-shot scan (`kosse list`).
     #[ts(type = "number | null")]
     pub interval_ms: Option<u64>,
     /// Start of the most recent attempt, successful or not, in Unix milliseconds.
@@ -303,7 +303,7 @@ pub struct Endpoint {
 pub enum HttpProbe {
     /// Not an HTTP candidate, so never probed.
     Skipped { reason: ProbeSkip },
-    /// A candidate without a result yet. A one-shot `stackscan list` never probes.
+    /// A candidate without a result yet. A one-shot `kosse list` never probes.
     Pending,
     Probed {
         /// When the request started, in Unix milliseconds. Results are reused for a while
@@ -323,7 +323,7 @@ pub enum HttpProbe {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum ProbeSkip {
-    /// Bound only to non-loopback addresses; Stackscan probes loopback only.
+    /// Bound only to non-loopback addresses; Kossé probes loopback only.
     NotOnLoopback,
     /// Owned by another user or the system (or the owner is unknown).
     OtherUser,

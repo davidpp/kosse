@@ -123,7 +123,7 @@ pub async fn run(
         Ok(result) => result.map_err(ServeError::Serve),
         Err(_elapsed) => {
             report!(
-                "stackscan: dropping connections still open after {}s",
+                "kosse: dropping connections still open after {}s",
                 SHUTDOWN_GRACE.as_secs()
             );
             Ok(())
@@ -165,7 +165,7 @@ mod tests {
         time::Duration,
     };
 
-    use stackscan_core::model::{Observation, Snapshot};
+    use kosse_core::model::{Observation, Snapshot};
     use tokio::sync::watch;
 
     use super::*;
@@ -177,7 +177,7 @@ mod tests {
 
     fn observation() -> Observation {
         Observation {
-            scanned_at_ms: stackscan_core::scan::unix_millis(std::time::SystemTime::now()),
+            scanned_at_ms: kosse_core::scan::unix_millis(std::time::SystemTime::now()),
             scan_duration_ms: 0.1,
             services: Vec::new(),
             projects: Vec::new(),
@@ -254,7 +254,7 @@ mod tests {
         let (status, body) = request(
             addr,
             &format!(
-                "POST /api/refresh HTTP/1.1\r\nOrigin: http://{addr}\r\nContent-Type: application/json\r\nX-Stackscan-Token: {token}"
+                "POST /api/refresh HTTP/1.1\r\nOrigin: http://{addr}\r\nContent-Type: application/json\r\nX-Kosse-Token: {token}"
             ),
             "{}",
         );

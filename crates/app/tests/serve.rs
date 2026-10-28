@@ -1,4 +1,4 @@
-//! Drives the compiled `stackscan` binary over real TCP: health, the embedded bundle, the
+//! Drives the compiled `kosse` binary over real TCP: health, the embedded bundle, the
 //! occupied-port refusal and bounded shutdown. Each test owns the child it spawns and stops it by
 //! that handle only.
 #![expect(
@@ -16,7 +16,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use stackscan_core::contract::Health;
+use kosse_core::contract::Health;
 use support::{OwnedChild, Server};
 
 #[test]
@@ -30,7 +30,7 @@ fn health_reports_name_and_version() {
     assert_eq!(
         health,
         Health {
-            name: "stackscan".to_owned(),
+            name: "kosse".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
         }
     );
@@ -93,7 +93,7 @@ fn assert_refuses_port_held_at(occupant_addr: &str) {
     );
 }
 
-/// The installed default port. If something (even another Stackscan) already listens there, it is
+/// The installed default port. If something (even another Kossé) already listens there, it is
 /// only connected to, never disturbed; otherwise this test holds it briefly.
 #[test]
 fn occupied_default_port_fails_with_clear_error() {
@@ -159,6 +159,6 @@ fn sigterm_stops_the_server_cleanly() {
     let (status, stderr) = server.terminate();
 
     assert!(status.success(), "exit status {status}: {stderr}");
-    assert!(stderr.contains("stackscan stopped"), "{stderr}");
+    assert!(stderr.contains("kosse stopped"), "{stderr}");
     assert!(TcpStream::connect(addr).is_err(), "listener still open");
 }

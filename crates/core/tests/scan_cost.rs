@@ -11,8 +11,8 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use stackscan_core::{scan::Scanner, sockets::tcp_listen_sockets};
-use stackscan_fixtures::{
+use kosse_core::{scan::Scanner, sockets::tcp_listen_sockets};
+use kosse_fixtures::{
     Fixture, FixtureSpec, lsof,
     repo::{Sandbox, git, init_repo},
 };

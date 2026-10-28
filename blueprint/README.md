@@ -1,4 +1,4 @@
-# Stackscan blueprint
+# Kossé blueprint
 
 ## Intent
 
@@ -26,7 +26,7 @@ Not required for v1: public hosting, signed/notarized distribution, Homebrew tap
 
 - macOS arm64 is the required v1 target; other platforms get explicit unsupported behavior, not claimed support.
 - Native tray menu plus a dashboard served on loopback are required. The dashboard opens in its own lightweight window (WKWebView child process) and in any browser. A custom graphical tray popover is deferred (Rune is the candidate to watch).
-- Rust process/service core. The web UI is deliberately slim (React APIs on the TanStack Redact runtime, no component framework or web fonts, ≤ 50 kB gzipped) because Stackscan is a resident tool that must stay nimble.
+- Rust process/service core. The web UI is deliberately slim (React APIs on the TanStack Redact runtime, no component framework or web fonts, ≤ 50 kB gzipped) because Kossé is a resident tool that must stay nimble.
 - Bind to IPv4 loopback, default port 47831; an occupied port must fail clearly rather than silently move a bookmarked dashboard URL.
 - One resident application can own scanner, API, tray. Headless serve is also supported, but must not run a second instance on the same endpoint.
 - Small versioned JSON config; no database/history store needed.

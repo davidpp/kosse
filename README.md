@@ -9,7 +9,7 @@
 
 A native macOS tray menu and a lightweight local dashboard for the development services you already run: **discover, identify, open, inspect, stop.**
 
-You start dev servers from terminals, scripts and coding agents. A day later there are a dozen listeners on unremembered ports, some from worktrees you forgot. Stackscan shows them grouped by repository, worktree and package, with honest observations (listening, reachable over HTTP, or neither) and current CPU and memory. It stops a forgotten process only after confirming its exact identity. It never asks you to register projects or change how you launch them.
+You start dev servers from terminals, scripts and coding agents. A day later there are a dozen listeners on unremembered ports, some from worktrees you forgot. Kossé shows them grouped by repository, worktree and package, with honest observations (listening, reachable over HTTP, or neither) and current CPU and memory. It stops a forgotten process only after confirming its exact identity. It never asks you to register projects or change how you launch them.
 
 > **Status: in development, not yet usable.** v1 targets macOS on Apple silicon. Progress is tracked slice by slice in the [implementation plan](blueprint/implementation-plan.md), with evidence for each slice in [`docs/evidence/`](docs/evidence/).
 
@@ -51,7 +51,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for all commands and conventions, and [AG
 
 ## How this project is built
 
-Stackscan is developed blueprint-first. [`blueprint/`](blueprint/README.md) holds the product contract, architecture, verification gates and a dependency-ordered slice plan. Each slice is implemented and verified through real entrypoints (owned fixture processes, the real HTTP server, a real browser), then reviewed independently for correctness and for documentation before it lands. Mocked tests alone never count as done.
+Kossé is developed blueprint-first. [`blueprint/`](blueprint/README.md) holds the product contract, architecture, verification gates and a dependency-ordered slice plan. Each slice is implemented and verified through real entrypoints (owned fixture processes, the real HTTP server, a real browser), then reviewed independently for correctness and for documentation before it lands. Mocked tests alone never count as done.
 
 ## Brand
 
@@ -59,4 +59,4 @@ _Kossé ?_ is Québécois for "what's that?", the question you ask about an unfa
 
 ## License
 
-[MIT](LICENSE). Stackscan is an independently written project; see [provenance notes](blueprint/references.md#inspiration-and-boundaries).
+[MIT](LICENSE). Kossé is an independently written project; see [provenance notes](blueprint/references.md#inspiration-and-boundaries).

@@ -4,7 +4,7 @@ This is a harness-neutral runbook, not a background scheduler. Nothing in this p
 
 ## Invocation prompt
 
-> Implement Stackscan v1 from this repository. Read AGENTS.md and blueprint/README.md. Process dependency-ready slices in blueprint order. Follow blueprint/loop.md. Implement, verify through actual entrypoints, record evidence, and continue until complete or blocked. Do not publish, push, change login startup, stop real services, or claim unperformed GUI checks. Do not commit unless separately authorized.
+> Implement Kossé v1 from this repository. Read AGENTS.md and blueprint/README.md. Process dependency-ready slices in blueprint order. Follow blueprint/loop.md. Implement, verify through actual entrypoints, record evidence, and continue until complete or blocked. Do not publish, push, change login startup, stop real services, or claim unperformed GUI checks. Do not commit unless separately authorized.
 
 ## Each cycle
 

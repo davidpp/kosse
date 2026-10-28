@@ -17,7 +17,7 @@ export function App({ pathname }: { pathname: string }) {
     <div className="flex min-h-screen flex-col">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex h-11 w-full max-w-5xl items-center gap-3 px-4">
-          <h1 className="font-semibold tracking-tight">Stackscan</h1>
+          <h1 className="font-semibold tracking-tight">Kossé</h1>
           <p className="hidden min-w-0 truncate text-ink-muted sm:block">
             Development services running on this machine.
           </p>

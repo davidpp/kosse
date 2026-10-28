@@ -2,7 +2,7 @@
 @import "tailwindcss" source(".");
 
 /*
- * Stackscan design tokens. Light and dark follow the system; there is no theme switch.
+ * Kossé design tokens. Light and dark follow the system; there is no theme switch.
  * Neutrals carry a faint cool tint so the chrome reads as an instrument panel, not paper.
  * The accent marks focus, selection and primary actions only. Observation states have their own
  * roles for markers and icons (state text stays ink or ink-muted) and never borrow the accent.
