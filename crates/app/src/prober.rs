@@ -12,10 +12,11 @@
 //! 1. Connect to the loopback address only (never a resolved name, never off-host).
 //! 2. Wait briefly: a server that speaks first (SSH, SMTP, MySQL, banners) is not HTTP, and gets
 //!    no request.
-//! 3. Plain HTTP/1.1 `GET /` (or the service profile's validated, origin-relative `probePath`),
-//!    `Host: localhost:<port>`, no credentials or cookies. The head must
-//!    arrive within [`HEAD_TIMEOUT`]; at most [`BODY_LIMIT`] of the body is read, within
-//!    [`BODY_TIMEOUT`]. Redirects are recorded (redacted), never followed.
+//! 3. Plain HTTP/1.1 `GET /`, `Host: localhost:<port>`. Once `GET /` got an HTTP response from
+//!    that identity and port, later probes request the service profile's validated `probePath`
+//!    instead, if it has one. No credentials or cookies. The head must arrive within
+//!    [`HEAD_TIMEOUT`]; at most [`BODY_LIMIT`] of the body is read, within [`BODY_TIMEOUT`].
+//!    Redirects are recorded (redacted), never followed.
 //! 4. If the answer looked like TLS (a TLS record, a silent close, or a 400 that asks for HTTPS),
 //!    retry over TLS 1.2/1.3 (rustls) verified for `localhost` against the roots the user's
 //!    keychains trust (locally trusted development CAs included). Verification runs in process
@@ -107,6 +108,9 @@ struct Entry {
     finished: Instant,
     requested: bool,
     result: ProbeResult,
+    /// A plain `GET /` got an HTTP response from this identity and port. Only then is a profile's
+    /// `probePath` requested, so an untrusted repository file cannot steer the first contact.
+    verified_http: bool,
 }
 
 #[derive(Default)]
@@ -188,8 +192,8 @@ impl Probes {
                     .get(&key)
                     .is_some_and(|entry| now.duration_since(entry.finished) < PROBE_INTERVAL);
                 if !fresh && state.in_flight.insert(key) {
-                    let path = profiles::probe_path(observation, service, endpoint.port);
-                    due.push((key, target, path.unwrap_or("/").to_owned()));
+                    let configured = profiles::probe_path(observation, service, endpoint.port);
+                    due.push((key, target, path_for(&state, key, configured)));
                 }
             }
         }
@@ -204,11 +208,20 @@ impl Probes {
         let result = probe_endpoint(target, path, &self.tls).await;
         let mut state = self.lock();
         state.in_flight.remove(&key);
+        let verified_http = if path == "/" {
+            matches!(result, ProbeResult::Response { .. })
+        } else {
+            state
+                .results
+                .get(&key)
+                .is_some_and(|entry| entry.verified_http)
+        };
         let entry = Entry {
             probed_at_ms,
             finished: Instant::now(),
             requested,
             result,
+            verified_http,
         };
         let published = probed(&entry);
         state.results.insert(key, entry);
@@ -217,10 +230,32 @@ impl Probes {
 
     /// One user-requested probe ("try HTTP") of an endpoint that may receive one (see
     /// `probe::requested_target`); the result also appears in the next snapshot, marked
-    /// `requested`. `path` is the profile's validated `probePath`, else `/`.
-    pub async fn request(&self, key: Key, target: SocketAddr, path: &str) -> HttpProbe {
-        self.lock().in_flight.insert(key);
-        self.probe(key, target, path, true).await
+    /// `requested`. `configured` is the profile's validated `probePath`, requested only once
+    /// `GET /` has verified the endpoint as HTTP.
+    pub async fn request(
+        &self,
+        key: Key,
+        target: SocketAddr,
+        configured: Option<&str>,
+    ) -> HttpProbe {
+        let path = {
+            let mut state = self.lock();
+            state.in_flight.insert(key);
+            path_for(&state, key, configured)
+        };
+        self.probe(key, target, &path, true).await
+    }
+}
+
+/// `/` until a plain `GET /` has verified the endpoint as HTTP, then the profile's path if any.
+fn path_for(state: &BookState, key: Key, configured: Option<&str>) -> String {
+    let verified = state
+        .results
+        .get(&key)
+        .is_some_and(|entry| entry.verified_http);
+    match configured {
+        Some(path) if verified => path.to_owned(),
+        _ => "/".to_owned(),
     }
 }
 
@@ -268,6 +303,11 @@ pub fn open_url(tls: bool, port: u16) -> String {
 
 /// Probes one endpoint as described in the module documentation, requesting `path`.
 async fn probe_endpoint(target: SocketAddr, path: &str, tls: &TlsClient) -> ProbeResult {
+    // Checked before connecting: a path the request builder refuses must never surface as a
+    // protocol failure (which would then send a TLS ClientHello to a plain HTTP server).
+    if hyper::http::uri::PathAndQuery::try_from(path).is_err() {
+        return ProbeResult::InvalidPath;
+    }
     let plain = match attempt(target, path, None).await {
         Attempt::Answered(answer) if answer.asks_for_https => Some(answer.result),
         Attempt::Answered(answer) => return answer.result,
@@ -367,6 +407,7 @@ async fn attempt(target: SocketAddr, path: &str, tls: Option<&TlsClient>) -> Att
         return match exchange(io, target.port(), path, false).await {
             Ok(answer) => Attempt::Answered(answer),
             Err(Failure::TimedOut) => Attempt::Done(ProbeResult::TimedOut),
+            Err(Failure::InvalidRequest) => Attempt::Done(ProbeResult::InvalidPath),
             Err(Failure::Protocol) => match received.get() {
                 None => Attempt::MaybeTls,
                 Some(byte) if is_tls_record(byte) => Attempt::MaybeTls,
@@ -413,6 +454,7 @@ async fn attempt(target: SocketAddr, path: &str, tls: Option<&TlsClient>) -> Att
         Ok(answer) => Attempt::Answered(answer),
         Err(Failure::TimedOut) => Attempt::Done(ProbeResult::TimedOut),
         Err(Failure::Protocol) => Attempt::Done(ProbeResult::NotHttp),
+        Err(Failure::InvalidRequest) => Attempt::Done(ProbeResult::InvalidPath),
     }
 }
 
@@ -425,6 +467,8 @@ enum Failure {
     TimedOut,
     /// Not an HTTP response (or the connection ended before one).
     Protocol,
+    /// The request could not be built (the path); terminal, never retried over TLS.
+    InvalidRequest,
 }
 
 /// Aborts the connection driver when the exchange ends, however it ends.
@@ -458,7 +502,7 @@ where
         .header(ACCEPT, "text/html,*/*;q=0.8")
         .header(CONNECTION, "close")
         .body(Empty::<Bytes>::new())
-        .map_err(|_| Failure::Protocol)?;
+        .map_err(|_| Failure::InvalidRequest)?;
     let response = tokio::time::timeout_at(head_deadline, sender.send_request(request))
         .await
         .map_err(|_| Failure::TimedOut)?
@@ -647,6 +691,35 @@ impl AsyncWrite for Recorded {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validated_probe_paths_always_form_a_request_and_others_never_connect() {
+        for path in ["/", "/health", "/a/b:c@d;e=f?x=/y?z", "/%7E", "/?q"] {
+            assert_eq!(kosse_core::profiles::validate::probe_path(path), Ok(()));
+            assert!(
+                hyper::http::uri::PathAndQuery::try_from(path).is_ok(),
+                "{path}"
+            );
+        }
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind");
+            let target = listener.local_addr().expect("addr");
+            for hostile in ["/<script>", "/a>b", "/`id`", "/a b"] {
+                assert!(kosse_core::profiles::validate::probe_path(hostile).is_err());
+                let result = probe_endpoint(target, hostile, &TlsClient::default()).await;
+                assert_eq!(result, ProbeResult::InvalidPath, "{hostile}");
+            }
+            let accepted =
+                tokio::time::timeout(Duration::from_millis(100), listener.accept()).await;
+            assert!(accepted.is_err(), "nothing connected for an invalid path");
+        });
+    }
 
     #[test]
     fn titles_are_decoded_and_collapsed() {

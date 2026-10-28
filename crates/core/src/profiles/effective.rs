@@ -2,14 +2,18 @@
 //! against the observed processes of the same project.
 //!
 //! Matching never crosses projects: only services attributed to a root are candidates for that
-//! root's entries, so a declared port cannot claim another project's process. `match.cwd`
-//! resolves (symbolic links included) inside the project or matches nothing, with a warning. A
+//! root's entries, so a declared port cannot claim another project's process. `match.cwd` is
+//! resolved component by component without looking outside the project: a symbolic link that leads
+//! out of it matches nothing, with a warning. A
 //! process matching several entries is ambiguous and gets none. Profiles never change PIDs,
-//! owners, binds or eligibility; they can only label, add links, pick a probe path, and make an
-//! own loopback endpoint an HTTP probe candidate when it declares `http`/`https`.
+//! owners, binds or eligibility; they can only label, add links and name a probe path (used only
+//! once `GET /` has verified the endpoint as HTTP). Only the user's own central profile can make an
+//! own loopback endpoint an HTTP probe candidate by declaring `http`/`https`; a repository's
+//! `protocol` is a hint shown to the user, never a probe trigger.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
+    ffi::OsString,
     fs,
     path::{Path, PathBuf},
 };
@@ -148,16 +152,16 @@ pub fn assign(
         let targets: Vec<Option<PathBuf>> = project
             .services
             .iter()
-            .map(|service| {
-                let target = match_dir(&root, service)?;
-                if !target.starts_with(&root) {
+            .map(|service| match match_dir(&root, service)? {
+                Resolved::Inside(target) => Some(target),
+                Resolved::Outside => {
                     warnings.push(ScanWarning::ProfileMatchOutsideProject {
                         root: project.root.clone(),
                         service: service.id.clone(),
                     });
-                    return None;
+                    None
                 }
-                Some(target)
+                Resolved::Missing => None,
             })
             .collect();
 
@@ -192,7 +196,8 @@ pub fn assign(
                     if matches!(
                         entry.protocol,
                         Some(DeclaredProtocol::Http | DeclaredProtocol::Https)
-                    ) {
+                    ) && entry.sources.protocol == Some(ProfileSource::Central)
+                    {
                         declare_http(
                             service,
                             entry.matcher.as_ref().and_then(|m| m.port),
@@ -218,18 +223,89 @@ pub fn assign(
     warnings
 }
 
-/// The canonical directory an enabled entry matches in; `None` for an entry without `match`, a
-/// disabled one, or a directory that does not exist (yet).
-fn match_dir(root: &Path, service: &ConfiguredService) -> Option<PathBuf> {
+/// Where an entry's `match.cwd` leads.
+#[derive(Debug, PartialEq, Eq)]
+enum Resolved {
+    /// The real directory, inside the project.
+    Inside(PathBuf),
+    /// A symbolic link (or `..` inside one) leads out of the project.
+    Outside,
+    /// Does not exist (yet), is not a directory, or links too deeply.
+    Missing,
+}
+
+/// Symbolic links followed while resolving one match directory, like the kernel's limit.
+const MAX_LINKS: usize = 32;
+
+/// The directory an enabled entry matches in; `None` for an entry without `match` or a disabled
+/// one.
+fn match_dir(root: &Path, service: &ConfiguredService) -> Option<Resolved> {
     if service.disabled {
         return None;
     }
     let matcher = service.matcher.as_ref()?;
-    let mut dir = root.to_path_buf();
-    if let Some(cwd) = &matcher.cwd {
-        dir.extend(validate::relative_dir(cwd).ok()?);
+    let parts = match &matcher.cwd {
+        Some(cwd) => validate::relative_dir(cwd).ok()?,
+        None => Vec::new(),
+    };
+    Some(resolve_inside(
+        root,
+        parts.into_iter().map(OsString::from).collect(),
+    ))
+}
+
+/// Resolves `parts` under the canonical `root` one component at a time with `symlink_metadata`
+/// and `read_link`, refusing as soon as a link or `..` would leave the root, so nothing outside the
+/// project is ever looked at. An absolute link target counts as inside only when it starts with
+/// the canonical root itself.
+fn resolve_inside(root: &Path, parts: Vec<OsString>) -> Resolved {
+    let mut pending: VecDeque<OsString> = parts.into();
+    let mut current = root.to_path_buf();
+    let mut links = 0;
+    while let Some(part) = pending.pop_front() {
+        match part.to_str() {
+            Some("" | ".") => continue,
+            // `current` is a real directory below the root (no links in it), so `..` is its parent.
+            Some("..") => {
+                if current == root {
+                    return Resolved::Outside;
+                }
+                current.pop();
+                continue;
+            }
+            _ => {}
+        }
+        let next = current.join(&part);
+        let Ok(metadata) = fs::symlink_metadata(&next) else {
+            return Resolved::Missing;
+        };
+        if metadata.file_type().is_symlink() {
+            links += 1;
+            let Ok(target) = fs::read_link(&next) else {
+                return Resolved::Missing;
+            };
+            if links > MAX_LINKS {
+                return Resolved::Missing;
+            }
+            let rest: Vec<OsString> = if target.is_absolute() {
+                let Ok(inside) = target.strip_prefix(root) else {
+                    return Resolved::Outside;
+                };
+                current = root.to_path_buf();
+                inside.iter().map(OsString::from).collect()
+            } else {
+                target.iter().map(OsString::from).collect()
+            };
+            for component in rest.into_iter().rev() {
+                pending.push_front(component);
+            }
+        } else if metadata.is_dir() {
+            current = next;
+        } else {
+            return Resolved::Missing;
+        }
     }
-    fs::canonicalize(dir).ok()
+    Resolved::Inside(current)
 }
 
 fn port_matches(entry: &ConfiguredService, service: &Service) -> bool {
@@ -253,7 +329,7 @@ fn canonical_cwd<'a>(
         .as_ref()
 }
 
-/// A declared HTTP service's endpoints (only the matched port, when the match names one) become
+/// A centrally declared HTTP service's endpoints (only the matched port, when the match names one) become
 /// probe candidates despite a non-HTTP-looking port or process name. Loopback and owner rules
 /// still apply.
 fn declare_http(service: &mut Service, port: Option<u16>, own_user: Option<u32>) {
@@ -316,6 +392,45 @@ mod tests {
             }),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn match_directories_resolve_without_leaving_the_project() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let base = dir.path().canonicalize().expect("canonical");
+        let root = base.join("project");
+        let outside = base.join("outside");
+        for path in [
+            root.join("apps/web"),
+            root.join("apps/api"),
+            outside.join("x"),
+        ] {
+            fs::create_dir_all(path).expect("dir");
+        }
+        symlink("../apps/api", root.join("apps/relative")).expect("link");
+        symlink(root.join("apps/web"), root.join("apps/absolute")).expect("link");
+        symlink("../../outside", root.join("apps/up")).expect("link");
+        symlink(&outside, root.join("apps/away")).expect("link");
+        symlink("loop", root.join("apps/loop")).expect("link");
+        let resolve = |cwd: &str| {
+            let parts = validate::relative_dir(cwd).expect("valid");
+            resolve_inside(&root, parts.into_iter().map(OsString::from).collect())
+        };
+        assert_eq!(resolve("."), Resolved::Inside(root.clone()));
+        assert_eq!(
+            resolve("apps/relative"),
+            Resolved::Inside(root.join("apps/api"))
+        );
+        assert_eq!(
+            resolve("apps/absolute"),
+            Resolved::Inside(root.join("apps/web"))
+        );
+        assert_eq!(resolve("apps/up"), Resolved::Outside);
+        assert_eq!(resolve("apps/up/x"), Resolved::Outside);
+        assert_eq!(resolve("apps/away"), Resolved::Outside);
+        assert_eq!(resolve("apps/loop"), Resolved::Missing);
+        assert_eq!(resolve("apps/none"), Resolved::Missing);
     }
 
     #[test]

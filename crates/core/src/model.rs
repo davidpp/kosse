@@ -390,6 +390,9 @@ pub enum ProbeResult {
     /// The endpoint answered with something other than HTTP, or spoke before being asked (as
     /// SSH, SMTP or MySQL do); no request was sent then.
     NotHttp,
+    /// The profile's `probePath` could not form an HTTP request; nothing was sent. Profiles are
+    /// validated against the same rules, so this means a validator and HTTP library disagree.
+    InvalidPath,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -450,6 +453,9 @@ pub enum ScanWarning {
     /// A service's `match.cwd` resolves (through a symbolic link) outside its project, so it
     /// matches nothing.
     ProfileMatchOutsideProject { root: String, service: String },
+    /// A central profile is saved under a path that is not canonical, so it can never match;
+    /// `kosse config move <root> <canonical>` fixes it.
+    ProfileRootNotCanonical { root: String, canonical: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -515,6 +521,10 @@ impl fmt::Display for ScanWarning {
             Self::ProfileMatchOutsideProject { root, service } => write!(
                 f,
                 "profile of {root}: service {service:?} matches a directory outside the project; ignored"
+            ),
+            Self::ProfileRootNotCanonical { root, canonical } => write!(
+                f,
+                "central profile of {root} never matches: the project's root is {canonical} (kosse config move)"
             ),
         }
     }

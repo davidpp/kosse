@@ -8,9 +8,9 @@
 
 Do not change an existing process's port: avoiding conflicts requires participating in launch or receiving a supported runtime registration. Metadata is not a port reservation. An unavailable desired port is reported, not repaired by killing its occupant.
 
-## Proposed v1 schema
+## v1 schema (example; the emitted schema and validate.rs are authoritative)
 
-Finalize and generate JSON Schema in the metadata issue; this example is the portable project profile payload, not currently supported software. Central storage associates it with a canonical absolute worktree root in a machine-local envelope; a repo-local file derives its root from its location. Relative match paths use that root. No personal absolute path needs to be committed:
+The JSON Schema is generated (`kosse config schema`, committed as `docs/kosse.schema.json`); this example is the portable project profile payload, not currently supported software. Central storage associates it with a canonical absolute worktree root in a machine-local envelope; a repo-local file derives its root from its location. Relative match paths use that root. No personal absolute path needs to be committed:
 
 ```json
 {
@@ -60,7 +60,7 @@ Ship schema with the application and `kosse config schema` to emit it; do not re
 
 A cloned repository is untrusted input. Reading metadata cannot launch commands, install trust roots, enable tunnels, mutate system DNS, signal processes, or register startup services.
 Only http/https links; render URL hostname visibly. Automatically verified local links are limited to loopback or .localhost. Custom domains (including LocalCan .local) may be saved explicitly as declared links, never auto-probed or assumed loopback based on their suffix. External/tunnel links are clearly labeled, never auto-probed and opened only on user action. No javascript/file/custom schemes or credentials in URLs.
-Probe paths must be origin-relative paths without authority/scheme, bounded and validated; only apply to an already verified owned loopback endpoint. Declared protocol is a hint, not proof of HTTP health.
+Probe paths must be origin-relative paths without authority/scheme, bounded and validated (RFC 3986 path and query characters only); they apply only to an owned loopback endpoint where a plain `GET /` already got an HTTP response, so an untrusted file cannot steer the first contact. Declared protocol is a hint, not proof of HTTP health: only the user's central profile can make an endpoint an HTTP probe candidate with it; a repository's `protocol` is shown, never acted on.
 Destructive actions still require observed process identity and confirmation. Metadata cannot relax API security or eligibility.
 
 ## Existing tools and future adapter boundary

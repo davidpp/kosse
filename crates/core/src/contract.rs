@@ -35,7 +35,8 @@ pub struct ProbeRequest {
 /// `POST /api/profile` ("Customize this project"): saves (`profile` set) or removes (`null`) the
 /// central profile of `root`, which must be a project in the current snapshot or one that already
 /// has a central profile. Only Kossé's own configuration is written, never the project. Fields
-/// the dashboard does not know are kept from the profile being replaced.
+/// the dashboard does not know are kept from the profile being replaced: per service ID, and per
+/// link by URL (a link whose URL changes loses them).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveProfileRequest {
@@ -95,6 +96,9 @@ pub enum ApiErrorCode {
     /// The configuration file cannot be read, is invalid or is from a newer Kossé, so it is not
     /// overwritten; `message` names it. Fix or remove it.
     ConfigUnavailable,
+    /// Writing the configuration failed (permissions, disk); `message` says why. Nothing was
+    /// changed.
+    ConfigWriteFailed,
 }
 
 /// Every contract type in one TypeScript module.

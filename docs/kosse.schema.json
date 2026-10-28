@@ -172,16 +172,16 @@
           "minLength": 1
         },
         "probePath": {
-          "description": "Origin-relative path requested by the HTTP probe instead of `/`, only on an already\nverified loopback endpoint of the user's own process.",
+          "description": "Origin-relative path requested by the HTTP probe instead of `/`, only on a loopback\nendpoint of the user's own process where `GET /` already got an HTTP response.",
           "type": [
             "string",
             "null"
           ],
           "maxLength": 512,
-          "pattern": "^/([!-.0-~][!-~]*)?$"
+          "pattern": "^/(?:(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%[0-9A-Fa-f]{2})(?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%[0-9A-Fa-f]{2})*)?(?:\\?(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*)?$"
         },
         "protocol": {
-          "description": "What the service speaks: a hint (it can make an endpoint an HTTP probe candidate), never\nproof of health.",
+          "description": "What the service speaks: a hint, never proof of health. Only in the central profile does\n`http`/`https` make an endpoint an HTTP probe candidate; in a repository file it is shown,\nnever acted on.",
           "anyOf": [
             {
               "$ref": "#/$defs/DeclaredProtocol"

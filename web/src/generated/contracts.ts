@@ -12,7 +12,7 @@ export type Health = { name: string, version: string, };
  */
 export type Session = { token: string, };
 
-export type ApiErrorCode = "hostNotAllowed" | "originNotAllowed" | "tokenRequired" | "unsupportedMediaType" | "payloadTooLarge" | "invalidPayload" | "rateLimited" | "staleIdentity" | "notProbeable" | "scannerBusy" | "scannerStopped" | "invalidProfile" | "unknownProject" | "configUnavailable";
+export type ApiErrorCode = "hostNotAllowed" | "originNotAllowed" | "tokenRequired" | "unsupportedMediaType" | "payloadTooLarge" | "invalidPayload" | "rateLimited" | "staleIdentity" | "notProbeable" | "scannerBusy" | "scannerStopped" | "invalidProfile" | "unknownProject" | "configUnavailable" | "configWriteFailed";
 
 /**
  * The body of every API error response.
@@ -127,8 +127,9 @@ name?: string,
  */
 match?: ServiceMatch, 
 /**
- * What the service speaks: a hint (it can make an endpoint an HTTP probe candidate), never
- * proof of health.
+ * What the service speaks: a hint, never proof of health. Only in the central profile does
+ * `http`/`https` make an endpoint an HTTP probe candidate; in a repository file it is shown,
+ * never acted on.
  */
 protocol?: DeclaredProtocol, 
 /**
@@ -136,8 +137,8 @@ protocol?: DeclaredProtocol,
  */
 links?: Array<LinkProfile>, 
 /**
- * Origin-relative path requested by the HTTP probe instead of `/`, only on an already
- * verified loopback endpoint of the user's own process.
+ * Origin-relative path requested by the HTTP probe instead of `/`, only on a loopback
+ * endpoint of the user's own process where `GET /` already got an HTTP response.
  */
 probePath?: string, 
 /**
@@ -173,7 +174,8 @@ services: { [key in string]: ServiceProfile }, };
  * `POST /api/profile` ("Customize this project"): saves (`profile` set) or removes (`null`) the
  * central profile of `root`, which must be a project in the current snapshot or one that already
  * has a central profile. Only Kossé's own configuration is written, never the project. Fields
- * the dashboard does not know are kept from the profile being replaced.
+ * the dashboard does not know are kept from the profile being replaced: per service ID, and per
+ * link by URL (a link whose URL changes loses them).
  */
 export type SaveProfileRequest = { root: string, profile: ProjectProfile | null, };
 
@@ -218,7 +220,13 @@ url: string,
 /**
  * Shown next to the label so the destination is always visible.
  */
-host: string, kind: LinkKind, reach: LinkReach, };
+host: string, 
+/**
+ * The profile's own label for the link (or the default from `reach`). Display only: a
+ * repository can call an external host `local`, so trust comes from `reach` and the visible
+ * `host`, never from `kind`.
+ */
+kind: LinkKind, reach: LinkReach, };
 
 /**
  * Where an effective value came from. Precedence: central over repository over inference; a
@@ -294,7 +302,7 @@ bodyTruncated: boolean, } | { "kind": "timedOut" } | { "kind": "refused" } | { "
 /**
  * The TLS library's description: untrusted text (it can quote the peer's certificate).
  */
-reason: string, } | { "kind": "notHttp" };
+reason: string, } | { "kind": "notHttp" } | { "kind": "invalidPath" };
 
 /**
  * Why an endpoint is not probed automatically. Only the current user's processes that run in
@@ -463,7 +471,7 @@ services: Array<ConfiguredService>, };
 /**
  * Partial data in a snapshot: something that exists but could not be observed.
  */
-export type ScanWarning = { "kind": "otherUsersNotVisible" } | { "kind": "processExited", pid: number, ports: Array<number>, } | { "kind": "metadataUnavailable", pid: number, fields: Array<ProcessField>, } | { "kind": "attributionUnavailable", pid: number, reason: AttributionFailure, } | { "kind": "profileUnusable", source: ProfileSource, path: string, problem: ProfileProblem, lastGoodRetained: boolean, } | { "kind": "profileMatchOutsideProject", root: string, service: string, };
+export type ScanWarning = { "kind": "otherUsersNotVisible" } | { "kind": "processExited", pid: number, ports: Array<number>, } | { "kind": "metadataUnavailable", pid: number, fields: Array<ProcessField>, } | { "kind": "attributionUnavailable", pid: number, reason: AttributionFailure, } | { "kind": "profileUnusable", source: ProfileSource, path: string, problem: ProfileProblem, lastGoodRetained: boolean, } | { "kind": "profileMatchOutsideProject", root: string, service: string, } | { "kind": "profileRootNotCanonical", root: string, canonical: string, };
 
 /**
  * A process and every TCP port it listens on. One process is one action target.

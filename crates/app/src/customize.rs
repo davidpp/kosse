@@ -1,11 +1,12 @@
 //! `POST /api/profile` ("Customize this project"): saves or removes a project's central profile.
 //!
 //! It passes the same guard as every unsafe request (exact Origin, JSON, size limit, action token)
-//! and the same one-per-second limit. Only Kossé's own configuration file is written, never the
-//! project: no repository file, `.gitignore` or Git state is touched. The root must be a project in
-//! the current snapshot or one that already has a central profile, so the dashboard cannot be used
-//! to plant profiles for arbitrary paths. The scanner picks the change up on the scan this
-//! triggers, and every view sees it in the next snapshot.
+//! and has its own one-per-second limit, separate from refresh, probe and stop. Only Kossé's own
+//! configuration file is written, never the project: no repository file, `.gitignore` or Git
+//! state is touched. The root must be a project in the current snapshot or one that already has a
+//! central profile, so the dashboard cannot be used to plant profiles for arbitrary paths. The
+//! scanner picks the change up on the scan this triggers, and every view sees it in the next
+//! snapshot.
 
 use std::sync::Arc;
 
@@ -124,12 +125,12 @@ pub async fn save(
         ),
         Ok(Err(failure)) => error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            ApiErrorCode::ConfigUnavailable,
+            ApiErrorCode::ConfigWriteFailed,
             failure.to_string(),
         ),
         Err(_) => error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            ApiErrorCode::ConfigUnavailable,
+            ApiErrorCode::ConfigWriteFailed,
             "the configuration write did not finish".into(),
         ),
     }

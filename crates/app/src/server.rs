@@ -247,7 +247,13 @@ mod tests {
             std::collections::HashMap::new(),
         )));
         let app = router(
-            AppState::new(scheduler.handle(), policy, probes, actions, stopping_receiver),
+            AppState::new(
+                scheduler.handle(),
+                policy,
+                probes,
+                actions,
+                stopping_receiver,
+            ),
             Customize::new(
                 scheduler.handle(),
                 kosse_core::profiles::CentralStore::new("/var/empty/kosse-tests".into()),

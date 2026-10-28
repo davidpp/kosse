@@ -25,12 +25,17 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
-    /// Print the JSON Schema of a project profile (`kosse.json`) to save next to your profiles.
+    /// Print the JSON Schema for a project profile (`kosse.json`); save it wherever your editor can
+    /// reference it. Kossé never fetches `$schema`.
     Schema,
     /// Print where central profiles are saved (`$KOSSE_CONFIG_DIR` overrides the directory).
     Path,
-    /// Attach the profile saved for a project directory that moved to its new directory.
-    /// Profiles are keyed by path and never follow a project by name.
+    /// Re-attach a saved profile to a project's new directory.
+    ///
+    /// Central profiles are keyed by the project's canonical root path and never follow a project
+    /// by name, so a moved or re-cloned project shows its old profile as "project not observed"
+    /// until it is moved here explicitly. Refuses when no profile is saved for the old root or the
+    /// new one already has one.
     Move {
         /// The old project root, exactly as saved (see `kosse list`).
         from: String,

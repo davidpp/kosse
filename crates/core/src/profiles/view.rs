@@ -86,6 +86,9 @@ pub struct EffectiveLink {
     pub url: String,
     /// Shown next to the label so the destination is always visible.
     pub host: String,
+    /// The profile's own label for the link (or the default from `reach`). Display only: a
+    /// repository can call an external host `local`, so trust comes from `reach` and the visible
+    /// `host`, never from `kind`.
     pub kind: LinkKind,
     pub reach: LinkReach,
 }

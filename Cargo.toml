@@ -23,6 +23,8 @@ http-body-util = "0.1.5"
 # HTTP/1 client connections for bounded probes (no pool, proxy, DNS or redirect machinery).
 hyper = { version = "1.12.0", features = ["client", "http1"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
+# `O_NOFOLLOW | O_NONBLOCK` for opening untrusted repository files. Already in the graph.
+libc = "0.2.191"
 # Socket -> PID enumeration. Confined to crates/core/src/sockets.rs so API churn stays local.
 # Patched below; see vendor/listeners/KOSSE-PATCH.md.
 listeners = "0.6.1"

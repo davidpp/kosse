@@ -63,6 +63,12 @@ impl CentralConfig {
 
     /// Every rule, for every project.
     fn validate(&self) -> Result<(), ProfileError> {
+        if self.version != CONFIG_VERSION {
+            return Err(ProfileError {
+                at: "version".into(),
+                problem: format!("must be {CONFIG_VERSION}"),
+            });
+        }
         for (root, profile) in &self.projects {
             let at = format!("projects[{root:?}]");
             if !Path::new(root).is_absolute() {
@@ -90,8 +96,29 @@ impl Default for CentralConfig {
     }
 }
 
+/// The nested profiles' versions only, read leniently so a profile written by a newer Kossé is
+/// reported as newer even when the rest of its shape is unknown.
+#[derive(Deserialize)]
+struct NestedVersions {
+    projects: BTreeMap<String, crate::profiles::document::VersionProbe>,
+}
+
 /// Parses and validates the file's contents.
 pub fn parse(bytes: &[u8]) -> Result<CentralConfig, ProfileProblem> {
+    let probe: crate::profiles::document::VersionProbe =
+        serde_json::from_slice(bytes).map_err(|error| ProfileProblem::Invalid {
+            reason: error.to_string(),
+        })?;
+    source::check_version(probe.version.as_ref())?;
+    if let Ok(nested) = serde_json::from_slice::<NestedVersions>(bytes) {
+        for profile in nested.projects.values() {
+            if let Err(newer @ ProfileProblem::NewerVersion { .. }) =
+                source::check_version(profile.version.as_ref())
+            {
+                return Err(newer);
+            }
+        }
+    }
     let config: CentralConfig = source::parse_versioned(bytes)?;
     config.validate().map_err(|error| ProfileProblem::Invalid {
         reason: error.to_string(),
@@ -173,6 +200,12 @@ impl CentralStore {
                 "a project root is an absolute path".into(),
             ));
         }
+        // Profiles are matched by canonical root; a root that no longer exists is kept as given
+        // so its profile can still be removed.
+        let canonical = fs::canonicalize(root)
+            .ok()
+            .and_then(|path| path.to_str().map(str::to_owned));
+        let root = canonical.as_deref().unwrap_or(root);
         self.update(|config| {
             let Some(mut profile) = profile else {
                 config.projects.remove(root);
@@ -218,6 +251,24 @@ impl CentralStore {
         })
     }
 
+    /// The file to replace: the configuration file, or the file it links to. A link to nowhere is
+    /// refused rather than replaced by a regular file.
+    fn write_target(&self) -> Result<PathBuf, StoreError> {
+        let file = self.file();
+        match fs::symlink_metadata(&file) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                fs::canonicalize(&file).map_err(|source| StoreError::Io {
+                    path: file.clone(),
+                    source: io::Error::new(
+                        source.kind(),
+                        format!("it is a symbolic link whose target cannot be resolved ({source})"),
+                    ),
+                })
+            }
+            _ => Ok(file),
+        }
+    }
+
     /// Read, change, validate, write atomically, under the lock.
     fn update<T>(
         &self,
@@ -260,19 +311,21 @@ impl CentralStore {
             return Err(StoreError::TooLarge);
         }
 
-        // tempfile creates the file 0600 with a random name, in the same directory so that the
-        // rename is atomic.
+        // A symbolic link (to a dotfiles checkout, say) stays a link: the target is replaced, in
+        // its own directory so that the rename is atomic. tempfile creates the file 0600.
+        let target = self.write_target()?;
+        let target_dir = target.parent().unwrap_or(&self.dir).to_path_buf();
         let mut temporary = tempfile::Builder::new()
             .prefix(".config-")
             .suffix(".tmp")
-            .tempfile_in(&self.dir)
+            .tempfile_in(&target_dir)
             .map_err(io_error)?;
         temporary.write_all(&text).map_err(io_error)?;
         temporary.as_file().sync_all().map_err(io_error)?;
         temporary
-            .persist(self.file())
+            .persist(&target)
             .map_err(|error| io_error(error.error))?;
-        File::open(&self.dir)
+        File::open(&target_dir)
             .and_then(|dir| dir.sync_all())
             .map_err(io_error)?;
         drop(lock);
@@ -348,6 +401,11 @@ mod tests {
                 false,
             ),
             (br#"{"version":7,"projects":[]}"#, true),
+            (br#"{"version":0}"#, false),
+            (
+                br#"{"version":1,"projects":{"/a":{"version":2,"services":"later"}}}"#,
+                true,
+            ),
         ] {
             let (_dir, store) = store();
             fs::create_dir_all(&store.dir).expect("dir");
@@ -363,6 +421,53 @@ mod tests {
             }
             assert_eq!(fs::read(store.file()).expect("read"), contents);
         }
+    }
+
+    #[test]
+    fn a_symbolic_link_stays_a_link_and_its_target_is_replaced() {
+        let (dir, store) = store();
+        fs::create_dir_all(&store.dir).expect("dir");
+        let dotfiles = dir.path().join("dotfiles");
+        fs::create_dir(&dotfiles).expect("dir");
+        let target = dotfiles.join("kosse.json");
+        fs::write(&target, r#"{"version":1}"#).expect("write");
+        std::os::unix::fs::symlink(&target, store.file()).expect("link");
+        store.save("/work/app", Some(profile("App"))).expect("save");
+        assert!(
+            fs::symlink_metadata(store.file())
+                .expect("stat")
+                .file_type()
+                .is_symlink()
+        );
+        let written: Value =
+            serde_json::from_slice(&fs::read(&target).expect("read")).expect("json");
+        assert_eq!(written["projects"]["/work/app"]["name"], "App");
+
+        fs::remove_file(&target).expect("dangle");
+        assert!(matches!(
+            store.save("/work/app", None),
+            Err(StoreError::Io { .. })
+        ));
+        assert!(!target.exists(), "a dangling link is not replaced");
+    }
+
+    #[test]
+    fn roots_are_saved_canonically() {
+        let (dir, store) = store();
+        let real = dir.path().join("real");
+        fs::create_dir(&real).expect("dir");
+        let alias = dir.path().join("alias");
+        std::os::unix::fs::symlink(&real, &alias).expect("link");
+        store
+            .save(alias.to_str().expect("utf-8"), Some(profile("App")))
+            .expect("save");
+        let (config, _) = store.load().expect("load").expect("exists");
+        let canonical = real.canonicalize().expect("canonical");
+        assert!(
+            config
+                .projects
+                .contains_key(canonical.to_str().expect("utf-8"))
+        );
     }
 
     #[test]

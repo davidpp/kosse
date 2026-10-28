@@ -23,7 +23,10 @@ use std::{
 
 use kosse_core::{
     contract::SavedProfile,
-    model::{HttpProbe, Observation, ProbeResult, ProcessIdentity, ScanWarning, Service, Snapshot},
+    model::{
+        HttpProbe, Observation, ProbeResult, ProbeSkip, ProcessIdentity, ScanWarning, Service,
+        Snapshot,
+    },
     profiles::view::{LinkReach, ProfileMatch, ProfileProblem, ProfileSource, ProjectMetadata},
 };
 use kosse_fixtures::{
@@ -785,12 +788,15 @@ fn central_problems_are_reported_and_never_overwritten() {
     assert!(status.success());
 }
 
+/// A repository file can name a probe path and hint at HTTP, but cannot steer probing: its
+/// `protocol` never makes an endpoint a candidate, and its `probePath` is requested only after a
+/// plain `GET /` got an HTTP response. Only the user's central profile declares HTTP.
 #[test]
-fn declared_http_is_probed_at_its_probe_path() {
+fn only_a_central_declaration_makes_a_probe_candidate_and_paths_wait_for_verified_http() {
     let tree = Sandbox::new().expect("sandbox");
     let project = tree.dir("db-ish").expect("dir");
     tree.file("db-ish/package.json", "{}").expect("file");
-    // Named like a database server, so it is not probed unless a profile declares HTTP.
+    // Named like a database server, so it is not probed unless the user declares HTTP.
     let fixture = Fixture::spawn(
         &FixtureSpec::new()
             .listen(&[V4])
@@ -807,35 +813,67 @@ fn declared_http_is_probed_at_its_probe_path() {
     .expect("write");
     let config = tree.root().join("config");
     let server = Server::start_configured(&config, &[&format!("--probe-only={}", fixture.pid())]);
+    let http_of =
+        |observation: &Observation| service_of(observation, &fixture).endpoints[0].http.clone();
+    until(
+        &server,
+        &|o| {
+            service_of(o, &fixture).profile == matched("api")
+                && http_of(o)
+                    == HttpProbe::Skipped {
+                        reason: ProbeSkip::KnownNonHttpProcess,
+                    }
+        },
+        "a repository protocol is only a hint",
+    );
+    thread::sleep(Duration::from_secs(4));
+    assert!(
+        fixture.received(port_of(&fixture)).is_empty(),
+        "nothing probed on a repository's word"
+    );
+
+    let token = server.token();
+    let saved = post_profile(
+        &server,
+        &token,
+        &text(&project),
+        &json!({ "version": 1, "services": { "api": { "protocol": "http" } } }),
+    );
+    assert_eq!(saved.status, 200, "{}", saved.text());
     let result = eventually(APPLIED_WITHIN, || {
         let observation = server.snapshot().observation?;
-        match &service_of(&observation, &fixture).endpoints[0].http {
-            HttpProbe::Probed { result, .. } => Some(result.clone()),
+        match http_of(&observation) {
+            HttpProbe::Probed { result, .. } => Some(result),
             _ => None,
         }
     })
-    .expect("probed");
+    .expect("probed once the user declared HTTP");
     assert!(
         matches!(result, ProbeResult::Response { status: 404, .. }),
         "{result:?}"
     );
+    let first = fixture.received(port_of(&fixture));
+    assert_eq!(first.len(), 1, "{first:?}");
+    assert!(first[0].starts_with("GET / HTTP/1.1\r\n"), "{first:?}");
+
+    // Verified as HTTP: the next probe ("try HTTP", so the test need not wait 15 s) requests the
+    // profile's path.
+    let identity = identity(&fixture);
+    let body = json!({ "identity": identity, "port": port_of(&fixture) }).to_string();
+    let probed = eventually(APPLIED_WITHIN, || {
+        let response = server.post_json("/api/probe", &token, &body);
+        (response.status == 200).then_some(response)
+    })
+    .expect("requested probe");
+    assert!(probed.text().contains("404"), "{}", probed.text());
     let received = fixture.received(port_of(&fixture));
+    assert_eq!(received.len(), 2, "{received:?}");
     assert!(
-        received
-            .first()
-            .is_some_and(|request| request.starts_with("GET /healthz?ready=1 HTTP/1.1\r\n")),
+        received[1].starts_with("GET /healthz?ready=1 HTTP/1.1\r\n"),
         "{received:?}"
     );
     let (status, _) = server.terminate();
     assert!(status.success());
-
-    // Without the declaration, the same process is skipped as non-HTTP.
-    fs::remove_file(project.join("kosse.json")).expect("delete");
-    let observation = list_json(&config);
-    assert!(matches!(
-        service_of(&observation, &fixture).endpoints[0].http,
-        HttpProbe::Skipped { .. }
-    ));
 }
 
 #[test]
@@ -958,4 +996,34 @@ fn config_commands_emit_the_schema_and_locate_the_file() {
         .output()
         .expect("run");
     assert_eq!(relative.status.code(), Some(1));
+}
+
+#[test]
+fn non_canonical_central_keys_are_reported() {
+    let tree = Sandbox::new().expect("sandbox");
+    let project = tree.dir("project").expect("dir");
+    tree.file("project/package.json", "{}").expect("file");
+    // macOS temporary directories live under /private; /var links to /private/var.
+    let alias = text(&project)
+        .strip_prefix("/private")
+        .map(str::to_owned)
+        .expect("a /private temporary directory");
+    let config = tree.root().join("config");
+    write_central(
+        &config,
+        &json!({ alias.clone(): { "version": 1, "name": "Hand edited" } }),
+    );
+    let fixture = spawn(&project);
+    let observation = list_json(&config);
+    assert!(
+        observation
+            .warnings
+            .contains(&ScanWarning::ProfileRootNotCanonical {
+                root: alias,
+                canonical: text(&project),
+            }),
+        "{:?}",
+        observation.warnings
+    );
+    assert_eq!(service_of(&observation, &fixture).profile, None);
 }

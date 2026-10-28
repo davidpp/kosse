@@ -130,7 +130,8 @@ fn assert_matches_manifest_and_lsof(snapshot: &Observation, fixture: &Fixture) -
             }
             ScanWarning::OtherUsersNotVisible
             | ScanWarning::ProfileUnusable { .. }
-            | ScanWarning::ProfileMatchOutsideProject { .. } => {}
+            | ScanWarning::ProfileMatchOutsideProject { .. }
+            | ScanWarning::ProfileRootNotCanonical { .. } => {}
         }
     }
     service

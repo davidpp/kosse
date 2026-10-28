@@ -13,7 +13,7 @@ You start dev servers from terminals, scripts and coding agents. A day later the
 
 ## Principles
 
-- **Observe, don't orchestrate.** No launch wrappers, proxies, certificates or port allocation. Optional machine-local project profiles add names and links without touching your repositories.
+- **Observe, don't orchestrate.** No launch wrappers, proxies, certificates or port allocation. Optional machine-local project profiles add names and links without touching your repositories; a repository may also ship an optional, read-only `kosse.json` ([schema](docs/kosse.schema.json), [example](blueprint/project-metadata.md#v1-schema-example-the-emitted-schema-and-validaters-are-authoritative)).
 - **Observations, not health claims.** A `404` from `GET /` still means the server is reachable. A TCP database gets no fake "Open" link. Unknown stays unknown.
 - **Safe by construction.** Stop targets a fresh PID + start-time identity after confirmation; force kill needs a second, explicit confirmation. No process groups, no parents, no other users.
 - **Local only.** Loopback binding, Host/Origin/token guards against browser-based attacks, centralized secret redaction, no telemetry, no remote assets.

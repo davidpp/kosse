@@ -154,6 +154,11 @@ fn is_invisible_format(character: char) -> bool {
 }
 
 /// An origin-relative path for the HTTP probe.
+///
+/// RFC 3986 `path-absolute [ "?" query ]` without a fragment: unreserved and sub-delimiter
+/// characters, `:`, `@`, `/` (and `?` in the query) or `%XX`. That is a strict subset of what
+/// `http::uri::PathAndQuery` accepts, so a valid path always forms a request; anything else (`<`,
+/// `>`, `` ` ``, `"`, `{`, `\`, spaces, non-ASCII) must be percent-encoded.
 pub fn probe_path(path: &str) -> Result<(), String> {
     if path.len() > MAX_PATH_BYTES {
         return Err(format!("at most {MAX_PATH_BYTES} bytes"));
@@ -161,11 +166,38 @@ pub fn probe_path(path: &str) -> Result<(), String> {
     if !path.starts_with('/') || path.starts_with("//") {
         return Err("must be an origin-relative path starting with a single `/`".into());
     }
-    if !path.bytes().all(|byte| byte.is_ascii_graphic()) {
-        return Err("must be visible ASCII (percent-encode anything else)".into());
-    }
-    if path.contains(['\\', '#']) {
-        return Err("must not contain `\\` or `#`".into());
+    let (path_part, query) = match path.split_once('?') {
+        Some((path_part, query)) => (path_part, Some(query)),
+        None => (path, None),
+    };
+    let valid = |text: &str, extra: &[u8]| {
+        let bytes = text.as_bytes();
+        let mut index = 0;
+        while index < bytes.len() {
+            let byte = bytes[index];
+            if byte == b'%' {
+                let hex = bytes.get(index + 1..index + 3);
+                if !hex.is_some_and(|hex| hex.iter().all(u8::is_ascii_hexdigit)) {
+                    return false;
+                }
+                index += 3;
+                continue;
+            }
+            let allowed = byte.is_ascii_alphanumeric()
+                || b"-._~!$&'()*+,;=:@/".contains(&byte)
+                || extra.contains(&byte);
+            if !allowed {
+                return false;
+            }
+            index += 1;
+        }
+        true
+    };
+    if !valid(path_part, b"") || !query.is_none_or(|query| valid(query, b"?")) {
+        return Err(
+            "only letters, digits, `-._~!$&'()*+,;=:@/`, `?` for the query and `%XX` escapes are allowed"
+                .into(),
+        );
     }
     Ok(())
 }
@@ -376,7 +408,14 @@ mod tests {
 
     #[test]
     fn probe_paths_are_origin_relative() {
-        for good in ["/", "/health", "/api/health?ready=1", "/%7Euser"] {
+        for good in [
+            "/",
+            "/health",
+            "/api/health?ready=1",
+            "/%7Euser",
+            "/?probe",
+            "/a/b:c@d;e=f?x=/y?z",
+        ] {
             assert_eq!(probe_path(good), Ok(()), "{good}");
         }
         for bad in [
@@ -389,6 +428,17 @@ mod tests {
             "/a b",
             "/é",
             "/\r\nX-Injected: 1",
+            // Accepted by a naive visible-ASCII check, refused by the HTTP request builder.
+            "/<script>",
+            "/a>b",
+            "/`id`",
+            "/a\"b",
+            "/{x}",
+            "/a|b",
+            "/a^b",
+            "/a[0]",
+            "/%zz",
+            "/%4",
         ] {
             assert!(probe_path(bad).is_err(), "{bad:?}");
         }

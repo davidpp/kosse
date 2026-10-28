@@ -30,6 +30,8 @@ struct Watched<T> {
     stamp: Option<FileStamp>,
     checked_at: Option<Instant>,
     good: Option<T>,
+    /// Counts changes of `good`, so derived state is recomputed only when it changes.
+    generation: u64,
     problem: Option<ProfileProblem>,
 }
 
@@ -39,6 +41,7 @@ impl<T> Watched<T> {
             stamp: None,
             checked_at: None,
             good: None,
+            generation: 0,
             problem: None,
         }
     }
@@ -68,6 +71,7 @@ impl<T> Watched<T> {
             Ok(None) => {
                 self.stamp = None;
                 self.good = None;
+                self.generation += 1;
                 self.problem = None;
             }
             Ok(Some((bytes, stamp))) => {
@@ -75,6 +79,7 @@ impl<T> Watched<T> {
                 match parse(&bytes) {
                     Ok(value) => {
                         self.good = Some(value);
+                        self.generation += 1;
                         self.problem = None;
                     }
                     Err(problem) => self.problem = Some(problem),
@@ -108,6 +113,10 @@ struct Repository {
 pub struct Profiles {
     store: CentralStore,
     central: Watched<CentralConfig>,
+    /// Hand-edited central keys that are not canonical and so can never match, for the central
+    /// file version (`generation`) in `noncanonical_of`.
+    noncanonical: Vec<ScanWarning>,
+    noncanonical_of: Option<u64>,
     repositories: HashMap<String, Repository>,
 }
 
@@ -117,6 +126,8 @@ impl Profiles {
         Self {
             store,
             central: Watched::new(),
+            noncanonical: Vec::new(),
+            noncanonical_of: None,
             repositories: HashMap::new(),
         }
     }
@@ -155,10 +166,15 @@ impl Profiles {
             now.saturating_duration_since(repository.last_seen) < REPOSITORY_RETENTION
         });
 
+        if self.noncanonical_of != Some(self.central.generation) {
+            self.noncanonical_of = Some(self.central.generation);
+            self.noncanonical = noncanonical_roots(self.central.good.as_ref());
+        }
         let mut warnings: Vec<ScanWarning> = self
             .central
             .warning(ProfileSource::Central, &central_file)
             .into_iter()
+            .chain(self.noncanonical.iter().cloned())
             .collect();
         let mut repository_roots: Vec<&String> = self.repositories.keys().collect();
         repository_roots.sort();
@@ -197,4 +213,21 @@ impl Profiles {
         observation.profiles = metadata;
         observation.warnings.extend(warnings);
     }
+}
+
+/// Central keys naming an existing directory by a non-canonical path (a symbolic link, `/tmp` for
+/// `/private/tmp`): they can never match, since projects are keyed by canonical root.
+fn noncanonical_roots(config: Option<&CentralConfig>) -> Vec<ScanWarning> {
+    config
+        .into_iter()
+        .flat_map(|config| config.projects.keys())
+        .filter_map(|root| {
+            let canonical = std::fs::canonicalize(root).ok()?;
+            let canonical = canonical.to_string_lossy();
+            (canonical != root.as_str()).then(|| ScanWarning::ProfileRootNotCanonical {
+                root: root.clone(),
+                canonical: canonical.into_owned(),
+            })
+        })
+        .collect()
 }

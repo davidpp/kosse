@@ -109,7 +109,13 @@ async fn serve(args: ServeArgs) -> Result<(), AppError> {
     ));
     let actions = Arc::new(Actions::new(action_scope(&args)));
     let app = server::router(
-        AppState::new(scheduler.handle(), policy, probes, actions, stopping_receiver),
+        AppState::new(
+            scheduler.handle(),
+            policy,
+            probes,
+            actions,
+            stopping_receiver,
+        ),
         Customize::new(scheduler.handle(), store),
     );
     report!("kosse {} listening on {url}", env!("CARGO_PKG_VERSION"));

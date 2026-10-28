@@ -2,9 +2,9 @@
 //! version-first parsing (a newer format is reported as newer, not as malformed).
 
 use std::{
-    fs::{self, File},
+    fs::{self, OpenOptions},
     io::{self, Read},
-    os::unix::fs::MetadataExt,
+    os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::Path,
 };
 
@@ -72,9 +72,19 @@ pub fn read(path: &Path, links: Links) -> Result<Option<(Vec<u8>, FileStamp)>, P
     if checked.len > u64::from(MAX_FILE_BYTES) {
         return Err(too_large());
     }
-    let file = match File::open(path) {
+    // Never follow a link swapped in after the check (repository files), and never block on a
+    // FIFO or device: the scanner thread reads these.
+    let mut flags = libc::O_NONBLOCK;
+    if links == Links::Refuse {
+        flags |= libc::O_NOFOLLOW;
+    }
+    let file = match OpenOptions::new().read(true).custom_flags(flags).open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        // ELOOP: the final component became a symbolic link.
+        Err(error) if error.raw_os_error() == Some(libc::ELOOP) => {
+            return Err(ProfileProblem::NotAFile);
+        }
         Err(error) => return Err(unreadable(&error)),
     };
     let opened = file.metadata().map_err(|error| unreadable(&error))?;
@@ -106,24 +116,26 @@ fn unreadable(error: &io::Error) -> ProfileProblem {
 /// Parses a versioned document: the version first, then the whole.
 pub fn parse_versioned<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, ProfileProblem> {
     let probe: VersionProbe = serde_json::from_slice(bytes).map_err(|error| invalid(&error))?;
-    match probe.version {
-        None => {
-            return Err(ProfileProblem::Invalid {
-                reason: "missing `version`".into(),
-            });
-        }
-        Some(serde_json::Value::Number(number))
-            if number
-                .as_u64()
-                .is_some_and(|v| v > u64::from(PROFILE_VERSION)) =>
-        {
-            return Err(ProfileProblem::NewerVersion {
-                version: number.to_string(),
-            });
-        }
-        Some(_) => {}
-    }
+    check_version(probe.version.as_ref())?;
     serde_json::from_slice(bytes).map_err(|error| invalid(&error))
+}
+
+/// `version` must be a whole number from 1; above this build's version it is newer, not invalid.
+pub(crate) fn check_version(version: Option<&serde_json::Value>) -> Result<(), ProfileProblem> {
+    let Some(version) = version else {
+        return Err(ProfileProblem::Invalid {
+            reason: "missing `version`".into(),
+        });
+    };
+    match version.as_u64() {
+        Some(number) if number > u64::from(PROFILE_VERSION) => Err(ProfileProblem::NewerVersion {
+            version: number.to_string(),
+        }),
+        Some(1..) => Ok(()),
+        _ => Err(ProfileProblem::Invalid {
+            reason: format!("`version` must be a whole number from 1, not {version}"),
+        }),
+    }
 }
 
 /// A repository profile file's contents, fully validated.
@@ -160,6 +172,14 @@ mod tests {
         ));
         assert!(matches!(
             parse_profile(br#"{"version": 0}"#),
+            Err(ProfileProblem::Invalid { .. })
+        ));
+        assert!(matches!(
+            parse_profile(br#"{"version": -1}"#),
+            Err(ProfileProblem::Invalid { .. })
+        ));
+        assert!(matches!(
+            parse_profile(br#"{"version": "1"}"#),
             Err(ProfileProblem::Invalid { .. })
         ));
         assert!(matches!(

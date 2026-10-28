@@ -76,18 +76,24 @@ pub struct ServiceProfile {
     #[serde(rename = "match", default, skip_serializing_if = "Option::is_none")]
     #[ts(rename = "match")]
     pub matcher: Option<ServiceMatch>,
-    /// What the service speaks: a hint (it can make an endpoint an HTTP probe candidate), never
-    /// proof of health.
+    /// What the service speaks: a hint, never proof of health. Only in the central profile does
+    /// `http`/`https` make an endpoint an HTTP probe candidate; in a repository file it is shown,
+    /// never acted on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub protocol: Option<DeclaredProtocol>,
     /// Friendly links. Replaces (never extends) the other source's list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(length(max = 16))]
     pub links: Option<Vec<LinkProfile>>,
-    /// Origin-relative path requested by the HTTP probe instead of `/`, only on an already
-    /// verified loopback endpoint of the user's own process.
+    /// Origin-relative path requested by the HTTP probe instead of `/`, only on a loopback
+    /// endpoint of the user's own process where `GET /` already got an HTTP response.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(length(max = 512), regex(pattern = r"^/([!-.0-~][!-~]*)?$"))]
+    #[schemars(
+        length(max = 512),
+        regex(
+            pattern = r"^/(?:(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%[0-9A-Fa-f]{2})(?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%[0-9A-Fa-f]{2})*)?(?:\?(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*)?$"
+        )
+    )]
     pub probe_path: Option<String>,
     /// `true` suppresses an entry with this ID from the other source (and this one).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -170,9 +176,10 @@ impl ProjectProfile {
     }
 
     /// Carries over fields this build does not know from `previous`, the profile this one
-    /// replaces, wherever this one does not set them (at the profile, service and link level by
-    /// position), so saving from the dashboard never drops what a newer Kossé or a hand edit
-    /// added.
+    /// replaces, wherever this one does not set them: at the profile level, per service ID, and per
+    /// link by URL (so reordering or removing links never moves fields to another link; a link
+    /// whose URL changed starts without them). Saving from the dashboard thus never drops what a
+    /// newer Kossé or a hand edit added.
     pub fn keep_unknown_from(&mut self, previous: &Self) {
         keep_missing(&mut self.unknown, &previous.unknown);
         for (id, service) in &mut self.services {
@@ -181,8 +188,10 @@ impl ProjectProfile {
             };
             keep_missing(&mut service.unknown, &old.unknown);
             if let (Some(links), Some(old_links)) = (&mut service.links, &old.links) {
-                for (link, old_link) in links.iter_mut().zip(old_links) {
-                    keep_missing(&mut link.unknown, &old_link.unknown);
+                for link in links.iter_mut() {
+                    if let Some(old_link) = old_links.iter().find(|old| old.url == link.url) {
+                        keep_missing(&mut link.unknown, &old_link.unknown);
+                    }
                 }
             }
         }

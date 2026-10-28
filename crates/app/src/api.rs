@@ -288,17 +288,13 @@ pub async fn probe(
         return rate_limited("a probe was requested less than a second ago");
     }
     let key = (request.identity, request.port);
-    let path = snapshot
-        .observation
-        .as_ref()
-        .and_then(|observation| {
-            let service = observation
-                .services
-                .iter()
-                .find(|service| service.process.identity == request.identity)?;
-            profiles::probe_path(observation, service, request.port)
-        })
-        .unwrap_or("/");
+    let path = snapshot.observation.as_ref().and_then(|observation| {
+        let service = observation
+            .services
+            .iter()
+            .find(|service| service.process.identity == request.identity)?;
+        profiles::probe_path(observation, service, request.port)
+    });
     Json(state.probes.request(key, target, path).await).into_response()
 }
 
