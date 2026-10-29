@@ -2,8 +2,6 @@
 /dist/
 /artifacts/
 /.tmp/
-/web/node_modules/
-/web/dist/
 .DS_Store
 *.log
 .env
@@ -16,3 +14,7 @@
 
 # `bun run app` state (docs/agent-drive.md)
 /var/
+
+# Intermediate native design review captures
+/.impeccable/review/
+/.impeccable/hook.cache.json

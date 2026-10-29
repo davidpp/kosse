@@ -149,9 +149,7 @@ pub fn run(args: &AppArgs) -> Result<(), AppError> {
             Event::UserEvent(Message::Menu(id)) => app.activate(&id),
             Event::UserEvent(Message::Window(route)) => app.show(route),
             Event::UserEvent(Message::WindowNotice(Notice::Unavailable { reason })) => {
-                app.notice = Some(format!(
-                    "Dashboard window unavailable: {reason} (opened in the browser)"
-                ));
+                app.notice = Some(format!("Dashboard window unavailable: {reason}"));
                 app.render();
             }
             Event::UserEvent(Message::WindowNotice(Notice::Lost { url, title })) => {
@@ -194,10 +192,10 @@ fn second_launch(
         InstanceMode::Headless if no_open => {
             report!("kosse: `kosse serve` is already running at {url} (no menu-bar app)");
         }
-        InstanceMode::Headless => launcher::fallback(
-            url,
-            &format!("`kosse serve` is already running at {url}, without a menu-bar app or window"),
-        ),
+        InstanceMode::Headless => {
+            runtime.block_on(instance::show_window(existing, Route::Dashboard))?;
+            report!("kosse: showing the native window of `kosse serve` at {url}");
+        }
     }
     Ok(())
 }

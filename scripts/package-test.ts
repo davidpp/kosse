@@ -29,9 +29,9 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
 
-import { type Fixture, release, startFixture } from "../e2e/support/processes.ts";
-import { createRepo } from "../e2e/support/repos.ts";
-import type { ActionResult, Health, Session, Snapshot } from "../web/src/generated/contracts.ts";
+import { type Fixture, release, startFixture } from "./support/processes.ts";
+import { createRepo } from "./support/repos.ts";
+import type { ActionResult, Health, Session, Snapshot } from "../contracts/contracts.ts";
 import { defaultTarball, output, recordPath, repoRoot, sha256 } from "./packaging.ts";
 
 const systemPath = "/usr/bin:/bin:/usr/sbin:/sbin";
@@ -168,13 +168,15 @@ async function main(): Promise<void> {
   const base = `http://127.0.0.1:${port}`;
   const page = await fetch(`${base}/`);
   const html = await page.text();
-  const script = /<script[^>]+src="(\/assets\/[^"]+\.js)"/.exec(html)?.[1];
-  assert(page.status === 200 && script !== undefined, "the embedded dashboard is served");
-  const asset = await fetch(`${base}${script}`);
-  assert(asset.status === 200 && (await asset.arrayBuffer()).byteLength > 10_000, "bundle served");
+  assert(
+    page.status === 200 && html.includes("kosse open"),
+    "the installed native app information page is served",
+  );
+  assert(!html.includes("<script"), "no web application is embedded");
+  assert((await fetch(`${base}/assets/index.js`)).status === 404, "no browser bundle route");
   const health = await getJson<Health>(`${base}/api/health`);
   assert(health.mode === "headless" && health.version === "0.1.0", JSON.stringify(health));
-  step("installed kosse serve: dashboard page and bundle served from the binary");
+  step("installed kosse serve: guarded API with native application information");
 
   const service = await waitFor("the fixture with an HTTP probe result", async () => {
     const snapshot = await getJson<Snapshot>(`${base}/api/snapshot`);

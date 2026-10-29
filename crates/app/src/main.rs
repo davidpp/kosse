@@ -24,6 +24,7 @@ mod instance;
 mod launcher;
 mod list;
 mod menu;
+mod native;
 mod open;
 mod opener;
 mod preferences;
@@ -35,7 +36,6 @@ mod server;
 mod startup;
 mod text;
 mod tray;
-mod window;
 #[cfg(debug_assertions)]
 mod window_control;
 
@@ -76,6 +76,8 @@ enum AppError {
     Doctor(#[from] doctor::DoctorError),
     #[error("startup: {0}")]
     Startup(#[from] startup::StartupError),
+    #[error("native window unavailable: {0}")]
+    Window(String),
     #[error("the server task stopped unexpectedly")]
     Stopped,
 }
@@ -84,7 +86,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     // The window reports a failure to its owner, which says why; it writes no stderr line itself.
     if let Some(Command::Window(args)) = &cli.command {
-        return window::run(args);
+        return native::run(args);
     }
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
@@ -117,14 +119,33 @@ fn runtime() -> Result<tokio::runtime::Runtime, AppError> {
 }
 
 async fn serve(args: ServeArgs) -> Result<(), AppError> {
-    let running =
-        Running::start(&args.server, dev_mode(&args), InstanceMode::Headless, None).await?;
+    let (routes, mut incoming) = tokio::sync::mpsc::unbounded_channel();
+    let sink = std::sync::Arc::new(move |route| {
+        let _ = routes.send(route);
+    });
+    let running = Running::start(
+        &args.server,
+        dev_mode(&args),
+        InstanceMode::Headless,
+        Some(sink),
+    )
+    .await?;
     let url = running.url().to_owned();
     report!("kosse {} listening on {url}", env!("CARGO_PKG_VERSION"));
+    let mut windows = launcher::Windows::new(std::sync::Arc::new(|_| {}));
     if !args.no_open {
-        opener::open_or_report(&url);
+        windows.show(&url, launcher::TITLE);
     }
-    running.run(std::future::pending()).await?;
+    let server = running.run(std::future::pending());
+    tokio::pin!(server);
+    let result = loop {
+        tokio::select! {
+            result = &mut server => break result,
+            Some(route) = incoming.recv() => { windows.show(&route::Route::from(route).url(&url), launcher::TITLE); }
+        }
+    };
+    windows.close();
+    result?;
     report!("kosse stopped");
     Ok(())
 }

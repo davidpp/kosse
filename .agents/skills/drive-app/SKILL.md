@@ -1,6 +1,6 @@
 ---
 name: drive-app
-description: Start, drive and read the real Kossé menu-bar app and its WKWebView dashboard window from an agent, on a fictional fixture world. Use whenever a change touches the dashboard, the window, the tray routes or the app, to reproduce a UI bug in the real window, take a screenshot of it, resize it, click or type in it, or check what a stop, force or save did. Prefer it over hand-launching target/debug/kosse or trusting Playwright alone; Playwright's WebKit is not the window's.
+description: Start, drive and read the real Kossé menu-bar app and its Rune dashboard window from an agent, on a fictional fixture world. Use whenever a change touches the dashboard, the window, the tray routes or the app, to reproduce a UI bug in the real window, take a screenshot of it, resize it, click or type in it, or check what a stop, force or save did. Prefer it over hand-launching target/debug/kosse or trusting Playwright alone; The driver sends real native input.
 ---
 
 # Drive the app
@@ -9,14 +9,16 @@ Full reference: `docs/agent-drive.md`. Everything runs on owned fixtures, an iso
 
 ```sh
 bun run app -- start        # builds what is stale; returns status JSON once the window answers
-bun run app -- eval "[...document.querySelectorAll('section h2')].map(h => h.textContent)"
-bun run app -- click 'li[data-row][aria-label^="postgres, port"] button' Stop
+bun run app -- tree
+bun run app -- click search
+bun run app -- text storefront
+bun run app -- click <element-key>
 bun run app -- shot         # then Read var/app/shot.png
-bun run app -- resize 560x420; bun run app -- theme dark; bun run app -- key Escape
+bun run app -- resize 640x440; bun run app -- theme dark; bun run app -- key Escape
 bun run app -- stop         # always, when done
 ```
 
-After changing Rust or `web/src`, `stop` then `start` (it rebuilds; the page does not hot-reload). `bun run test:window` runs the automated real-window suite (transparent click-through window, its own instance; needs an unlocked screen).
+After changing Rust or bundled assets, `stop` then `start` (it rebuilds; the window does not hot-reload). `bun run test:window` runs the automated real-window suite (transparent click-through window, its own instance; needs an unlocked screen).
 
 Rules:
 

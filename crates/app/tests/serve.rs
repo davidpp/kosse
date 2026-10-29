@@ -11,7 +11,6 @@ mod support;
 use std::{
     io::Write,
     net::{TcpListener, TcpStream},
-    path::Path,
     thread,
     time::{Duration, Instant},
 };
@@ -38,33 +37,16 @@ fn health_reports_name_and_version() {
 }
 
 #[test]
-fn serves_embedded_bundle_with_client_route_fallback() {
+fn serves_native_app_information_without_a_web_bundle() {
     let server = Server::start();
-
     let index = server.get("/");
-    assert_eq!(index.status, 200, "{}", index.text());
+    assert_eq!(index.status, 200);
     assert_eq!(index.header("content-type"), Some("text/html"));
     assert_eq!(index.header("cache-control"), Some("no-cache"));
-    let html = index.text();
-    assert!(html.contains(r#"<div id="app">"#), "{html}");
-
-    let client_route = server.get("/services/example");
-    assert_eq!(client_route.status, 200);
-    assert_eq!(client_route.text(), html);
-
-    let script = html
-        .split('"')
-        .find(|part| {
-            part.starts_with("/assets/") && Path::new(part).extension() == Some("js".as_ref())
-        })
-        .expect("index references a hashed script");
-    let asset = server.get(script);
-    assert_eq!(asset.status, 200);
-    assert_eq!(asset.header("content-type"), Some("text/javascript"));
-    assert_eq!(
-        asset.header("cache-control"),
-        Some("public, max-age=31536000, immutable")
-    );
+    assert!(index.text().contains("kosse open"));
+    assert!(!index.text().contains("<script"));
+    assert_eq!(server.get("/services/example").status, 404);
+    assert_eq!(server.get("/assets/index.js").status, 404);
 }
 
 #[test]
@@ -121,12 +103,11 @@ fn port_held_only_on_ipv6_loopback_fails_with_clear_error() {
 }
 
 #[test]
-fn serves_bundled_javascript_license_notice() {
+fn removed_web_license_route_is_not_served() {
     let server = Server::start();
     let notice = server.get("/.vite/license.md");
 
-    assert_eq!(notice.status, 200);
-    assert_eq!(notice.header("content-type"), Some("text/markdown"));
+    assert_eq!(notice.status, 404);
 }
 
 #[test]

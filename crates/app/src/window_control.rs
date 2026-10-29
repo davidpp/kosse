@@ -1,28 +1,12 @@
-//! Debug builds only: the dashboard window's agent control socket (docs/agent-drive.md), so an
-//! agent can read and drive the real `WKWebView` window rather than a stand-in browser.
-//!
-//! It listens only when the window process has `KOSSE_WINDOW_CONTROL=1` and
-//! `KOSSE_WINDOW_CONTROL_SOCKET=<path>` (set by `bun run app`); release builds contain none of
-//! this. The socket is owner-only (0600) in an owner-only directory, and removed when the window
-//! closes. One request per connection: a JSON line in (at most 1 MiB, read within 5 s), a JSON
-//! line out (`{"error": …}` on failure). Snapshots are written only as new or regular `.png`
-//! files (never through a symlink) in `KOSSE_WINDOW_CONTROL_DIR` or the temporary directory.
-//! - `{"op":"status"}`: URL, title, logical size, visibility, focus, the process's app name;
-//! - `{"op":"eval","js":…}`: evaluates `js` in the page and returns its JSON value (a promise is
-//!   not awaited; `scripts/app.ts` wraps the code to make that work);
-//! - `{"op":"snapshot","path":…}`: writes the visible page as a PNG (`WKWebView`'s own snapshot,
-//!   no screen-recording permission);
-//! - `{"op":"resize","width":…,"height":…}`: sets the window's content size (points);
-//! - `{"op":"click","x":…,"y":…}`: a real left click (`NSEvent` mouse down and up through the
-//!   window) at page coordinates, so hit-testing, focus and the first click are `AppKit`'s own;
-//! - `{"op":"key","key":…}`: a real key press (`j`, `k`, `/`, `Enter`, `Escape`, `Tab`, `Backspace`,
-//!   `ArrowDown`, `ArrowUp`, or one printable character) to the focused element;
-//! - `{"op":"theme","theme":"light"|"dark"|"system"}`: the window's appearance, which the page
-//!   sees as `prefers-color-scheme`;
-//! - `{"op":"quit"}`: closes the window, as ⌘W does (answered before it closes).
-//!
-//! Requests reach the window's main thread as events; the reply comes back on a channel.
-
+//! Debug-only agent driver for the real Rune window. Native events go through `AppKit`.
+use crate::native::State;
+use block2::RcBlock;
+use objc2::{MainThreadMarker, rc::Retained};
+use objc2_app_kit::{NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSWindow};
+use objc2_foundation::NSOperationQueue;
+use objc2_foundation::{NSPoint, NSSize, NSString};
+use serde::Deserialize;
+use serde_json::{Value, json};
 use std::{
     fs,
     io::{BufRead, BufReader, Write},
@@ -35,20 +19,6 @@ use std::{
     thread,
     time::Duration,
 };
-
-use block2::RcBlock;
-use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage, NSRunningApplication};
-use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
-use objc2_foundation::{NSDictionary, NSError};
-use objc2_foundation::{NSPoint, NSString};
-use serde::Deserialize;
-use serde_json::{Value, json};
-use tao::{
-    dpi::LogicalSize,
-    window::{Theme, Window},
-};
-use wry::{WebView, WebViewExtMacOS};
-
 const ENABLE: &str = "KOSSE_WINDOW_CONTROL";
 const SOCKET: &str = "KOSSE_WINDOW_CONTROL_SOCKET";
 const SHOTS: &str = "KOSSE_WINDOW_CONTROL_DIR";
@@ -65,7 +35,9 @@ static BOUND: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 #[serde(tag = "op", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Request {
     Status,
-    Eval { js: String },
+    Scroll { x: f64, y: f64, delta: i32 },
+    Tree,
+    Text { text: String },
     Snapshot { path: PathBuf },
     Resize { width: f64, height: f64 },
     Click { x: f64, y: f64 },
@@ -74,19 +46,19 @@ pub enum Request {
     Quit,
 }
 
-/// Where a request's answer goes: once, from the main thread or a `WebKit` callback.
+/// Where a request's answer goes: once, from the main thread or a screenshot worker.
 #[derive(Debug)]
 pub struct Reply(Mutex<Option<mpsc::Sender<Value>>>);
 
 impl Reply {
-    fn send(&self, value: Value) {
+    pub(crate) fn send(&self, value: Value) {
         let sender = self.0.lock().unwrap_or_else(PoisonError::into_inner).take();
         if let Some(sender) = sender {
             let _ = sender.send(value);
         }
     }
 
-    fn fail(&self, error: impl std::fmt::Display) {
+    pub(crate) fn fail(&self, error: impl std::fmt::Display) {
         self.send(json!({ "error": error.to_string() }));
     }
 }
@@ -156,17 +128,6 @@ fn bind(path: &Path) -> std::io::Result<UnixListener> {
     Ok(listener)
 }
 
-/// `KOSSE_TEST_WINDOW=transparent`: nothing to see and nothing to click for the person at the
-/// desktop, while the window still counts as shown for `WebKit` and `AppKit`.
-pub fn make_transparent(webview: &WebView) {
-    let window = webview.ns_window();
-    window.setAlphaValue(0.01);
-    window.setIgnoresMouseEvents(true);
-    // Above other apps' windows, so macOS does not count it occluded (WebKit would then throttle
-    // the page as a hidden one); being transparent and click-through, it covers nothing.
-    window.setLevel(objc2_app_kit::NSFloatingWindowLevel);
-}
-
 /// Removes the socket when the window closes (debug builds; nothing else lives at that path).
 pub fn unlink() {
     if let Some(path) = BOUND.get() {
@@ -209,143 +170,130 @@ fn handle(stream: &UnixStream, deliver: &impl Fn(Request, Reply) -> bool) -> boo
     alive
 }
 
-/// Runs `request` on the main thread. Returns `true` when the window should close.
-pub fn answer(request: Request, reply: Reply, window: &Window, webview: &WebView) -> bool {
-    match request {
-        Request::Status => reply.send(status(window, webview)),
-        Request::Eval { js } => {
-            let shared = std::sync::Arc::new(reply);
-            let callback = std::sync::Arc::clone(&shared);
-            let evaluated = webview.evaluate_script_with_callback(&js, move |result| {
-                // The value arrives as JSON text; anything else is passed on as a string.
-                let value = serde_json::from_str(&result).unwrap_or(Value::String(result));
-                callback.send(json!({ "value": value }));
-            });
-            if let Err(error) = evaluated {
-                shared.fail(error);
-            }
+#[expect(
+    unsafe_code,
+    reason = "AppKit copies the owned Send block and invokes it on the main queue; it outlives this call"
+)]
+pub fn dispatch(
+    request: Request,
+    reply: Reply,
+    app: &rune::AppHandle<State>,
+    tree: &std::sync::Arc<Mutex<Value>>,
+) {
+    if matches!(request, Request::Tree) {
+        reply.send(tree.lock().unwrap_or_else(PoisonError::into_inner).clone());
+        return;
+    }
+    if matches!(request, Request::Theme { .. } | Request::Quit) {
+        app.update(move |s, tx| answer(request, reply, s, tx, &Value::Null));
+        return;
+    }
+    // Run native input outside Rune's state-update callback. Dispatching an NSEvent there
+    // re-enters the event loop while it holds its runtime, so edits can be overwritten.
+    let pending = std::sync::Arc::new(Mutex::new(Some((request, reply))));
+    let block = RcBlock::new(move || {
+        if let Some((request, reply)) = pending
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            answer(
+                request,
+                reply,
+                &mut State::default(),
+                &mut rune::Tx::default(),
+                &Value::Null,
+            );
         }
-        Request::Snapshot { path } => match writable_png(&path) {
-            Ok(()) => snapshot(webview, path, reply),
+    });
+    unsafe {
+        NSOperationQueue::mainQueue().addOperationWithBlock(&block);
+    }
+}
+
+pub fn answer(request: Request, reply: Reply, state: &mut State, tx: &mut rune::Tx, tree: &Value) {
+    if matches!(request, Request::Quit) {
+        tx.quit();
+        return;
+    }
+    let Some(window) = native_window() else {
+        reply.fail("window unavailable");
+        return;
+    };
+    match request {
+        Request::Scroll { x, y, delta } => match scroll(&window, x, y, delta) {
+            Ok(()) => reply.send(json!({"scrolled": delta})),
             Err(error) => reply.fail(error),
+        },
+        Request::Status => reply.send(status(&window)),
+        Request::Tree => reply.send(tree.clone()),
+        Request::Text { text } => {
+            // Paste through the real native text input, not an alternate state mutation.
+            for character in text.chars() {
+                if let Err(error) = press(&window, &character.to_string()) {
+                    reply.fail(error);
+                    return;
+                }
+            }
+            reply.send(json!({"typed": true}));
+        }
+        Request::Click { x, y } => match click(&window, x, y) {
+            Ok(()) => reply.send(json!({"clicked": [x,y]})),
+            Err(e) => reply.fail(e),
+        },
+        Request::Key { key } => match press(&window, &key) {
+            Ok(()) => reply.send(json!({"pressed": key})),
+            Err(e) => reply.fail(e),
         },
         Request::Resize { width, height } => {
-            window.set_inner_size(LogicalSize::new(width, height));
-            reply.send(status(window, webview));
+            window.setContentSize(NSSize::new(width, height));
+            reply.send(status(&window));
         }
-        Request::Click { x, y } => match click(webview, x, y) {
-            Ok(()) => reply.send(json!({ "clicked": [x, y] })),
-            Err(error) => reply.fail(error),
-        },
-        Request::Key { key } => match press(webview, &key) {
-            Ok(()) => reply.send(json!({ "pressed": key })),
-            Err(error) => reply.fail(error),
-        },
         Request::Theme { theme } => {
-            let theme = match theme.as_str() {
-                "light" => Some(Theme::Light),
-                "dark" => Some(Theme::Dark),
+            state.theme = match theme.as_str() {
+                "dark" => Some(true),
+                "light" => Some(false),
                 "system" => None,
                 _ => {
                     reply.fail("theme is light, dark or system");
-                    return false;
+                    return;
                 }
             };
-            window.set_theme(theme);
-            reply.send(status(window, webview));
+            reply.send(json!({"theme": theme}));
         }
-        Request::Quit => {
-            reply.send(json!({ "closing": true }));
-            return true;
+        Request::Snapshot { path } => {
+            if let Err(e) = writable_png(&path) {
+                reply.fail(e);
+                return;
+            }
+            let number = window.windowNumber();
+            thread::spawn(move || {
+                let result = capture(number, &path);
+                match result {
+                    Ok(()) => reply.send(json!({"path": path})),
+                    Err(error) => reply.fail(error),
+                }
+            });
         }
-    }
-    false
-}
-
-fn status(window: &Window, webview: &WebView) -> Value {
-    let scale = window.scale_factor();
-    let size: LogicalSize<f64> = window.inner_size().to_logical(scale);
-    let app = NSRunningApplication::currentApplication();
-    let position = window
-        .outer_position()
-        .ok()
-        .map(|position| position.to_logical::<f64>(scale))
-        .map(|position| [position.x, position.y]);
-    json!({
-        "pid": std::process::id(),
-        "position": position,
-        "url": webview.url().ok(),
-        "title": window.title(),
-        "width": size.width,
-        "height": size.height,
-        "scale": scale,
-        "visible": window.is_visible(),
-        "focused": window.is_focused(),
-        "minimized": window.is_minimized(),
-        "alpha": webview.ns_window().alphaValue(),
-        "occluded": !webview
-            .ns_window()
-            .occlusionState()
-            .contains(objc2_app_kit::NSWindowOcclusionState::Visible),
-        "appName": app.localizedName().map(|name| name.to_string()),
-        "bundleIdentifier": app.bundleIdentifier().map(|id| id.to_string()),
-    })
-}
-
-/// `WKWebView.takeSnapshot`: the visible page at the window's scale, written as a PNG.
-fn snapshot(webview: &WebView, path: PathBuf, reply: Reply) {
-    let handler = RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
-        #[expect(
-            unsafe_code,
-            reason = "WebKit's completion handler passes raw pointers to an image or an error"
-        )]
-        // SAFETY: WebKit passes either an image or an error, each valid for this call.
-        let (image, error) = unsafe { (image.as_ref(), error.as_ref()) };
-        let written = match (image, error) {
-            (Some(image), _) => png(image).and_then(|bytes| {
-                write_png(&path, &bytes).map_err(|error| format!("{}: {error}", path.display()))
-            }),
-            (None, Some(error)) => Err(error.localizedDescription().to_string()),
-            (None, None) => Err("WebKit returned no snapshot".to_owned()),
-        };
-        match written {
-            Ok(()) => reply.send(json!({ "path": path })),
-            Err(error) => reply.fail(error),
-        }
-    });
-    let view = webview.webview();
-    #[expect(
-        unsafe_code,
-        reason = "takeSnapshot is unsafe only for its block's signature, which matches WebKit's"
-    )]
-    // SAFETY: on the main thread, with a handler of the declared type; no configuration means the
-    // visible bounds.
-    unsafe {
-        view.takeSnapshotWithConfiguration_completionHandler(None, &handler);
+        Request::Quit => {}
     }
 }
-
-fn png(image: &NSImage) -> Result<Vec<u8>, String> {
-    let tiff = image
-        .TIFFRepresentation()
-        .ok_or("the snapshot has no image data")?;
-    let bitmap = NSBitmapImageRep::imageRepWithData(&tiff).ok_or("unreadable snapshot")?;
-    #[expect(
-        unsafe_code,
-        reason = "representationUsingType is unsafe only for the dictionary's generic types"
-    )]
-    // SAFETY: an empty properties dictionary has the expected key and value types.
-    let data = unsafe {
-        bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new())
-    }
-    .ok_or("the snapshot could not be encoded as PNG")?;
-    Ok(data.to_vec())
+fn native_window() -> Option<Retained<NSWindow>> {
+    let marker = MainThreadMarker::new()?;
+    let app = NSApplication::sharedApplication(marker);
+    app.keyWindow().or_else(|| app.windows().firstObject())
 }
-
-/// A left click at page coordinates (CSS pixels from the top left, the web view's points).
-fn click(webview: &WebView, x: f64, y: f64) -> Result<(), String> {
-    let window = webview.ns_window();
-    let height = webview.webview().frame().size.height;
+fn status(window: &NSWindow) -> Value {
+    let size = window.contentView().map(|view| view.frame().size);
+    json!({"renderer": "rune", "alpha": window.alphaValue(), "pid": std::process::id(), "windowNumber": window.windowNumber(), "title": window.title().to_string(), "width": size.map(|s| s.width), "height": size.map(|s| s.height), "visible": window.isVisible(), "focused": window.isKeyWindow()})
+}
+fn click(window: &NSWindow, x: f64, y: f64) -> Result<(), String> {
+    let height = window
+        .contentView()
+        .ok_or("no content view")?
+        .frame()
+        .size
+        .height;
     // Window coordinates start at the bottom left; the web view fills the content view.
     let location = NSPoint::new(x, height - y);
     let number = window.windowNumber();
@@ -368,7 +316,7 @@ fn click(webview: &WebView, x: f64, y: f64) -> Result<(), String> {
 }
 
 /// A key press (down and up) to the window's first responder, the web view.
-fn press(webview: &WebView, key: &str) -> Result<(), String> {
+fn press(window: &NSWindow, key: &str) -> Result<(), String> {
     let (characters, code) = match key {
         "Enter" => ("\r".to_owned(), 36),
         "Escape" => ("\u{1b}".to_owned(), 53),
@@ -382,7 +330,6 @@ fn press(webview: &WebView, key: &str) -> Result<(), String> {
         other if other.chars().count() == 1 => (other.to_owned(), 0),
         other => return Err(format!("unsupported key {other:?}")),
     };
-    let window = webview.ns_window();
     let characters = NSString::from_str(&characters);
     for kind in [NSEventType::KeyDown, NSEventType::KeyUp] {
         let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
@@ -440,13 +387,53 @@ fn writable_png(path: &Path) -> Result<(), String> {
     }
 }
 
-/// Writes without following a symlink planted since the check.
-fn write_png(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use rustix::fs::{Mode, OFlags};
-    let fd = rustix::fs::open(
+/// A real rendered window that does not cover or intercept the user's desktop.
+pub fn conceal() {
+    if let Some(window) = native_window() {
+        window.setAlphaValue(0.01);
+        window.setIgnoresMouseEvents(true);
+        window.setLevel(objc2_app_kit::NSFloatingWindowLevel);
+    }
+}
+
+fn scroll(window: &NSWindow, x: f64, y: f64, delta: i32) -> Result<(), String> {
+    use objc2_core_graphics::{CGEvent, CGScrollEventUnit};
+    let view = window.contentView().ok_or("no content view")?;
+    let moved = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+        NSEventType::MouseMoved, NSPoint::new(x, view.frame().size.height - y), NSEventModifierFlags::empty(), 0.0, window.windowNumber(), None, 0, 0, 0.0).ok_or("could not create pointer event")?;
+    view.mouseMoved(&moved);
+    let wheel = CGEvent::new_scroll_wheel_event2(None, CGScrollEventUnit::Pixel, 1, delta, 0, 0)
+        .ok_or("could not create wheel event")?;
+    let event = NSEvent::eventWithCGEvent(&wheel).ok_or("could not create scroll event")?;
+    view.scrollWheel(&event);
+    Ok(())
+}
+
+fn capture(number: isize, path: &Path) -> Result<(), String> {
+    let temp = tempfile::Builder::new()
+        .prefix("kosse-shot-")
+        .suffix(".png")
+        .tempfile()
+        .map_err(|e| e.to_string())?;
+    let output = std::process::Command::new("/usr/sbin/screencapture")
+        .args(["-x", "-o", "-l", &number.to_string()])
+        .arg(temp.path())
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).into_owned());
+    }
+    let bytes = fs::read(temp.path()).map_err(|e| e.to_string())?;
+    let descriptor = rustix::fs::open(
         path,
-        OFlags::WRONLY | OFlags::CREATE | OFlags::TRUNC | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-        Mode::from_raw_mode(0o600),
-    )?;
-    std::io::Write::write_all(&mut fs::File::from(fd), bytes)
+        rustix::fs::OFlags::WRONLY
+            | rustix::fs::OFlags::CREATE
+            | rustix::fs::OFlags::TRUNC
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::NONBLOCK,
+        rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+    )
+    .map_err(|e| e.to_string())?;
+    let mut file = fs::File::from(descriptor);
+    file.write_all(&bytes).map_err(|e| e.to_string())
 }

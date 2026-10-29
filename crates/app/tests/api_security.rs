@@ -21,20 +21,11 @@ fn assert_refused(response: &HttpResponse, status: u16, code: &str) {
 fn every_kind_of_route_carries_the_security_headers() {
     let server = Server::start();
     let index = server.get("/");
-    let script = index
-        .text()
-        .split('"')
-        .find(|part| {
-            part.starts_with("/assets/")
-                && std::path::Path::new(part).extension() == Some("js".as_ref())
-        })
-        .expect("index references a hashed script")
-        .to_owned();
     let refused = server.send(&RawRequest::new("GET", "/").host("evil.example"));
     for (what, response) in [
         ("index", index),
         ("client route", server.get("/services/example")),
-        ("asset", server.get(&script)),
+        ("asset", server.get("/assets/removed.js")),
         ("license notice", server.get("/.vite/license.md")),
         ("api", server.get("/api/health")),
         ("api 404", server.get("/api/nope")),
@@ -81,22 +72,11 @@ fn every_kind_of_route_carries_the_security_headers() {
 }
 
 #[test]
-fn the_embedded_bundle_needs_no_inline_script() {
+fn the_api_information_page_has_no_scripts() {
     let server = Server::start();
     let html = server.get("/").text();
-    for tag in html.split("<script").skip(1) {
-        let open = tag.split('>').next().unwrap_or_default();
-        assert!(
-            open.contains("src=\"/assets/"),
-            "inline or remote script: <script{open}>"
-        );
-        assert!(
-            tag.split('>')
-                .nth(1)
-                .is_some_and(|rest| rest.starts_with("</script")),
-            "script element with a body: <script{tag}"
-        );
-    }
+    assert!(html.contains("kosse open"));
+    assert!(!html.contains("<script"));
 }
 
 #[test]

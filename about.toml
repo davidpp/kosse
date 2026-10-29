@@ -2,12 +2,12 @@
 # https://embarkstudios.github.io/cargo-about/cli/generate/config.html
 # Keep `accepted` and the per-crate entries identical to [licenses] in deny.toml, which enforces
 # the policy; this file only renders it.
-accepted = ["Apache-2.0", "BSD-3-Clause", "MIT", "Unicode-3.0"]
+accepted = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "MIT", "Unicode-3.0"]
 targets = ["aarch64-apple-darwin"]
 # Only what the release binary links: test-only and build-time crates are not distributed.
 ignore-dev-dependencies = true
 ignore-build-dependencies = true
-private = { ignore = true }
+private = { ignore = false }
 workarounds = ["ring", "rustls"]
 
 [ring]
@@ -20,4 +20,31 @@ accepted = ["ISC"]
 accepted = ["ISC"]
 
 [option-ext]
+accepted = ["MPL-2.0"]
+
+[libloading]
+accepted = ["ISC"]
+
+[opuscule]
+accepted = ["MPL-2.0"]
+
+[symphonia]
+accepted = ["MPL-2.0"]
+
+[symphonia-codec-vorbis]
+accepted = ["MPL-2.0"]
+
+[symphonia-core]
+accepted = ["MPL-2.0"]
+
+[symphonia-format-mkv]
+accepted = ["MPL-2.0"]
+
+[symphonia-format-ogg]
+accepted = ["MPL-2.0"]
+
+[symphonia-metadata]
+accepted = ["MPL-2.0"]
+
+[symphonia-utils-xiph]
 accepted = ["MPL-2.0"]

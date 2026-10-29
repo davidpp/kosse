@@ -1,5 +1,5 @@
-//! Starting the dashboard window (`kosse window`, see [`crate::window`]) as a child process, and
-//! falling back to the default browser, with the reason, when it cannot start.
+//! Starting the dashboard window (`kosse window`, see [`crate::native`]) as a child process, and
+//! reporting a native startup failure to the owner when it cannot start.
 //!
 //! The window is owned through its stdin: when the owner exits (even when it is killed) the pipe
 //! closes and the window closes too, so a window never outlives its owner. Its exit is reaped by
@@ -16,8 +16,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::opener;
-
 /// How long a closing window may take before its owner kills it (through its own child handle).
 const CLOSE_DEADLINE: Duration = Duration::from_secs(2);
 /// How long the reader waits for an exited window's process to be reapable.
@@ -27,7 +25,7 @@ const REAP_DEADLINE: Duration = Duration::from_secs(5);
 #[cfg(not(debug_assertions))]
 pub const TITLE: &str = "Kossé";
 /// Debug builds (`bun run app`, `bun run dev`, tests) say they are a preview, and of which branch,
-/// so they are never mistaken for the installed app (with the mirrored-K icons, `tray.rs`,
+/// so they are never mistaken for the installed app (with the split-stem preview icons, `tray.rs`,
 /// `activation.rs`).
 #[cfg(debug_assertions)]
 pub const TITLE: &str = concat!("Kossé · preview", env!("KOSSE_PREVIEW_SUFFIX"));
@@ -37,15 +35,14 @@ pub fn title_for(service: &str) -> String {
     format!("{TITLE} — {service}")
 }
 
-/// Opens `url` in the default browser because the window is unavailable, and says why.
+/// Report a native window failure without launching an unrelated application.
 pub fn fallback(url: &str, reason: &str) {
-    report!("kosse: {reason}; opening {url} in the default browser");
-    opener::open_or_report(url);
+    report!("kosse: {reason}; native window unavailable for {url}. Retry with `kosse open`.");
 }
 
 /// What the owner learns about a window after the fact (from the reader thread).
 pub enum Notice {
-    /// It never started; the browser fallback ran.
+    /// It never started; the failure was reported.
     Unavailable { reason: String },
     /// It ended with a route it had been asked to show but had not shown yet (closed by the user
     /// at that moment): the owner shows that route again in a new window.
@@ -78,8 +75,7 @@ impl State {
 }
 
 impl Window {
-    /// Starts `kosse window <url>`. If it exits before reporting `ready`, `url` opens in the
-    /// default browser instead and the reason is reported (and passed to `notify`).
+    /// Starts `kosse window <url>`. Failure before `ready` is reported and passed to `notify`.
     pub fn spawn(url: &str, title: &str, notify: Option<Notify>) -> io::Result<Self> {
         let mut child = Command::new(std::env::current_exe()?)
             .args(["window", url, "--title", title])
@@ -173,7 +169,7 @@ impl Window {
     }
 
     /// Closes the window: end of input asks it to close, then this child is killed if it is still
-    /// running after [`CLOSE_DEADLINE`]. Also waits for the fallback, if one is running.
+    /// running after [`CLOSE_DEADLINE`]. Also joins the output reader.
     pub fn close(mut self) {
         // Closing on purpose: nothing it was asked to show is "lost".
         *self.state.pending() = None;

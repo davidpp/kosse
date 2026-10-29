@@ -175,7 +175,7 @@ pub async fn window(
         return Refusal::new(
             StatusCode::CONFLICT,
             ApiErrorCode::NotResident,
-            "this Kossé is not the menu-bar app and has no window; open the dashboard in a browser",
+            "this Kossé owner has no native window handler",
         )
         .into_response();
     };

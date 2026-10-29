@@ -39,8 +39,6 @@ rustix = { version = "1.1.6", default-features = false, features = ["fs", "proce
 # JSON Schema for project profiles (`kosse config schema`), derived from the same types as the
 # parser.
 schemars = "1.2.3"
-# debug-embed: debug builds embed assets too, so tests exercise the shipped code path.
-rust-embed = { version = "8.13.0", features = ["debug-embed", "mime-guess"] }
 # TLS for probes (and the test fixture's server): ring provider (smaller than aws-lc-rs), TLS 1.2
 # and 1.3, no logging. Certificates are verified in process by webpki: no network access.
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
@@ -53,17 +51,23 @@ serde_json = "1.0.154"
 tray-icon = { version = "0.26.1", default-features = false }
 # The tray's menu and the window's app menu; the same version tray-icon re-exports.
 muda = { version = "0.21.2", default-features = false }
-# Main-thread event loop for the tray and the dashboard window (raw-window-handle 0.6 for wry).
+# Main-thread event loop for the tray and the dashboard window.
 tao = { version = "0.37.1", default-features = false, features = ["rwh_06"] }
-# The dashboard window's WKWebView (`kosse window`); no Linux webview features.
-wry = { version = "0.57.0", default-features = false }
 # Bringing the dashboard window forward (NSRunningApplication activation, macOS 14 cooperative
-# activation). Both already in the graph through tao, wry and tray-icon; safe bindings only.
+# activation). Both already in the graph through tao, rune and tray-icon; safe bindings only.
 objc2 = "0.6.5"
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "CGEvent",
+  "CGEventTypes",
+  "CGEventSource",
+  "CGGeometry",
+] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
   "std",
   "libc",
   "NSApplication",
+  "objc2-core-graphics",
   "NSBitmapImageRep",
   "NSEvent",
   "NSGraphics",
@@ -76,22 +80,16 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
   "NSWindow",
 ] }
 # The window's application icon (NSImage from embedded PNG data) and, in debug builds only, its
-# agent control socket's WKWebView snapshot (docs/agent-drive.md). All already in the graph
-# through wry; these add features only.
+# agent control socket (docs/agent-drive.md). All already in the graph
+# through rune; these add features only.
 block2 = "0.6.2"
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
   "std",
   "NSData",
   "NSDictionary",
   "NSError",
+  "NSOperation",
   "NSString",
-] }
-objc2-web-kit = { version = "0.3.2", default-features = false, features = [
-  "std",
-  "block2",
-  "objc2-app-kit",
-  "WKSnapshotConfiguration",
-  "WKWebView",
 ] }
 # Decodes the embedded tray template PNGs. Already in the graph through muda.
 png = "0.18.1"
@@ -112,7 +110,7 @@ tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring
 ts-rs = { version = "12.0.1", features = ["no-serde-warnings"] }
 
 [workspace.lints.rust]
-# `deny`, not `forbid`: the unavoidable AppKit/WebKit calls opt in locally with
+# `deny`, not `forbid`: the unavoidable AppKit calls opt in locally with
 # `#[expect(unsafe_code, reason = …)]`: one in crates/app/src/activation.rs (the app icon) and three
 # in the debug-only crates/app/src/window_control.rs (snapshot). crates/core forbids it outright.
 unsafe_code = "deny"

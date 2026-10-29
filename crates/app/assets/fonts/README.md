@@ -1,0 +1,1 @@
+Inter faces from anomalyco/rune commit b63efb3db3a2fa59bf4a11a947944de2a8b69303, under the accompanying SIL Open Font License. Registered alongside the Kibernetyk wordmark; Rune replaces its default font registration when application fonts are supplied.

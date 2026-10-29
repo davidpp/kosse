@@ -158,3 +158,10 @@ Real-terminal tests (OpenTUI's test renderer or a PTY harness against the real b
 ## Exit rule
 
 S10 audits all slice evidence before v1 is declared complete. Missing actual GUI/installed-entrypoint verification is not satisfied by mocks or passing unit tests. Do not silently shrink scope to complete a loop. Human-only or privileged actions need explicit approval; local packaging can complete without publishing or signing.
+
+
+## S12 — Native Rune port
+
+Owner direction supersedes the browser/WKWebView surface and the previous wait for a Rune release. Pin upstream, preserve the Rust owner/API and action policy, replace the UI and window driver, remove the browser bundle and fallback. Apply Relay branding, Québec-inspired blue and Kibernetyk Mono. Native customization uses explicit fields with central/repository provenance.
+
+Acceptance: the real Rune window renders light/dark and narrow/desktop layouts; search, inspect, Open, profile writes, Stop and separately confirmed Force work against owned processes. Owner reuse and teardown retain one scanner/window. Full `check`, native-window suite and packaged CLI/API checks pass; remaining desktop/accessibility checks are stated precisely in S12 evidence. No publication or login change.

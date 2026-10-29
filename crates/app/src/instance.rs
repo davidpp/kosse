@@ -216,7 +216,7 @@ async fn verify(addr: SocketAddr) -> Option<Instance> {
 
 /// One bounded request with the instance's own `Host`; a `POST` carries the token and the
 /// same-origin `Origin` the guard requires. The status and a body within [`BODY_LIMIT`].
-async fn request(
+pub(crate) async fn request(
     addr: SocketAddr,
     method: Method,
     path: &str,

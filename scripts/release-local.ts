@@ -43,18 +43,15 @@ await script(() => {
   // 0. about.toml renders exactly the license policy deny.toml enforces.
   assertSamePolicy();
 
-  // 1. The web bundle (within budget) and the release binary that embeds it. cargo-auditable
+  // 1. The native release binary. cargo-auditable
   //    embeds the dependency list, so `cargo audit bin` and SBOM scanners can check the shipped file.
-  run("bun", ["run", "--cwd", "web", "build"]);
-  run("bun", ["run", "budget"]);
   run("cargo", ["auditable", "build", "--release", "--locked", "-p", "kosse"]);
   const binary = join(repoRoot, "target", "release", "kosse");
   const reported = output(binary, ["--version"]).trim();
   if (reported !== `kosse ${version}`) fail(`the binary reports ${reported}`);
 
   // 2. Third-party notices: Rust crates the binary links (cargo-about, the license policy of
-  //    deny.toml restated in about.toml), then the JavaScript the dashboard bundles (Vite's
-  //    build.license output).
+  //    deny.toml restated in about.toml), then the bundled fonts.
   const rustNotices = output("cargo", [
     "about",
     "generate",
@@ -64,36 +61,26 @@ await script(() => {
     "crates/app/Cargo.toml",
     "packaging/notices.hbs",
   ]);
-  const webLicenses = readFileSync(join(repoRoot, "web", "dist", ".vite", "license.md"), "utf8");
-  // Tailwind generates part of the shipped CSS (its preflight and utilities), which Vite's JS
-  // license collection does not see.
-  const tailwind = join(repoRoot, "web", "node_modules", "tailwindcss");
-  const tailwindVersion = String(
-    field(JSON.parse(readFileSync(join(tailwind, "package.json"), "utf8")), "version"),
-  );
-  const tailwindLicense = readFileSync(join(tailwind, "LICENSE"), "utf8").trim();
-  const notices = `${rustNotices.trimEnd()}\n\n## Web dashboard (bundled JavaScript and generated CSS)\n\n${webLicenses
-    .replace(/^# Licenses\s*\n/, "")
-    .replace(/^## /gm, "### ")
-    .replace(/^The app bundles dependencies which contain the following licenses:\s*\n/m, "")
-    .trim()}\n\n### tailwindcss - ${tailwindVersion} (MIT)\n\n${tailwindLicense}\n`;
+  const inter = readFileSync(join(repoRoot, "crates/app/assets/fonts/Inter-LICENSE.txt"), "utf8");
+  const kibernetyk = readFileSync(join(repoRoot, "brand/fonts/OFL.txt"), "utf8");
+  const notices = `${rustNotices.trimEnd()}\n\n## Bundled fonts\n\n### Inter (SIL Open Font License 1.1)\n\n${inter}\n\n### Kibernetyk Mono (SIL Open Font License 1.1)\n\n${kibernetyk}\n`;
   // The notices must carry what the policy singles out, under the right license: deny.toml's
   // per-crate exceptions and the Apache-2.0-only GUI crates. A template or policy change that drops
   // one fails the release, not a later audit.
   const sections = licenseSections(rustNotices);
   for (const [license, crate] of [
-    ["Mozilla Public License 2.0", "option-ext"],
     ["ISC License", "ring"],
     ["ISC License", "rustls-webpki"],
     ["ISC License", "untrusted"],
     ["Apache License 2.0", "tao"],
-    ["Apache License 2.0", "wry"],
+    ["MIT License", "rune"],
+    ["MIT License", "rune-kit"],
   ] as const) {
     if (!sections.some((section) => section.license === license && section.crates.has(crate))) {
       fail(`the notices do not list ${crate} under ${license}`);
     }
   }
-  for (const required of ["### @tanstack/query-core", "### tailwindcss "]) {
+  for (const required of ["### Inter", "### Kibernetyk Mono"]) {
     if (!notices.includes(required)) fail(`the notices lack ${JSON.stringify(required)}`);
   }
 

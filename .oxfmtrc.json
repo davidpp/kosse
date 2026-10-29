@@ -1,13 +1,11 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "sortTailwindcss": {
-    "stylesheet": "web/src/styles.css"
-  },
   "ignorePatterns": [
     "blueprint/**",
-    "web/src/generated/**",
+    "contracts/**",
     "docs/kosse.schema.json",
     "vendor/**",
-    "packaging/notices.hbs"
+    "packaging/notices.hbs",
+    "brand/tools/bun.lock"
   ]
 }

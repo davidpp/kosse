@@ -20,45 +20,15 @@
       {
         "allow": ["**/*.css", "@testing-library/jest-dom/vitest"]
       }
-    ],
-    "no-restricted-imports": [
-      "error",
-      {
-        "paths": [
-          {
-            "name": "react-dom/client",
-            "importNames": ["hydrateRoot"],
-            "message": "Redact's hydration feature is off (web/vite.config.ts); mount with createRoot."
-          },
-          {
-            "name": "react",
-            "importNames": [
-              "Activity",
-              "unstable_Activity",
-              "Suspense",
-              "lazy",
-              "memo",
-              "Component",
-              "PureComponent",
-              "ViewTransition",
-              "unstable_ViewTransition"
-            ],
-            "message": "This Redact feature is off (web/vite.config.ts); enable it there first."
-          },
-          {
-            "name": "react-dom",
-            "importNames": ["createPortal"],
-            "message": "Redact's portal feature is off (web/vite.config.ts); enable it there first."
-          }
-        ]
-      }
     ]
   },
   "overrides": [
     {
       "files": ["scripts/app.ts", "scripts/window-test.ts"],
-      "rules": { "no-await-in-loop": "off" }
+      "rules": {
+        "no-await-in-loop": "off"
+      }
     }
   ],
-  "ignorePatterns": ["web/dist/**", "web/src/generated/**"]
+  "ignorePatterns": ["contracts/**", "brand/tools/node_modules/**"]
 }

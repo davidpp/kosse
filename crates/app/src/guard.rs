@@ -258,16 +258,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dev_authority_matches_the_web_dev_ports() {
-        let ports = include_str!("../../../web/dev-ports.ts");
-        let vite_port = DEV_AUTHORITY.rsplit(':').next().expect("port");
-        assert!(
-            ports.contains(&format!("vite: {vite_port}")),
-            "web/dev-ports.ts no longer puts Vite on {vite_port}"
-        );
-    }
-
-    #[test]
     fn tokens_are_random_and_compared_exactly() {
         let first = ActionToken::generate().expect("token");
         let second = ActionToken::generate().expect("token");
