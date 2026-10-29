@@ -1,14 +1,13 @@
-//! The request policy every route passes through, the embedded web bundle included.
+//! The request policy every route passes through: the API and the script-free information page.
 //!
 //! Defends against websites in the user's browser (cross-site requests and DNS rebinding), not
 //! against other local processes, which can read the snapshot through the OS anyway:
 //!
 //! - `Host` (and an absolute request target's authority) must be exactly this instance's loopback
-//!   authority: `127.0.0.1:<port>` or `localhost:<port>`, plus `127.0.0.1:47833` only in
-//!   development mode (the Vite dev server, which proxies `/api` here).
+//!   authority: `127.0.0.1:<port>` or `localhost:<port>`.
 //! - API requests that a browser marks as cross-origin (`Origin`, `Sec-Fetch-Site`) are refused,
 //!   so no other site can read or embed API responses. Top-level navigation to the dashboard from
-//!   elsewhere still works.
+//!   elsewhere still reaches the information page.
 //! - Unsafe methods additionally need the exact same-origin `Origin`, `Content-Type:
 //!   application/json`, a body of at most [`MAX_BODY_BYTES`], and the per-instance action token
 //!   in [`TOKEN_HEADER`]. No CORS headers are ever sent.
@@ -29,8 +28,6 @@ use kosse_core::contract::{ApiError, ApiErrorCode};
 pub const TOKEN_HEADER: &str = "x-kosse-token";
 /// Largest request body accepted (and the router's body limit).
 pub const MAX_BODY_BYTES: usize = 16 * 1024;
-/// The Vite dev server's authority (`web/dev-ports.ts`), admitted only in development mode.
-pub const DEV_AUTHORITY: &str = "127.0.0.1:47833";
 
 /// No inline or remote script, style, font or frame; the API and assets are same-origin only.
 const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self'; \
@@ -44,13 +41,11 @@ pub struct Policy {
 }
 
 impl Policy {
-    /// `dev` adds [`DEV_AUTHORITY`]; it is only reachable from debug builds' `--dev`.
-    pub fn new(port: u16, dev: bool, token: ActionToken) -> Self {
-        let mut authorities = vec![format!("127.0.0.1:{port}"), format!("localhost:{port}")];
-        if dev {
-            authorities.push(DEV_AUTHORITY.to_owned());
+    pub fn new(port: u16, token: ActionToken) -> Self {
+        Self {
+            authorities: vec![format!("127.0.0.1:{port}"), format!("localhost:{port}")],
+            token,
         }
-        Self { authorities, token }
     }
 
     pub fn token(&self) -> &str {

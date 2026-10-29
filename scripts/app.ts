@@ -13,6 +13,7 @@ import { createConnection } from "node:net";
 import { dirname, join, resolve } from "node:path";
 
 import { startKosseApp } from "./support/processes.ts";
+import { delay, elements, isRecord } from "./support/window.ts";
 import { createWorld, type World } from "./support/world.ts";
 
 const root = resolve(import.meta.dirname, "..");
@@ -68,11 +69,26 @@ function print(value: unknown) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-const delay = (ms: number) => new Promise((done) => setTimeout(done, ms));
+/** Enough of a session file to act on safely; anything else is treated as no session. */
+function isSession(value: unknown): value is Session {
+  if (!isRecord(value) || !isRecord(value.host) || !isRecord(value.app)) return false;
+  const { host: owner, app } = value;
+  return (
+    typeof owner.pid === "number" &&
+    typeof owner.marker === "string" &&
+    typeof app.pid === "number" &&
+    typeof app.started === "string" &&
+    typeof app.url === "string" &&
+    typeof app.port === "number" &&
+    typeof value.socket === "string" &&
+    Array.isArray(value.fixtures)
+  );
+}
 
 export async function readSession(): Promise<Session | null> {
   try {
-    return JSON.parse(await readFile(sessionFile, "utf8")) as Session;
+    const value: unknown = JSON.parse(await readFile(sessionFile, "utf8"));
+    return isSession(value) ? value : null;
   } catch {
     return null;
   }
@@ -128,8 +144,9 @@ export function control(
     );
     socket.on("end", () => {
       try {
-        const reply = JSON.parse(data) as Record<string, unknown>;
-        if (typeof reply.error === "string") fail(new Error(reply.error));
+        const reply: unknown = JSON.parse(data);
+        if (!isRecord(reply)) fail(new Error(`unexpected reply: ${data}`));
+        else if (typeof reply.error === "string") fail(new Error(reply.error));
         else done(reply);
       } catch {
         fail(new Error(`unexpected reply: ${data}`));
@@ -299,18 +316,23 @@ export async function status(): Promise<Record<string, unknown>> {
   try {
     window = await control({ op: "status" });
   } catch (error) {
-    window = { error: (error as Error).message };
+    window = { error: error instanceof Error ? error.message : String(error) };
   }
   // `<start>` for `show inspect:<pid>.<start>`: each fixture's startedAtSecs from the snapshot.
   const started = new Map<number, number>();
   try {
-    const snapshot = (await (await fetch(`${session.app.url}/api/snapshot`)).json()) as {
-      observation: {
-        services: { process: { identity: { pid: number; startedAtSecs: number } } }[];
-      } | null;
-    };
-    for (const { process: proc } of snapshot.observation?.services ?? []) {
-      started.set(proc.identity.pid, proc.identity.startedAtSecs);
+    const snapshot: unknown = await (await fetch(`${session.app.url}/api/snapshot`)).json();
+    const services =
+      isRecord(snapshot) && isRecord(snapshot.observation) ? snapshot.observation.services : [];
+    for (const service of Array.isArray(services) ? services : []) {
+      const identity =
+        isRecord(service) && isRecord(service.process) ? service.process.identity : null;
+      if (
+        isRecord(identity) &&
+        typeof identity.pid === "number" &&
+        typeof identity.startedAtSecs === "number"
+      )
+        started.set(identity.pid, identity.startedAtSecs);
     }
   } catch {
     // The window status still says what it can.
@@ -354,29 +376,10 @@ export async function click(
   if (/^\d+(\.\d+)?$/.test(first) && second !== undefined) {
     return control({ op: "click", x: Number(first), y: Number(second) }, socket);
   }
-  const result = await control({ op: "tree" }, socket);
-  if (!Array.isArray(result.elements)) throw new Error("No rendered element tree");
-  for (const value of result.elements as unknown[]) {
-    if (
-      value === null ||
-      typeof value !== "object" ||
-      !("key" in value) ||
-      value.key !== first ||
-      !("rect" in value)
-    )
-      continue;
-    const rect: unknown = value.rect;
-    if (!Array.isArray(rect)) continue;
-    const [x, y, width, height]: unknown[] = rect;
-    if (
-      typeof x === "number" &&
-      typeof y === "number" &&
-      typeof width === "number" &&
-      typeof height === "number"
-    )
-      return control({ op: "click", x: x + width / 2, y: y + height / 2 }, socket);
-  }
-  throw new Error(`No rendered control with key ${first}`);
+  const found = elements(await control({ op: "tree" }, socket)).find((e) => e.key === first);
+  if (found === undefined) throw new Error(`No rendered control with key ${first}`);
+  const [x, y, width, height] = found.rect;
+  return control({ op: "click", x: x + width / 2, y: y + height / 2 }, socket);
 }
 
 /** `POST /api/window`, the request a second launch or the tray's Inspect/Stop… path makes. */
@@ -391,7 +394,10 @@ export async function show(route = "dashboard") {
     route: kind === "dashboard" ? { kind: "dashboard" } : { kind, pid, startedAtSecs },
   };
   const origin = session.app.url;
-  const token = ((await (await fetch(`${origin}/api/session`)).json()) as { token: string }).token;
+  const reply: unknown = await (await fetch(`${origin}/api/session`)).json();
+  if (!isRecord(reply) || typeof reply.token !== "string")
+    throw new Error("GET /api/session: no token");
+  const token = reply.token;
   const response = await fetch(`${origin}/api/window`, {
     method: "POST",
     headers: { Origin: origin, "Content-Type": "application/json", "X-Kosse-Token": token },

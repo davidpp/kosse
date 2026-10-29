@@ -5,52 +5,20 @@ import { join } from "node:path";
 import { createWorld } from "./support/world.ts";
 import { startKosseApp } from "./support/processes.ts";
 import { build, control, screenLocked, writeOpener } from "./app.ts";
+import { type Element, elements, until } from "./support/window.ts";
 
-type Element = {
-  key: string | null;
-  role: string;
-  text: string | null;
-  label: string | null;
-  rect: number[];
-  opacity: number;
-  inert: boolean;
-};
 const socketDir = `/tmp/kosse-app-${process.getuid?.() ?? 0}`;
 const socket = join(socketDir, `test-${process.pid}.sock`);
 const scratch = join("/tmp", `kosse-rune-test-${process.pid}`);
-const delay = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const call = (request: Record<string, unknown>) => control(request, socket);
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
 async function tree(): Promise<Element[]> {
-  const result = await call({ op: "tree" });
-  assert(Array.isArray(result.elements), "the real rendered element tree is available");
-  return result.elements.map((value: unknown): Element => {
-    assert(record(value));
-    const { key, role, text, label, rect, opacity, inert } = value;
-    assert(key === null || typeof key === "string");
-    assert(text === null || typeof text === "string");
-    assert(label === null || typeof label === "string");
-    assert(typeof role === "string" && typeof opacity === "number" && typeof inert === "boolean");
-    assert(
-      Array.isArray(rect) && rect.length === 4 && rect.every((n: unknown) => typeof n === "number"),
-    );
-    return { key, role, text, label, rect, opacity, inert };
-  });
+  return elements(await call({ op: "tree" }));
 }
-async function until<T>(
-  read: () => Promise<T | undefined>,
-  message: string,
-  timeout = 15000,
-): Promise<T> {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    const found = await read().catch(() => undefined);
-    if (found !== undefined) return found;
-    await delay(100);
-  }
-  throw new Error(`Timed out: ${message}`);
+/** The revision of the snapshot the window last applied (debug tree field). */
+async function revision(): Promise<number> {
+  const { revision: applied } = await call({ op: "tree" });
+  assert(typeof applied === "number", "the tree reports the applied snapshot revision");
+  return applied;
 }
 async function element(key: string) {
   return until(async () => (await tree()).find((e) => e.key === key && e.opacity > 0.99), key);
@@ -106,10 +74,10 @@ async function dialog() {
   let previous = "";
   let stable = 0;
   const e = await until(async () => {
-    const elements = await tree();
-    const root = elements.find((item) => item.key === "kosse");
+    const rendered = await tree();
+    const root = rendered.find((item) => item.key === "kosse");
     if (!root || root.rect[2] !== status.width || root.rect[3] !== status.height) return undefined;
-    const candidate = elements.find((item) => item.role === "dialog" && item.opacity >= 0.99);
+    const candidate = rendered.find((item) => item.role === "dialog" && item.opacity >= 0.99);
     if (!candidate) return undefined;
     const position = JSON.stringify(candidate.rect);
     stable = position === previous ? stable + 1 : 0;
@@ -167,7 +135,11 @@ try {
     async () => ((await call({ op: "tree" })).search === "storefront" ? true : undefined),
     "native text input",
   );
-  await delay(3500);
+  const typedAt = await revision();
+  await until(
+    async () => ((await revision()) >= typedAt + 2 ? true : undefined),
+    "two live snapshots applied after typing",
+  );
   assert.equal((await call({ op: "tree" })).search, "storefront", "SSE refresh preserves search");
   await search(String(world.fixtures.api.ports[0]));
   for (const [width, height] of [

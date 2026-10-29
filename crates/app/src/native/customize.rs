@@ -24,6 +24,8 @@ pub struct Editor {
     pub error: Option<String>,
     remove: bool,
     remove_service: Option<usize>,
+    /// The request as opened, to tell unsaved edits apart.
+    pristine: Option<SaveProfileRequest>,
 }
 struct ServiceEditor {
     id: TextEdit,
@@ -61,7 +63,7 @@ impl Editor {
                     .map(|p| p.name.clone())
             })
             .unwrap_or_default();
-        Self {
+        let mut editor = Self {
             root,
             name: TextEdit::new(name),
             inherited_name,
@@ -75,7 +77,17 @@ impl Editor {
             error: None,
             remove: false,
             remove_service: None,
-        }
+            pristine: None,
+        };
+        editor.pristine = editor.request().ok();
+        editor
+    }
+    /// Saving, or holding edits (or a pending removal) not saved yet: a route never closes it.
+    pub fn pinned(&self) -> bool {
+        self.busy
+            || self.remove
+            || self.remove_service.is_some()
+            || self.request().ok() != self.pristine
     }
     fn request(&self) -> Result<SaveProfileRequest, String> {
         let mut services = BTreeMap::new();

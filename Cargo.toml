@@ -34,7 +34,7 @@ jsonschema = { version = "0.59.0", default-features = false }
 # Test-only self-signed certificates for the TLS fixture.
 rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }
 # kill(2) with typed errno and a positive-only PID type (process groups need a separate call).
-# Already locked via tempfile (tests); new to the shipped graph with only process + std.
+# Also the debug-only screenshot write (`O_NOFOLLOW`). Already in the graph through tempfile.
 rustix = { version = "1.1.6", default-features = false, features = ["fs", "process", "std"] }
 # JSON Schema for project profiles (`kosse config schema`), derived from the same types as the
 # parser.
@@ -51,29 +51,26 @@ serde_json = "1.0.154"
 tray-icon = { version = "0.26.1", default-features = false }
 # The tray's menu and the window's app menu; the same version tray-icon re-exports.
 muda = { version = "0.21.2", default-features = false }
-# Main-thread event loop for the tray and the dashboard window.
+# Main-thread event loop for the tray (the Rune window brings its own winit loop).
 tao = { version = "0.37.1", default-features = false, features = ["rwh_06"] }
 # Bringing the dashboard window forward (NSRunningApplication activation, macOS 14 cooperative
-# activation). Both already in the graph through tao, rune and tray-icon; safe bindings only.
+# activation), its app icon, and the debug-only agent driver's AppKit events. Already in the graph
+# through tao, rune and tray-icon; the two unsafe calls are listed under `unsafe_code` below.
 objc2 = "0.6.5"
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = [
   "std",
   "CGEvent",
-  "CGEventTypes",
   "CGEventSource",
-  "CGGeometry",
+  "CGEventTypes",
 ] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
   "std",
   "libc",
   "NSApplication",
   "objc2-core-graphics",
-  "NSBitmapImageRep",
   "NSEvent",
-  "NSGraphics",
   "NSGraphicsContext",
   "NSImage",
-  "NSImageRep",
   "NSResponder",
   "NSRunningApplication",
   "NSView",
@@ -86,8 +83,6 @@ block2 = "0.6.2"
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
   "std",
   "NSData",
-  "NSDictionary",
-  "NSError",
   "NSOperation",
   "NSString",
 ] }
@@ -111,8 +106,9 @@ ts-rs = { version = "12.0.1", features = ["no-serde-warnings"] }
 
 [workspace.lints.rust]
 # `deny`, not `forbid`: the unavoidable AppKit calls opt in locally with
-# `#[expect(unsafe_code, reason = …)]`: one in crates/app/src/activation.rs (the app icon) and three
-# in the debug-only crates/app/src/window_control.rs (snapshot). crates/core forbids it outright.
+# `#[expect(unsafe_code, reason = …)]`: one in crates/app/src/activation.rs (the app icon) and one
+# in the debug-only crates/app/src/window_control.rs (main-queue dispatch of agent input).
+# crates/core forbids it outright.
 unsafe_code = "deny"
 unused_must_use = "deny"
 

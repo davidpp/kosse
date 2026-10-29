@@ -1,6 +1,6 @@
 use super::{Editor, fields};
 use crate::native::{State, client::Command};
-use kosse_core::contract::SaveProfileRequest;
+use kosse_core::{contract::SaveProfileRequest, profiles::document::MAX_SERVICES};
 use rune::{El, ScrollSpec, col, el, row, text};
 use rune_kit::{Button, ButtonVariant, Dialog, Kit, TextField};
 
@@ -10,7 +10,18 @@ pub fn view(s: &State, k: &Kit, layers: &mut Vec<El>, height: f32) {
     };
     let mut body = col().h((height - 100.0).clamp(280.0, 600.0));
     if editor.remove_service.is_some() {
-        body = body.child(col().padding(20.0).gap(14.0).grow(1.0).child(fields::hint("Remove this service's local entry?", k)).child(fields::hint("Any repository entry will apply again after you save. The running process is unaffected.", k)));
+        body = body.child(
+            col()
+                .padding(20.0)
+                .gap(14.0)
+                .grow(1.0)
+                .child(fields::hint("Remove this service's local entry?", k))
+                .child(fields::hint(
+                    "Any repository entry will apply again after you save. The running process \
+                     is unaffected.",
+                    k,
+                )),
+        );
     } else if editor.remove {
         body = body.child(
             col()
@@ -95,13 +106,39 @@ pub fn view(s: &State, k: &Kit, layers: &mut Vec<El>, height: f32) {
     .build(k, layers);
 }
 fn project(editor: &Editor, k: &Kit) -> El {
-    col().gap(16.0).child(text("Project").font(k.ty.ui_medium).color(k.c.text_base))
-        .child(fields::hint(&editor.root, k).wrap_anywhere().selectable(true))
-        .child(TextField::new("Display name", &editor.name).placeholder(&editor.inherited_name).disabled(editor.busy)
-            .on_edit(|s: &mut State| s.editor.as_mut().map_or(&mut s.orphan_edit, |e| &mut e.name)).build(k).key("project-name"))
-        .child(fields::hint("Leave blank to inherit the repository name, or use the directory name.", k))
-        .child(fields::hint("Saved on this Mac. Your repository's kosse.json stays unchanged.", k))
-        .child(fields::hint("Add a service to give a process a name, match it by directory or port, and attach useful links.", k))
+    col()
+        .gap(16.0)
+        .child(text("Project").font(k.ty.ui_medium).color(k.c.text_base))
+        .child(
+            fields::hint(&editor.root, k)
+                .wrap_anywhere()
+                .selectable(true),
+        )
+        .child(
+            TextField::new("Display name", &editor.name)
+                .placeholder(&editor.inherited_name)
+                .disabled(editor.busy)
+                .on_edit(|s: &mut State| {
+                    s.editor
+                        .as_mut()
+                        .map_or(&mut s.orphan_edit, |e| &mut e.name)
+                })
+                .build(k)
+                .key("project-name"),
+        )
+        .child(fields::hint(
+            "Leave blank to inherit the repository name, or use the directory name.",
+            k,
+        ))
+        .child(fields::hint(
+            "Saved on this Mac. Your repository's kosse.json stays unchanged.",
+            k,
+        ))
+        .child(fields::hint(
+            "Add a service to give a process a name, match it by directory or port, and attach \
+             useful links.",
+            k,
+        ))
 }
 fn sidebar(editor: &Editor, k: &Kit) -> El {
     let mut list = col()
@@ -148,7 +185,7 @@ fn sidebar(editor: &Editor, k: &Kit) -> El {
     }
     list.child(
         Button::new("+ Add service")
-            .disabled(editor.busy || editor.services.len() >= 64)
+            .disabled(editor.busy || editor.services.len() >= MAX_SERVICES)
             .variant(ButtonVariant::Ghost)
             .on_press(|s: &mut State| {
                 if let Some(e) = &mut s.editor {

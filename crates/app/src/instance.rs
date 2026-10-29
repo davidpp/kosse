@@ -39,7 +39,7 @@ use crate::{guard::TOKEN_HEADER, route::Route};
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(6);
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 /// Snapshots of thousands of listeners stay well below this.
-const BODY_LIMIT: usize = 32 * 1024 * 1024;
+pub(crate) const BODY_LIMIT: usize = 32 * 1024 * 1024;
 
 /// What answers on `127.0.0.1:<port>`.
 #[derive(Debug)]

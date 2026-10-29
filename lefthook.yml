@@ -6,7 +6,7 @@ pre-commit:
     - name: format
       run: bun run fmt:check
     - name: lint-scripts
-      run: bunx oxlint --deny-warnings
+      run: bun run oxlint --deny-warnings
     - name: typecheck
       run: bun run typecheck
     - name: contracts

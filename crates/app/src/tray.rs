@@ -4,8 +4,9 @@
 //!
 //! - A tokio task turns each published snapshot into a [`menu::Model`] and sends it to the main
 //!   thread only when it changed; the main thread renders it. The tray never scans.
-//! - Menu clicks arrive as events: Open goes to the default browser, Inspect / Stop… / Open
-//!   Dashboard to the one dashboard window (focus-or-spawn), Quit stops the instance.
+//! - Menu clicks arrive as events: Open goes to the default browser (the service's own page),
+//!   Inspect / Stop… / Open Dashboard to the one native dashboard window (focus-or-spawn), Quit
+//!   stops the instance.
 //! - `POST /api/window` (a second `kosse`, or `kosse open`) arrives the same way and shows the
 //!   same window: there is only ever one.
 //! - Quit, SIGINT and SIGTERM all end the same way: the server drains, the scanner stops, the
@@ -48,7 +49,7 @@ const STALL_CHECK: Duration = Duration::from_secs(5);
 const DEFAULT_ICON: &[u8] = include_bytes!("../../../brand/tray/tray-default@2x.png");
 #[cfg(not(debug_assertions))]
 const ATTENTION_ICON: &[u8] = include_bytes!("../../../brand/tray/tray-attention@2x.png");
-// Debug builds show the preview identity (mirrored K), so a development or test instance is never
+// Debug builds show the preview identity (split-stem K), so a development or test instance is never
 // mistaken for the installed one.
 #[cfg(debug_assertions)]
 const DEFAULT_ICON: &[u8] = include_bytes!("../../../brand/tray/tray-preview@2x.png");
@@ -116,16 +117,18 @@ pub fn run(args: &AppArgs) -> Result<(), AppError> {
 
     let notices = Mutex::new(proxy);
     let mut app = App {
-        url,
         icons,
         tray: None,
         actions: HashMap::new(),
         model: Model::of(None, 0),
         notice: None,
-        windows: Windows::new(Arc::new(move |notice| {
-            let proxy = notices.lock().unwrap_or_else(PoisonError::into_inner);
-            let _ = proxy.send_event(Message::WindowNotice(notice));
-        })),
+        windows: Windows::new(
+            &url,
+            Arc::new(move |notice| {
+                let proxy = notices.lock().unwrap_or_else(PoisonError::into_inner);
+                let _ = proxy.send_event(Message::WindowNotice(notice));
+            }),
+        ),
         quit: Some(quit),
         failed: false,
     };
@@ -152,8 +155,8 @@ pub fn run(args: &AppArgs) -> Result<(), AppError> {
                 app.notice = Some(format!("Dashboard window unavailable: {reason}"));
                 app.render();
             }
-            Event::UserEvent(Message::WindowNotice(Notice::Lost { url, title })) => {
-                app.windows.show(&url, &title);
+            Event::UserEvent(Message::WindowNotice(Notice::Lost { route, title })) => {
+                app.windows.show(route, &title);
             }
             Event::UserEvent(Message::Stopped(clean)) => {
                 app.windows.close();
@@ -226,13 +229,12 @@ async fn watch(snapshots: SchedulerHandle, proxy: EventLoopProxy<Message>) {
 }
 
 struct App {
-    url: String,
     icons: Icons,
     tray: Option<TrayIcon>,
     /// What each item of the current menu does, by its ID.
     actions: HashMap<MenuId, Action>,
     model: Model,
-    /// Shown above the menu until the next click: why the window fell back to the browser.
+    /// Shown above the menu until the next click: why the dashboard window is unavailable.
     notice: Option<String>,
     windows: Windows,
     quit: Option<oneshot::Sender<()>>,
@@ -321,7 +323,7 @@ impl App {
             .model
             .title_for(route)
             .unwrap_or_else(|| launcher::TITLE.to_owned());
-        if let Some(pid) = self.windows.show(&route.url(&self.url), &title) {
+        if let Some(pid) = self.windows.show(route, &title) {
             activation::bring_forward(pid);
         }
     }

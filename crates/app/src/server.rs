@@ -1,7 +1,7 @@
 //! HTTP surface of a running instance.
 //!
-//! Routes: the API (see [`api`]); any other `/api` path is 404; everything else is the embedded
-//! web bundle (see [`assets`]). Every route, the bundle included, passes [`guard::enforce`].
+//! Routes: the API (see [`api`]); any other `/api` path is 404; `/` is a script-free information
+//! page (see [`assets`]). Every route, that page included, passes [`guard::enforce`].
 //! [`bind`] claims the loopback endpoint and refuses ports another process already serves; [`run`]
 //! serves until SIGINT/SIGTERM or the owner quits, ends open event streams, then drains for a
 //! bounded time.
@@ -252,7 +252,7 @@ mod tests {
             .expect("bind");
         let addr = listener.local_addr().expect("addr");
         let token = ActionToken::generate().expect("token");
-        let policy = Arc::new(Policy::new(addr.port(), false, token));
+        let policy = Arc::new(Policy::new(addr.port(), token));
         let token = policy.token().to_owned();
         let (stopping, stopping_receiver) = watch::channel(false);
         let probes = Arc::new(Probes::new(Scope::Only(std::collections::HashSet::new())));

@@ -104,17 +104,43 @@ pub(super) fn matching(entry: &ServiceEditor, index: usize, k: &Kit) -> El {
             .key("match-override"),
     );
     if entry.match_override {
-        body = body.child(field("Directory within this project", &entry.cwd, "apps/web or .", "service-cwd", index, Field::Cwd, k))
-            .child(field("Listening port", &entry.port, "e.g. 5173", "service-port", index, Field::Port, k))
-            .child(hint("Set one or both. When both are set, both must match. Rules stay within this project.", k));
+        body = body
+            .child(field(
+                "Directory within this project",
+                &entry.cwd,
+                "apps/web or .",
+                "service-cwd",
+                index,
+                Field::Cwd,
+                k,
+            ))
+            .child(field(
+                "Listening port",
+                &entry.port,
+                "e.g. 5173",
+                "service-port",
+                index,
+                Field::Port,
+                k,
+            ))
+            .child(hint(
+                "Set one or both. When both are set, both must match. Rules stay within this \
+                 project.",
+                k,
+            ));
     } else {
         body = body.child(hint(
             entry
                 .inherited
                 .as_ref()
-                .filter(|e| e.sources.matcher == Some(ProfileSource::Repository)).and_then(|e| e.matcher.as_ref())
+                .filter(|e| e.sources.matcher == Some(ProfileSource::Repository))
+                .and_then(|e| e.matcher.as_ref())
                 .map_or_else(
-                    || "Use the repository rule when present; otherwise keep this service declared without matching a process.".into(),
+                    || {
+                        "Use the repository rule when present; otherwise keep this service \
+                         declared without matching a process."
+                            .into()
+                    },
                     |m| {
                         format!(
                             "Inherited rule · directory {} · port {}",
@@ -152,9 +178,24 @@ pub(super) fn protocol(entry: &ServiceEditor, index: usize, k: &Kit) -> El {
                 .key(format!("protocol-{name}")),
         );
     }
-    col().gap(10.0).child(hint("Protocol hint", k)).child(choices)
-        .child(hint("HTTP and HTTPS allow checks of this service on loopback. A hint is not a health result.", k))
-        .child(field("HTTP probe path", &entry.probe, "/", "service-probe", index, Field::Probe, k))
+    col()
+        .gap(10.0)
+        .child(hint("Protocol hint", k))
+        .child(choices)
+        .child(hint(
+            "HTTP and HTTPS allow checks of this service on loopback. A hint is not a health \
+             result.",
+            k,
+        ))
+        .child(field(
+            "HTTP probe path",
+            &entry.probe,
+            "/",
+            "service-probe",
+            index,
+            Field::Probe,
+            k,
+        ))
 }
 pub(super) fn links(entry: &ServiceEditor, index: usize, k: &Kit) -> El {
     let mut body = col().gap(12.0).child(

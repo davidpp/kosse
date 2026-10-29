@@ -11,7 +11,7 @@ use std::{
     fs,
     io::{BufRead, BufReader, Write},
     os::unix::{
-        fs::PermissionsExt,
+        fs::{DirBuilderExt, PermissionsExt},
         net::{UnixListener, UnixStream},
     },
     path::{Path, PathBuf},
@@ -63,10 +63,15 @@ impl Reply {
     }
 }
 
+/// Whether the agent control socket is enabled (`KOSSE_WINDOW_CONTROL=1`).
+pub fn enabled() -> bool {
+    std::env::var_os(ENABLE).is_some_and(|value| value == "1")
+}
+
 /// Starts listening when enabled. `deliver` hands a request to the window's event loop and
 /// returns `false` once the loop is gone.
 pub fn serve(deliver: impl Fn(Request, Reply) -> bool + Send + 'static) {
-    if std::env::var_os(ENABLE).is_none_or(|value| value != "1") {
+    if !enabled() {
         return;
     }
     let Some(path) = std::env::var_os(SOCKET).map(PathBuf::from) else {
@@ -285,7 +290,17 @@ fn native_window() -> Option<Retained<NSWindow>> {
 }
 fn status(window: &NSWindow) -> Value {
     let size = window.contentView().map(|view| view.frame().size);
-    json!({"renderer": "rune", "alpha": window.alphaValue(), "pid": std::process::id(), "windowNumber": window.windowNumber(), "title": window.title().to_string(), "width": size.map(|s| s.width), "height": size.map(|s| s.height), "visible": window.isVisible(), "focused": window.isKeyWindow()})
+    json!({
+        "renderer": "rune",
+        "alpha": window.alphaValue(),
+        "pid": std::process::id(),
+        "windowNumber": window.windowNumber(),
+        "title": window.title().to_string(),
+        "width": size.map(|s| s.width),
+        "height": size.map(|s| s.height),
+        "visible": window.isVisible(),
+        "focused": window.isKeyWindow(),
+    })
 }
 fn click(window: &NSWindow, x: f64, y: f64) -> Result<(), String> {
     let height = window
@@ -294,7 +309,7 @@ fn click(window: &NSWindow, x: f64, y: f64) -> Result<(), String> {
         .frame()
         .size
         .height;
-    // Window coordinates start at the bottom left; the web view fills the content view.
+    // Window coordinates start at the bottom left; the Rune surface fills the content view.
     let location = NSPoint::new(x, height - y);
     let number = window.windowNumber();
     for kind in [NSEventType::LeftMouseDown, NSEventType::LeftMouseUp] {
@@ -315,7 +330,7 @@ fn click(window: &NSWindow, x: f64, y: f64) -> Result<(), String> {
     Ok(())
 }
 
-/// A key press (down and up) to the window's first responder, the web view.
+/// A key press (down and up) to the window's first responder, the Rune surface.
 fn press(window: &NSWindow, key: &str) -> Result<(), String> {
     let (characters, code) = match key {
         "Enter" => ("\r".to_owned(), 36),
@@ -400,7 +415,17 @@ fn scroll(window: &NSWindow, x: f64, y: f64, delta: i32) -> Result<(), String> {
     use objc2_core_graphics::{CGEvent, CGScrollEventUnit};
     let view = window.contentView().ok_or("no content view")?;
     let moved = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
-        NSEventType::MouseMoved, NSPoint::new(x, view.frame().size.height - y), NSEventModifierFlags::empty(), 0.0, window.windowNumber(), None, 0, 0, 0.0).ok_or("could not create pointer event")?;
+        NSEventType::MouseMoved,
+        NSPoint::new(x, view.frame().size.height - y),
+        NSEventModifierFlags::empty(),
+        0.0,
+        window.windowNumber(),
+        None,
+        0,
+        0,
+        0.0,
+    )
+    .ok_or("could not create pointer event")?;
     view.mouseMoved(&moved);
     let wheel = CGEvent::new_scroll_wheel_event2(None, CGScrollEventUnit::Pixel, 1, delta, 0, 0)
         .ok_or("could not create wheel event")?;
@@ -409,21 +434,34 @@ fn scroll(window: &NSWindow, x: f64, y: f64, delta: i32) -> Result<(), String> {
     Ok(())
 }
 
+/// `screencapture` writes into a fresh owner-only directory (`mkdir` fails rather than follow an
+/// existing path), then the bytes go to `path` without following a symlink there.
 fn capture(number: isize, path: &Path) -> Result<(), String> {
-    let temp = tempfile::Builder::new()
-        .prefix("kosse-shot-")
-        .suffix(".png")
-        .tempfile()
+    static SHOTS_TAKEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let private = std::env::temp_dir().join(format!(
+        "kosse-shot-{}-{}",
+        std::process::id(),
+        SHOTS_TAKEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&private)
         .map_err(|e| e.to_string())?;
-    let output = std::process::Command::new("/usr/sbin/screencapture")
+    let shot = private.join("shot.png");
+    let taken = std::process::Command::new("/usr/sbin/screencapture")
         .args(["-x", "-o", "-l", &number.to_string()])
-        .arg(temp.path())
+        .arg(&shot)
         .output()
-        .map_err(|e| e.to_string())?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).into_owned());
-    }
-    let bytes = fs::read(temp.path()).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+        .and_then(|output| {
+            if output.status.success() {
+                fs::read(&shot).map_err(|e| e.to_string())
+            } else {
+                Err(String::from_utf8_lossy(&output.stderr).into_owned())
+            }
+        });
+    let _ = fs::remove_dir_all(&private);
+    let bytes = taken?;
     let descriptor = rustix::fs::open(
         path,
         rustix::fs::OFlags::WRONLY

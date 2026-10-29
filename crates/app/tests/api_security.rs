@@ -1,13 +1,11 @@
 //! The request policy through the real binary over raw HTTP: forged `Host`, cross-origin reads,
-//! preflights, cross-site form posts, missing and stale tokens, bad payloads, the dev authority,
+//! preflights, cross-site form posts, missing and stale tokens, bad payloads,
 //! and the security headers on every kind of route.
 
 mod support;
 
 use kosse_core::model::Snapshot;
 use support::{HttpResponse, RawRequest, Server};
-
-const DEV_AUTHORITY: &str = "127.0.0.1:47833";
 
 fn assert_refused(response: &HttpResponse, status: u16, code: &str) {
     // Bodies are truncated in messages: a wrongly accepted request returns real host data.
@@ -98,7 +96,6 @@ fn foreign_hosts_are_refused_on_every_route() {
             format!("[::1]:{port}"),
             format!("127.0.0.1:{}", port.wrapping_add(1)),
             "127.0.0.1".to_owned(),
-            DEV_AUTHORITY.to_owned(),
         ] {
             let response = server.send(&RawRequest::new("GET", path).host(&host));
             assert_refused(&response, 421, "hostNotAllowed");
@@ -320,38 +317,4 @@ fn unsafe_requests_to_the_bundle_pass_the_same_policy() {
             .body("a=1"),
     );
     assert_refused(&response, 403, "originNotAllowed");
-}
-
-#[test]
-fn the_dev_authority_is_admitted_only_in_dev_mode() {
-    let production = Server::start();
-    let refused = production.send(&RawRequest::new("GET", "/api/health").host(DEV_AUTHORITY));
-    assert_refused(&refused, 421, "hostNotAllowed");
-
-    // Through the Vite proxy the browser's Host and Origin are the dev server's.
-    let dev = Server::start_with(&["--dev"]);
-    let token = dev.token();
-    let health = dev.send(&RawRequest::new("GET", "/api/health").host(DEV_AUTHORITY));
-    assert_eq!(health.status, 200);
-    let refresh = dev.send(
-        &RawRequest::new("POST", "/api/refresh")
-            .host(DEV_AUTHORITY)
-            .header("Origin", &format!("http://{DEV_AUTHORITY}"))
-            .header("Content-Type", "application/json")
-            .header("X-Kosse-Token", &token)
-            .body("{}"),
-    );
-    assert_eq!(refresh.status, 200, "{}", refresh.text());
-    // Dev mode admits exactly that authority, and still refuses cross-origin writes.
-    let mismatch = dev.send(
-        &RawRequest::new("POST", "/api/refresh")
-            .host(DEV_AUTHORITY)
-            .header("Origin", &dev.origin())
-            .header("Content-Type", "application/json")
-            .header("X-Kosse-Token", &token)
-            .body("{}"),
-    );
-    assert_refused(&mismatch, 403, "originNotAllowed");
-    let localhost = dev.send(&RawRequest::new("GET", "/api/health").host("localhost:47833"));
-    assert_refused(&localhost, 421, "hostNotAllowed");
 }

@@ -28,6 +28,7 @@ mod native;
 mod open;
 mod opener;
 mod preferences;
+mod present;
 mod prober;
 mod route;
 mod running;
@@ -123,48 +124,25 @@ async fn serve(args: ServeArgs) -> Result<(), AppError> {
     let sink = std::sync::Arc::new(move |route| {
         let _ = routes.send(route);
     });
-    let running = Running::start(
-        &args.server,
-        dev_mode(&args),
-        InstanceMode::Headless,
-        Some(sink),
-    )
-    .await?;
+    let running = Running::start(&args.server, InstanceMode::Headless, Some(sink)).await?;
     let url = running.url().to_owned();
     report!("kosse {} listening on {url}", env!("CARGO_PKG_VERSION"));
-    let mut windows = launcher::Windows::new(std::sync::Arc::new(|_| {}));
+    let mut windows = launcher::Windows::new(&url, std::sync::Arc::new(|_| {}));
     if !args.no_open {
-        windows.show(&url, launcher::TITLE);
+        windows.show(route::Route::Dashboard, launcher::TITLE);
     }
     let server = running.run(std::future::pending());
     tokio::pin!(server);
     let result = loop {
         tokio::select! {
             result = &mut server => break result,
-            Some(route) = incoming.recv() => { windows.show(&route::Route::from(route).url(&url), launcher::TITLE); }
+            Some(route) = incoming.recv() => {
+                windows.show(route::Route::from(route), launcher::TITLE);
+            }
         }
     };
     windows.close();
     result?;
     report!("kosse stopped");
     Ok(())
-}
-
-/// Development mode (admitting the Vite dev server's authority) exists only in debug builds.
-fn dev_mode(args: &ServeArgs) -> bool {
-    #[cfg(debug_assertions)]
-    {
-        if args.dev {
-            report!(
-                "kosse: development mode: also answering for {}",
-                guard::DEV_AUTHORITY
-            );
-        }
-        args.dev
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        let _ = args;
-        false
-    }
 }

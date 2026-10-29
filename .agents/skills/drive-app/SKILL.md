@@ -1,6 +1,6 @@
 ---
 name: drive-app
-description: Start, drive and read the real Kossé menu-bar app and its Rune dashboard window from an agent, on a fictional fixture world. Use whenever a change touches the dashboard, the window, the tray routes or the app, to reproduce a UI bug in the real window, take a screenshot of it, resize it, click or type in it, or check what a stop, force or save did. Prefer it over hand-launching target/debug/kosse or trusting Playwright alone; The driver sends real native input.
+description: Start, drive and read the real Kossé menu-bar app and its Rune dashboard window from an agent, on a fictional fixture world. Use whenever a change touches the dashboard, the window, the tray routes or the app, to reproduce a UI bug in the real window, take a screenshot of it, resize it, click or type in it, or check what a stop, force or save did. Prefer it over hand-launching target/debug/kosse: the driver sends real native input to the real window.
 ---
 
 # Drive the app

@@ -1,8 +1,8 @@
 //! The menu-bar app, `kosse open` and second launches through the real binary.
 //!
 //! Debug-build test hooks keep the developer's desktop untouched: `KOSSE_TEST_WINDOW=headless`
-//! runs the real dashboard window (`WKWebView` on the real server) invisibly and reports each
-//! finished page load; `KOSSE_TEST_OPENER` replaces `/usr/bin/open` with a script that records
+//! runs the real native dashboard window (Rune, on the real server) invisibly and reports each
+//! route it finished showing; `KOSSE_TEST_OPENER` replaces `/usr/bin/open` with a script that records
 //! the URL; `KOSSE_TEST_TRAY=1` prints each rendered tray menu and takes `activate <id>` on stdin,
 //! dispatched exactly like a click. The tray icon itself is real and appears briefly in the menu
 //! bar. Its look and real clicks are the human checklist in docs/evidence/S08.md.

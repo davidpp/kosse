@@ -10,12 +10,13 @@
 use std::collections::HashMap;
 
 use kosse_core::{
-    model::{GitHead, HttpProbe, Observation, ProbeResult, Project, Service, Snapshot},
-    profiles::view::{ProfileMatch, ProjectMetadata},
+    model::{Observation, Project, Service, Snapshot},
+    profiles::view::ProjectMetadata,
 };
 
 use crate::{
     launcher,
+    present::{self, open_url, service_name},
     route::{Route, Target},
     text::printable,
 };
@@ -211,20 +212,11 @@ fn label(item: &Item) -> &str {
 
 /// `name — branch`, `name — detached a1b2c3d`, or the name alone outside Git.
 fn heading(project: &Project, metadata: Option<&ProjectMetadata>) -> String {
-    let name = metadata
-        .and_then(|metadata| metadata.name.as_deref())
-        .unwrap_or(&project.name);
-    let head = project.git.as_ref().map(|git| match &git.head {
-        GitHead::Branch { name } => name.clone(),
-        GitHead::Detached { commit } => {
-            format!("detached {}", commit.chars().take(7).collect::<String>())
-        }
-        GitHead::Unknown => "unknown branch".to_owned(),
-    });
-    printable(&match head {
+    let name = present::project_name(project, metadata);
+    match present::branch(project) {
         Some(head) => format!("{name} — {head}"),
-        None => name.to_owned(),
-    })
+        None => name,
+    }
 }
 
 /// `name :port[, :port]` with Open per HTTP endpoint, Inspect and Stop….
@@ -262,7 +254,7 @@ fn service_item(service: &Service, observation: &Observation, kosse: u32) -> Ite
                     title: title.clone(),
                 },
             });
-            if service.process.identity.pid != kosse {
+            if present::stop_offered(service, kosse) {
                 items.push(Item::Action {
                     label: "Stop…".to_owned(),
                     action: Action::Show {
@@ -283,45 +275,14 @@ fn service_item(service: &Service, observation: &Observation, kosse: u32) -> Ite
     }
 }
 
-/// The configured service name, else the package name, else the process name, else the PID.
-fn service_name(service: &Service, observation: &Observation) -> String {
-    let configured = match &service.profile {
-        Some(ProfileMatch::Matched { service: id }) => observation
-            .profiles
-            .iter()
-            .filter(|metadata| service.project.as_deref() == Some(metadata.root.as_str()))
-            .flat_map(|metadata| &metadata.services)
-            .find(|entry| &entry.id == id)
-            .map(|entry| entry.name.clone().unwrap_or_else(|| entry.id.clone())),
-        _ => None,
-    };
-    let name = configured
-        .or_else(|| service.package.as_ref().map(|package| package.name.clone()))
-        .or_else(|| service.process.name.clone())
-        .unwrap_or_else(|| format!("PID {}", service.process.identity.pid));
-    printable(&name)
-}
-
-/// The URL to open when the endpoint answered HTTP (any status counts as reachable).
-fn open_url(http: &HttpProbe) -> Option<&str> {
-    match http {
-        HttpProbe::Probed {
-            result: ProbeResult::Response { url, .. },
-            ..
-        } if url.starts_with("http://localhost:") || url.starts_with("https://localhost:") => {
-            Some(url)
-        }
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     //! Snapshots are built in memory here: the menu is a pure function of one.
 
     use kosse_core::model::{
-        CpuUsage, Endpoint, Exposure, GitWorktree, PackageLabel, ProbeSkip, ProcessIdentity,
-        ProcessMetrics, ProcessRecord, ScannerStatus, TransportProtocol,
+        CpuUsage, Endpoint, Exposure, GitHead, GitWorktree, HttpProbe, PackageLabel, ProbeResult,
+        ProbeSkip, ProcessIdentity, ProcessMetrics, ProcessRecord, ScannerStatus,
+        TransportProtocol,
     };
 
     use super::*;

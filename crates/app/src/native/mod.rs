@@ -3,7 +3,10 @@ mod client;
 mod customize;
 mod view;
 
-use crate::cli::WindowArgs;
+use crate::{
+    cli::WindowArgs,
+    route::{Route, Show},
+};
 use kosse_core::{
     action::{ActionRequest, ActionResult},
     model::{ProcessIdentity, Service, Snapshot},
@@ -16,6 +19,9 @@ use std::{
     thread,
 };
 use tokio::sync::mpsc;
+
+/// How long a service that stopped listening stays listed as ended.
+const ENDED_RETENTION_MS: u64 = 60_000;
 
 pub struct State {
     pub(crate) theme: Option<bool>,
@@ -32,8 +38,12 @@ pub struct State {
     connection_error: Option<String>,
     ended: Vec<(Service, u64)>,
     requests: Option<mpsc::UnboundedSender<client::Command>>,
-    route: Option<String>,
-    current_url: String,
+    /// A route from the owner waiting for a snapshot that can resolve it.
+    route: Option<Route>,
+    /// The instance's base URL, `http://127.0.0.1:<port>/`.
+    base_url: String,
+    current: Route,
+    /// Counts routes received; 0 until the owner's first one.
     route_generation: u64,
 }
 
@@ -44,6 +54,13 @@ struct Confirmation {
     busy: bool,
     force: bool,
     error: Option<String>,
+}
+
+impl Confirmation {
+    /// A request in flight or an outcome not yet acknowledged: never replaced by a route.
+    fn pinned(&self) -> bool {
+        self.busy || self.result.is_some()
+    }
 }
 
 impl Default for State {
@@ -64,26 +81,18 @@ impl Default for State {
             ended: Vec::new(),
             requests: None,
             route: None,
-            current_url: String::new(),
-            route_generation: 1,
+            base_url: String::new(),
+            current: Route::Dashboard,
+            route_generation: 0,
         }
     }
 }
 
 impl State {
     fn accept(&mut self, snapshot: Snapshot) {
-        if self
-            .snapshot
-            .as_ref()
-            .is_some_and(|old| old.instance != snapshot.instance)
-        {
-            self.ended.clear();
-            self.confirmation = None;
-            self.snapshot = None;
-        }
         if let Some(next) = &snapshot.observation {
             self.ended.retain(|(service, seen)| {
-                next.scanned_at_ms.saturating_sub(*seen) < 60_000
+                next.scanned_at_ms.saturating_sub(*seen) < ENDED_RETENTION_MS
                     && !next
                         .services
                         .iter()
@@ -91,14 +100,12 @@ impl State {
             });
             if let Some(previous) = self.snapshot.as_ref().and_then(|s| s.observation.as_ref()) {
                 for service in &previous.services {
-                    if !next
-                        .services
-                        .iter()
-                        .any(|s| s.process.identity == service.process.identity)
+                    let identity = service.process.identity;
+                    if !next.services.iter().any(|s| s.process.identity == identity)
                         && !self
                             .ended
                             .iter()
-                            .any(|(s, _)| s.process.identity == service.process.identity)
+                            .any(|(s, _)| s.process.identity == identity)
                     {
                         self.ended.push((service.clone(), previous.scanned_at_ms));
                     }
@@ -137,58 +144,71 @@ impl State {
         });
     }
 
-    fn navigate(&mut self, url: String) {
-        self.current_url.clone_from(&url);
+    fn navigate(&mut self, route: Route) {
+        self.current = route;
         self.route_generation += 1;
-        self.route = Some(url);
+        self.route = Some(route);
         self.apply_route();
     }
 
+    fn confirmation_pinned(&self) -> bool {
+        self.confirmation.as_ref().is_some_and(Confirmation::pinned)
+    }
+
+    fn editor_pinned(&self) -> bool {
+        self.editor.as_ref().is_some_and(customize::Editor::pinned)
+    }
+
+    /// Applies the pending route once the snapshot can resolve it. A stop in flight (or its
+    /// unacknowledged outcome) and unsaved customization are never discarded by a route.
     fn apply_route(&mut self) {
-        let Some(url) = self.route.as_ref() else {
+        let Some(route) = self.route else {
             return;
         };
-        let Some((_, query)) = url.split_once('?') else {
-            self.selected = None;
-            self.confirmation = None;
-            self.route = None;
-            return;
-        };
-        let Some((kind, target)) = query.split_once('=') else {
-            self.route = None;
-            return;
-        };
-        let Some((pid, start)) = target.split_once('.') else {
-            self.route = None;
-            return;
-        };
-        let (Ok(pid), Ok(start)) = (pid.parse(), start.parse()) else {
-            self.route = None;
-            return;
-        };
-        let identity = ProcessIdentity {
-            pid,
-            started_at_secs: Some(start),
+        let target = match route {
+            Route::Dashboard => {
+                self.route = None;
+                self.selected = None;
+                if !self.confirmation_pinned() {
+                    self.confirmation = None;
+                }
+                return;
+            }
+            Route::Inspect(target) | Route::Stop(target) => target,
         };
         let Some(observation) = self.snapshot.as_ref().and_then(|s| s.observation.as_ref()) else {
             return;
         };
-        let service = observation
+        self.route = None;
+        let identity = target.identity();
+        let Some(service) = observation
             .services
             .iter()
             .find(|s| s.process.identity == identity)
-            .cloned();
-        let stop = kind == "stop";
-        self.route = None;
+            .cloned()
+        else {
+            self.error = Some("This process is no longer in the current observation.".into());
+            return;
+        };
+        self.selected = Some(identity);
+        if !self.editor_pinned() {
+            self.editor = None;
+        }
+        if self.confirmation_pinned() {
+            if matches!(route, Route::Stop(_)) {
+                self.error =
+                    Some("Finish the current stop before stopping another process.".into());
+            }
+            return;
+        }
         self.confirmation = None;
-        self.editor = None;
-        if let Some(service) = service {
-            self.selected = Some(identity);
-            if stop {
+        if matches!(route, Route::Stop(_)) {
+            if self.editor.is_some() {
+                self.error =
+                    Some("Save or cancel the customization before stopping a process.".into());
+            } else {
                 self.confirm(service);
             }
-        } else {
-            self.error = Some("This process is no longer in the current observation.".into());
         }
     }
 }
@@ -217,7 +237,7 @@ pub fn run(args: &WindowArgs) -> ExitCode {
     };
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let (sender, receiver) = mpsc::unbounded_channel();
-    let url = args.url.clone();
+    let base_url = format!("http://{addr}/");
     let title = args.title.clone();
     let test_mode = test_mode();
     #[cfg(debug_assertions)]
@@ -240,8 +260,7 @@ pub fn run(args: &WindowArgs) -> ExitCode {
         .tab_visits_controls(true)
         .init(move || State {
             requests: Some(sender),
-            current_url: url.clone(),
-            route: Some(url),
+            base_url: base_url.clone(),
             ..State::default()
         })
         .on_window(move |_| {
@@ -265,23 +284,20 @@ pub fn run(args: &WindowArgs) -> ExitCode {
         tx.set_title(title);
     });
     let background = runtime.spawn(client::run(addr, receiver, handle.clone()));
+    // The owner's routes, one JSON `Show` per line; end of input means the owner is gone.
     thread::spawn(move || {
         for line in io::stdin().lock().lines() {
             let Ok(line) = line else {
                 break;
             };
-            let Some((url, title)) = line.split_once('\t') else {
+            let Ok(show) = serde_json::from_str::<Show>(&line) else {
                 continue;
             };
-            if !url.starts_with(&format!("http://{addr}/")) {
-                continue;
-            }
-            let url = url.to_owned();
-            let title = title.to_owned();
+            let route = Route::from(show.route);
             handle.update(move |s, tx| {
-                s.navigate(url.clone());
-                tx.set_title(title);
-                say(&format!("shown {url}"));
+                s.navigate(route);
+                tx.set_title(show.title);
+                say(&format!("shown {}", route.url(&s.base_url)));
             });
             if !hidden {
                 handle.open();
@@ -312,34 +328,99 @@ fn test_mode() -> String {
     String::new()
 }
 
+/// Debug builds: test reports for a hidden window (`loaded`, `dialog`) and, only when the
+/// control socket is enabled, the rendered element tree it serves. Neither runs otherwise.
 #[cfg(debug_assertions)]
 fn instrument(app: App<State>, hidden: bool, once: bool) -> App<State> {
+    let control = crate::window_control::enabled();
+    if !hidden && !control {
+        return app;
+    }
     let tree = std::sync::Arc::new(std::sync::Mutex::new(serde_json::Value::Null));
     let app = {
         let tree = tree.clone();
         let quit = app.handle();
         let mut reported = 0;
         app.on_frame_drawn(move |rt| {
-            if hidden && rt.state.connected && rt.state.route.is_none() && reported != rt.state.route_generation
-                && rt.state.confirmation.is_some() == rt.elements().iter().any(|e| e.role == "dialog") {
+            if hidden && reported != rt.state.route_generation && settled(rt) {
                 reported = rt.state.route_generation;
-                say(&format!("loaded {}", rt.state.current_url));
-                let dialog = rt.elements().iter().find(|e| e.role == "dialog").and_then(|e| e.label.clone())
-                    .or_else(|| rt.state.selected.and_then(|id| rt.state.snapshot.as_ref()?.observation.as_ref()?.services.iter().find(|s| s.process.identity == id)?.process.name.clone()));
-                if let Ok(value) = serde_json::to_string(&dialog) { say(&format!("dialog {value}")); }
-                if once { quit.quit(); }
+                report_loaded(rt);
+                if once {
+                    quit.quit();
+                }
             }
-            let elements: Vec<_> = rt.elements().into_iter().map(|e| serde_json::json!({"key": e.key, "path": e.path, "role": e.role, "text": e.text, "label": e.label, "rect": e.rect, "opacity": e.opacity, "focused": e.focused, "inert": e.inert})).collect();
-            *tree.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = serde_json::json!({"search": rt.state.search.text, "elements": elements});
+            if control {
+                *tree
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = element_tree(rt);
+            }
         })
     };
-    let handle = app.handle();
-    {
-        let control = handle.clone();
+    if control {
+        let control = app.handle();
         crate::window_control::serve(move |request, reply| {
             crate::window_control::dispatch(request, reply, &control, &tree);
             true
         });
     }
     app
+}
+
+/// The latest route is applied and drawn: connected, resolved, its dialog (if any) on screen.
+#[cfg(debug_assertions)]
+fn settled(rt: &rune::Runtime<State>) -> bool {
+    let s = &rt.state;
+    s.route_generation > 0
+        && s.connected
+        && s.route.is_none()
+        && s.confirmation.is_some() == rt.elements().iter().any(|e| e.role == "dialog")
+}
+
+#[cfg(debug_assertions)]
+fn report_loaded(rt: &rune::Runtime<State>) {
+    let s = &rt.state;
+    say(&format!("loaded {}", s.current.url(&s.base_url)));
+    let dialog = rt
+        .elements()
+        .iter()
+        .find(|e| e.role == "dialog")
+        .and_then(|e| e.label.clone())
+        .or_else(|| {
+            let id = s.selected?;
+            let observation = s.snapshot.as_ref()?.observation.as_ref()?;
+            let service = observation
+                .services
+                .iter()
+                .find(|service| service.process.identity == id)?;
+            service.process.name.clone()
+        });
+    if let Ok(value) = serde_json::to_string(&dialog) {
+        say(&format!("dialog {value}"));
+    }
+}
+
+#[cfg(debug_assertions)]
+fn element_tree(rt: &rune::Runtime<State>) -> serde_json::Value {
+    let elements: Vec<_> = rt
+        .elements()
+        .into_iter()
+        .map(|e| {
+            serde_json::json!({
+                "key": e.key,
+                "path": e.path,
+                "role": e.role,
+                "text": e.text,
+                "label": e.label,
+                "rect": e.rect,
+                "opacity": e.opacity,
+                "focused": e.focused,
+                "inert": e.inert,
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "search": rt.state.search.text,
+        "revision": rt.state.snapshot.as_ref().map(|snapshot| snapshot.revision),
+        "elements": elements,
+    })
 }
