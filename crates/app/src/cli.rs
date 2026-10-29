@@ -37,6 +37,16 @@ pub enum Command {
     /// Say whether a TCP port is free, as far as this user can see, or which process, project
     /// and service listen on it.
     Port(PortArgs),
+    /// Stop one process gracefully (`SIGTERM`) through the running Kossé instance, as the
+    /// dashboard's Stop does. The identity and every port it listens on, as `kosse list` prints
+    /// them, are the confirmation; given a service name, port or PID instead, prints the exact
+    /// command that would confirm it and signals nothing. Exits 0 when it exited and its ports
+    /// are free, 1 when it is still running, respawned or its port was taken, 3 when refused
+    /// (nothing signalled), 4 without an instance or when the outcome could not be observed.
+    Stop(ActionArgs),
+    /// Send `SIGKILL` to a process whose `kosse stop` ended still running on the same instance,
+    /// within the offer printed then (60 s, once). Exit codes as for `stop`.
+    Force(ActionArgs),
     /// Project profiles: the schema, the configuration file, moved projects.
     #[command(subcommand)]
     Config(ConfigCommand),
@@ -272,6 +282,30 @@ pub struct PortArgs {
 
     #[command(flatten)]
     pub instance: InstanceArgs,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct ActionArgs {
+    /// The process identity `<pid>.<start>` (the `PID.START` column of `kosse list`). A service
+    /// name, port or PID is accepted only to print the command that would confirm it.
+    pub target: String,
+
+    /// Every port the process listens on, comma-separated, exactly as observed now.
+    #[arg(long, value_name = "PORT,…", value_delimiter = ',')]
+    pub ports: Option<Vec<u16>>,
+
+    /// Print the `ActionAnswer` JSON record; refusals and errors as a `CommandError` on stderr.
+    #[arg(long)]
+    pub json: bool,
+
+    /// For a service name: only the project of the current directory or `--project`.
+    #[command(flatten)]
+    pub scope: Scope,
+
+    /// The port of the running Kossé instance that signals (`kosse serve`, or the menu-bar app);
+    /// without a verified instance there, nothing is signalled.
+    #[arg(long, value_name = "PORT", default_value_t = DEFAULT_PORT)]
+    pub instance_port: u16,
 }
 
 /// Which project a read command is about.

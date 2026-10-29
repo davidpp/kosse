@@ -1,7 +1,8 @@
 //! `kosse` entry point: parses the command line, picks the mode (menu-bar app, `open`, `serve`,
-//! `list`, `url`, `port`, `config`, `profile`, `doctor`, `startup`, the internal `window`), maps
-//! failures to exit codes (0 success, 1 runtime failure, 2 usage error via clap). The agent
-//! commands `list`, `url`, `port` and `profile` have their own codes (see `failure.rs`).
+//! `list`, `url`, `port`, `stop`, `force`, `config`, `profile`, `doctor`, `startup`, the internal
+//! `window`), maps failures to exit codes (0 success, 1 runtime failure, 2 usage error via clap).
+//! The agent commands `list`, `url`, `port`, `stop`, `force` and `profile` have their own codes
+//! (see `failure.rs`).
 
 /// `eprintln!` without its panic: diagnostics to a closed stderr (`kosse … 2>&-`, or a
 /// pipe whose reader exited) are dropped instead of aborting the process.
@@ -39,6 +40,7 @@ mod scheduler;
 mod scope;
 mod server;
 mod startup;
+mod stop;
 mod text;
 mod tray;
 mod window;
@@ -93,6 +95,8 @@ fn main() -> ExitCode {
         Some(Command::Url(args)) => return query::url(args),
         Some(Command::Port(args)) => return query::port(args),
         Some(Command::Profile(command)) => return profile::run(command),
+        Some(Command::Stop(args)) => return stop::run(args, stop::Verb::Stop),
+        Some(Command::Force(args)) => return stop::run(args, stop::Verb::Force),
         _ => {}
     }
     match run(cli) {
@@ -117,6 +121,8 @@ fn run(cli: Cli) -> Result<(), AppError> {
             | Command::List(_)
             | Command::Url(_)
             | Command::Port(_)
+            | Command::Stop(_)
+            | Command::Force(_)
             | Command::Profile(_),
         ) => Ok(()),
     }

@@ -69,9 +69,9 @@ fn running_snapshot(port: u16) -> Option<Snapshot> {
         .build()
         .ok()?;
     match runtime.block_on(instance::find(port)) {
-        Found::Kosse(existing) => {
+        Found::Kosse(mut existing) => {
             let url = existing.url.clone();
-            let snapshot = (*existing).compatible_snapshot();
+            let snapshot = existing.compatible_snapshot();
             if snapshot.is_none() {
                 report!(
                     "kosse: the Kossé at {url} uses another snapshot version; scanning once instead"

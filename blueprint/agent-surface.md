@@ -54,6 +54,7 @@ Actions (S17):
 - `kosse stop <pid>.<start> --ports <p,…>` takes the identity and the exact live port set; together they are the confirmation. A mismatch, a stale identity, or a service name or port given alone is refused, and the refusal prints the current identity and the exact command that would confirm it. That gives agents a safe two-step without an interactive dialog. Output is the structured `ActionResult`.
 - `kosse force <pid>.<start> --ports <p,…>` succeeds only within a still-running offer from an earlier `stop` on the same instance (the existing offer rules).
 - Both go through `POST /api/stop` / `/api/force` of a verified instance as a same-origin client (exact Host and Origin, JSON, session token), like `native/client.rs`. Open decision D1 covers the no-instance case.
+- S17 outcome: implemented as above with D1's recommendation (no instance: exit 4 naming `kosse serve --no-open`); CONTRIBUTING.md has the exact syntax, records and exit codes. The client is `instance.rs`'s verified-instance HTTP client (`instance::post`), the one the second launch uses. A bare number is taken as a port or a PID, and a name may be narrowed with `--here`/`--project`; all of these, an identity without `--ports`, and every refusal print the confirming commands (one per candidate, so ambiguity is a refusal, exit 3, not a negative answer) from a fresh `POST /api/refresh` of the same instance. Processes the instance would refuse (Kossé itself, no start time, another user's) are never suggested. Outcomes that signalled print to stdout (`ActionAnswer` with `--json`: the `ActionResult` plus `forceCommand`); outcomes that signalled nothing are failures on stderr (`CommandError` with `confirm` and the instance's `result`), so stdout still carries only results.
 
 Discovery (S18):
 
@@ -64,10 +65,10 @@ Discovery (S18):
 | Code | Meaning |
 |---|---|
 | 0 | Answered / condition met / applied |
-| 1 | Negative answer: no URL, wait timed out, dry run found ambiguity |
+| 1 | Negative answer: no URL, wait timed out, dry run found ambiguity, a stop that signalled but left the process running, respawned or its port taken |
 | 2 | Usage error, including a directory outside any project (`--here`, `--project`, a `profile` root) |
-| 3 | Refused by policy: stale identity, port set mismatch, no force offer, invalid profile, precondition failed |
-| 4 | Could not observe: scan failure, instance unverifiable, config unreadable or newer |
+| 3 | Refused by policy, nothing changed: confirmation required, stale identity, port set mismatch, no force offer, never-signalled process, action rate limit, invalid profile, precondition failed |
+| 4 | Could not observe: scan failure, instance unverifiable or absent (stop/force), action outcome unobservable, config unreadable or newer |
 
 Failures print one plain line on stderr, plus the confirming command where one exists (S17). With `--json` they print a typed JSON error instead (`ApiError`-shaped). Stdout carries only the result.
 
@@ -118,7 +119,7 @@ Real entrypoints, per [verification](verification.md). Integration tests run the
 
 ## Open decisions (owner)
 
-- **D1 — stop without an instance.** Force offers live in an owner's memory, so a one-shot CLI cannot offer force. Recommendation: `stop`/`force` require a verified instance (resident or `kosse serve`), and without one they exit 4 with the command to start it. The alternative, an in-process stop that never offers force, gives agents two behaviours to learn.
+- **D1 — stop without an instance.** Accepted for now (S17): an instance is required. Force offers live in an owner's memory, so a one-shot CLI cannot offer force. Recommendation: `stop`/`force` require a verified instance (resident or `kosse serve`), and without one they exit 4 with the command to start it. The alternative, an in-process stop that never offers force, gives agents two behaviours to learn.
 - **D2 — filters vs a new verb.** Recommendation: flags on `list` (one discoverable command) plus the narrow `url`/`port`/`wait` verbs for scripting.
 - **D3 — skill distribution.** Recommendation: print by default, archive includes the file, `--write <dir>` is explicit; no automatic install into any agent's configuration.
 

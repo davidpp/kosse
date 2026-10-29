@@ -1,4 +1,4 @@
-//! How the agent-facing commands (`list`, `url`, `port`, `profile`) fail: one plain stderr line,
+//! How the agent-facing commands (`list`, `url`, `port`, `profile`, `stop`, `force`) fail: one plain stderr line,
 //! or with `--json` a `CommandError` record, and an exit code that tells a negative answer (1)
 //! from a usage error (2: clap's, a directory outside any project, unreadable input), a refusal
 //! (3) and not being able to observe (4).
@@ -9,8 +9,8 @@ use std::{
 };
 
 use kosse_core::{
-    agent::ProfileFieldProblem,
-    agent::{CommandError, CommandErrorCode},
+    action::ActionResult,
+    agent::{CommandError, CommandErrorCode, Confirmation, ProfileFieldProblem},
     profiles::StoreError,
     sockets::SocketsError,
 };
@@ -23,6 +23,10 @@ pub struct Failure {
     pub message: String,
     /// Where a refused profile breaks a rule.
     pub problems: Vec<ProfileFieldProblem>,
+    /// For a refused stop or force: the commands that would confirm it now.
+    pub confirm: Vec<Confirmation>,
+    /// For a stop or force the instance refused: its answer (boxed: it is large and rare).
+    pub result: Option<Box<ActionResult>>,
 }
 
 impl Failure {
@@ -31,6 +35,8 @@ impl Failure {
             code,
             message: message.into(),
             problems: Vec::new(),
+            confirm: Vec::new(),
+            result: None,
         }
     }
 
@@ -42,12 +48,19 @@ impl Failure {
             CommandErrorCode::NotInProject | CommandErrorCode::InputUnreadable => 2,
             CommandErrorCode::InvalidProfile
             | CommandErrorCode::RevisionConflict
-            | CommandErrorCode::UnsafeRoot => 3,
+            | CommandErrorCode::UnsafeRoot
+            | CommandErrorCode::ConfirmationRequired
+            | CommandErrorCode::Stale
+            | CommandErrorCode::ForceNotOffered
+            | CommandErrorCode::ActionRefused
+            | CommandErrorCode::RateLimited => 3,
             CommandErrorCode::ProjectUnknown
             | CommandErrorCode::ScanFailed
             | CommandErrorCode::ConfigUnavailable
             | CommandErrorCode::ConfigWriteFailed
-            | CommandErrorCode::OutputFailed => 4,
+            | CommandErrorCode::OutputFailed
+            | CommandErrorCode::NoInstance
+            | CommandErrorCode::ActionFailed => 4,
         }
     }
 }
@@ -83,6 +96,13 @@ impl From<StoreError> for Failure {
     }
 }
 
+/// `<command>  (<process>, <project>)`; the command holds only numbers.
+fn described(confirmation: &Confirmation) -> String {
+    let process = confirmation.process.as_deref().unwrap_or("-");
+    let project = confirmation.project.as_deref().unwrap_or("no project");
+    printable(&format!("{}  ({process}, {project})", confirmation.command))
+}
+
 /// Writes a command's output; a closed pipe (`kosse list | head`) just means the reader has seen
 /// enough.
 pub fn written(result: io::Result<()>) -> Result<(), Failure> {
@@ -110,6 +130,8 @@ pub fn failed(failure: &Failure, json: bool) -> ExitCode {
             error: failure.code,
             message: failure.message.clone(),
             problems: failure.problems.clone(),
+            confirm: failure.confirm.clone(),
+            result: failure.result.as_deref().cloned(),
         };
         // Serializing a struct of an enum and a string cannot fail; stderr may be closed.
         if let Ok(line) = serde_json::to_string(&record) {
@@ -118,6 +140,9 @@ pub fn failed(failure: &Failure, json: bool) -> ExitCode {
     } else {
         // Messages can quote paths and names: untrusted text.
         report!("kosse: {}", printable(&failure.message));
+        for confirmation in &failure.confirm {
+            report!("  {}", described(confirmation));
+        }
     }
     ExitCode::from(failure.exit_code())
 }

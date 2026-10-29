@@ -657,7 +657,38 @@ services: Array<Service>,
  */
 projects: Array<Project>, };
 
-export type CommandErrorCode = "notFound" | "ambiguous" | "noHttp" | "notInProject" | "inputUnreadable" | "invalidProfile" | "revisionConflict" | "unsafeRoot" | "projectUnknown" | "scanFailed" | "configUnavailable" | "configWriteFailed" | "outputFailed";
+/**
+ * `kosse stop --json` and `kosse force --json`: the instance's [`ActionResult`] for a request it
+ * signalled (`exited`, `stillRunning`, `respawned`, `endpointTaken`, `observationFailed`).
+ * Requests that signalled nothing are a [`CommandError`] instead.
+ */
+export type ActionAnswer = { schemaVersion: number, result: ActionResult, 
+/**
+ * For `stillRunning` with a force offer: the `kosse force` command that sends `SIGKILL`
+ * before `forceUntilMs`. Never run automatically.
+ */
+forceCommand: string | null, };
+
+export type CommandErrorCode = "notFound" | "ambiguous" | "noHttp" | "notInProject" | "inputUnreadable" | "invalidProfile" | "revisionConflict" | "unsafeRoot" | "projectUnknown" | "scanFailed" | "configUnavailable" | "configWriteFailed" | "outputFailed" | "confirmationRequired" | "stale" | "forceNotOffered" | "actionRefused" | "rateLimited" | "noInstance" | "actionFailed";
+
+/**
+ * The exact command that confirms stopping one observed process: its identity and every port it
+ * listens on now. Printed instead of acting when a request named a service, port or PID, or no
+ * longer matched what runs.
+ */
+export type Confirmation = { 
+/**
+ * `kosse stop <pid>.<start> --ports <p,…>` (or `kosse force …`).
+ */
+command: string, identity: ProcessIdentity, ports: Array<number>, 
+/**
+ * `Project.root` of the process; `null` outside a project.
+ */
+project: string | null, 
+/**
+ * The OS process name: untrusted text.
+ */
+process: string | null, };
 
 /**
  * One rule a refused profile breaks.
@@ -681,7 +712,17 @@ message: string,
 /**
  * For `invalidProfile`: where the profile breaks a rule. Omitted when empty.
  */
-problems?: Array<ProfileFieldProblem>, };
+problems?: Array<ProfileFieldProblem>, 
+/**
+ * For a refused `kosse stop`/`force`: the commands that would confirm the processes the
+ * request could have meant, as they run now. Omitted when empty.
+ */
+confirm?: Array<Confirmation>, 
+/**
+ * For a `kosse stop`/`force` the instance answered without signalling: its result
+ * (`stale`, `forceNotOffered`, `refused`, `permissionDenied`, `signalFailed`, `internal`).
+ */
+result?: ActionResult, };
 
 /**
  * Something an agent should resolve in the profile.
