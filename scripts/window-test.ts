@@ -369,6 +369,9 @@ async function flows(world: World, opened: string) {
     renamed === true,
     await page(`[...document.querySelectorAll("section h2")].map((h) => h.textContent)`),
   );
+  // Profile writes are limited to one per second (api.rs WRITE_MIN_INTERVAL); a person never
+  // removes within a second of saving, and a faster runner would only test the refusal.
+  await delay(1100);
   await click(`section:has(${row("vite")}) button`, "Customize");
   await dialogVisible("Customize (saved)", /^Customize /);
   await click("dialog[open] button", "Remove saved profile");
