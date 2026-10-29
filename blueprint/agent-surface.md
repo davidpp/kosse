@@ -1,6 +1,6 @@
 # Agent surface
 
-Status: proposed (2026-10-29), slices S13–S19 below. Written against the native Rune architecture of S12 (PR #1); fold the summary rows into [product](product.md), [architecture](architecture.md) and the [implementation plan](implementation-plan.md) once S12 lands, as S13's first step.
+Status: proposed (2026-10-29), slices S13–S19 below. Written against the native Rune architecture of S12 (PR #1); indexed from [product](product.md), [architecture](architecture.md) and the [implementation plan](implementation-plan.md) since S13.
 
 ## Intent
 
