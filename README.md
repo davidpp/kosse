@@ -37,6 +37,24 @@ You start dev servers from terminals, scripts and coding agents. A day later the
 
 Kossé is one self-contained executable with the dashboard built in; it needs no Bun or Node at runtime. It is **not signed or notarized** (Apple silicon's mandatory signature is the linker's ad-hoc one). A binary fetched with `curl` and extracted with `tar` carries no quarantine attribute, so it runs as is; a browser download is quarantined and macOS refuses to open it.
 
+- **From GitHub Releases** (recommended). The installer downloads the latest [release](https://github.com/davidpp/kosse/releases) with `curl`, refuses it unless its SHA-256 matches, verifies its build provenance when an authenticated [`gh`](https://cli.github.com) is available, and installs `~/.local/bin/kosse`:
+
+  ```sh
+  curl -fsSL https://github.com/davidpp/kosse/releases/latest/download/install.sh | sh
+  # a given version or prefix: … | sh -s -- --version <version> --prefix <dir>
+  ```
+
+  Or by hand, with the archive and its `.sha256` from the release page:
+
+  ```sh
+  shasum -a 256 -c kosse-<version>-aarch64-apple-darwin.tar.gz.sha256
+  gh attestation verify kosse-<version>-aarch64-apple-darwin.tar.gz --repo davidpp/kosse  # optional: built by this repository's release workflow
+  tar -xzf kosse-<version>-aarch64-apple-darwin.tar.gz
+  mkdir -p ~/.local/bin && install -m 0755 kosse-<version>-aarch64-apple-darwin/kosse ~/.local/bin/
+  ```
+
+  Then `kosse` starts the menu-bar app; `kosse startup enable` starts it at each login. Upgrading is the same command; quit the running Kossé and start it again.
+
 - **Local release from source** (with the [development setup](#development)):
 
   ```sh
@@ -45,17 +63,9 @@ Kossé is one self-contained executable with the dashboard built in; it needs no
   bun run uninstall:local  # removes exactly what it installed; keeps your configuration unless --purge
   ```
 
-- **From an archive.** Next to `kosse-<version>-aarch64-apple-darwin.tar.gz` and its `.sha256`:
-
-  ```sh
-  shasum -a 256 -c kosse-<version>-aarch64-apple-darwin.tar.gz.sha256
-  tar -xzf kosse-<version>-aarch64-apple-darwin.tar.gz
-  mkdir -p ~/.local/bin && install -m 0755 kosse-<version>-aarch64-apple-darwin/kosse ~/.local/bin/
-  ```
-
   Only for an archive whose origin and checksum you trust, `xattr -d com.apple.quarantine kosse` lifts Gatekeeper's check after a browser download.
 
-- **Homebrew (unpublished template).** `release:local` also writes `artifacts/kosse.rb` from [`packaging/homebrew/kosse.rb.tmpl`](packaging/homebrew/kosse.rb.tmpl); there is no tap. To try it: host the archive, run `bun run release:local --url <its URL>`, `brew tap-new <you>/kosse`, copy `artifacts/kosse.rb` into that tap's `Formula/`, then `brew install <you>/kosse/kosse`.
+- **Homebrew (no public tap yet).** Each release attaches `kosse.rb`, a formula for exactly that release's archive (from [`packaging/homebrew/kosse.rb.tmpl`](packaging/homebrew/kosse.rb.tmpl)). To use it: `brew tap-new <you>/kosse`, copy `kosse.rb` into that tap's `Formula/`, then `brew install <you>/kosse/kosse`.
 
 If `~/.local/bin` is not on your `PATH` (it is not on a stock Mac): `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile`, then open a new terminal. `kosse doctor` checks the setup.
 

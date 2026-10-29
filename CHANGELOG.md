@@ -13,6 +13,7 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 ### Added
 
 - `bun run app` drives the real app and window from an agent (debug-only control socket; [docs/agent-drive.md](docs/agent-drive.md)); `bun run test:window` is the real-window regression suite. Debug builds carry a preview identity (mirrored-K icons, `Kossé · preview (<branch>)`).
+- Tag-driven GitHub releases (`.github/workflows/release.yml`): a `vX.Y.Z` tag is checked against the Cargo version and this changelog, built from a clean slate through `check` and `test:package`, attested for build provenance and published with the archive, its SHA-256, the Homebrew formula and `install.sh`, a `curl | sh` installer that verifies the checksum (and provenance when `gh` is available) ([CONTRIBUTING](CONTRIBUTING.md#releasing)).
 
 ## 0.1.0 - 2026-10-28
 

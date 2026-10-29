@@ -122,4 +122,30 @@ The notices come from cargo-about with [`about.toml`](about.toml), which restate
 
 `install:local` checks the archive against its `.sha256`, its entries against a single top-level directory, every file against `MANIFEST.json`, and that the extracted `kosse --version` matches, then installs `<prefix>/bin/kosse` and `<prefix>/share/doc/kosse/` by rename (a running Kossé keeps its old file) and writes `<prefix>/share/kosse/install-record.json`: the files with their SHA-256 and the directories it created, rewritten after every step so an interrupted install can still be completed or removed. A file is install:local's only while it sits at a recorded path with the recorded SHA-256: an upgrade refuses to replace a file it did not install or one changed since (`--force` replaces changed recorded files). `uninstall:local` removes the recorded files that are unchanged, keeps (and keeps recording) changed ones unless `--force`, then removes the created directories if empty; it refuses a `kosse` it has no record of, a malformed record, and login startup that runs that binary (compared by file identity) or that it cannot read. `--purge` also removes the configuration file `kosse config path` names (and its lock), never anything else in that directory. Expected failures print one message and exit 1 (usage errors 2) after cleaning up their temporary directory.
 
+## Releasing
+
+Releases are cut from `main` by a tag; [`release.yml`](.github/workflows/release.yml) does the rest.
+
+1. Bump `version` in the root `Cargo.toml` (`[workspace.package]`; `Cargo.lock` follows on the next build) and move CHANGELOG's Unreleased entries under `## X.Y.Z - YYYY-MM-DD`.
+2. Merge to `main` with CI green.
+3. Tag that commit and push the tag:
+
+   ```sh
+   git tag -a vX.Y.Z -m "Kossé X.Y.Z" && git push origin vX.Y.Z
+   ```
+
+On the tag, the workflow's macOS job:
+
+- refuses a tag that does not name the Cargo version, or a version without its CHANGELOG section ([`scripts/release-notes.ts`](scripts/release-notes.ts), which also writes the release notes);
+- runs `bun run check` and `bun run test:package` from a clean build (no caches);
+- builds the published archive with `release:local --url` set to its release asset, so the attached `kosse.rb` installs exactly that file;
+- checks the archive against its `.sha256`, that `MANIFEST.json` names the tagged commit and a clean tree, and that the binary reports the version;
+- attests build provenance for the archive and `install.sh` (Sigstore, verifiable with `gh attestation verify <file> --repo davidpp/kosse`).
+
+A separate job, the only one with write access, then publishes the GitHub Release with the CHANGELOG section as notes and these assets: `kosse-X.Y.Z-aarch64-apple-darwin.tar.gz`, its `.sha256`, `kosse.rb` and [`install.sh`](packaging/install.sh). Running the workflow manually (Actions → Release → Run workflow) is a dry run: the same build and checks, uploaded as a workflow artifact, nothing published.
+
+Releases are not signed or notarized (no Apple Developer ID). The installer and README use `curl`, which sets no quarantine attribute, so the ad-hoc-signed binary runs.
+
+## Package tests
+
 `test:package` runs every installed `kosse` that scans under `sandbox-exec` with a profile that refuses outbound IP connections except to its own fixture's port: the release binary has no `--probe-only`, so this keeps its automatic probes away from the machine's real services (the suite checks that a second fixture outside the allowance gets a refused probe). It never enables login startup; `startup status` only reads. The menu-bar app it starts runs with `--no-open`, so only its real status item appears briefly.

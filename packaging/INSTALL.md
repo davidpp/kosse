@@ -12,6 +12,9 @@ Before extracting, next to the downloaded archive:
 shasum -a 256 -c kosse-{{version}}-aarch64-apple-darwin.tar.gz.sha256
 ```
 
+For a GitHub release, `gh attestation verify kosse-{{version}}-aarch64-apple-darwin.tar.gz --repo davidpp/kosse`
+also confirms it was built from the tagged commit by the repository's release workflow.
+
 `MANIFEST.json` (inside the archive) lists the SHA-256 of every file in it and the commit it was
 built from.
 

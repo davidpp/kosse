@@ -1,0 +1,131 @@
+name: Release
+
+# A pushed `vX.Y.Z` tag builds, tests, attests and publishes that version as a GitHub Release.
+# Run it manually (workflow_dispatch) for a dry run: the same build and checks, uploaded as a
+# workflow artifact, with nothing published. The process is in CONTRIBUTING.md ("Releasing").
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  MISE_DISABLE_TOOLS: rust
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build, test and attest (macOS arm64)
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write # build provenance (Sigstore)
+      attestations: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+
+      # No build caches here: a release is built from a clean slate, so nothing a PR run wrote
+      # can reach the shipped binary.
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        with:
+          version: 2026.10.11
+          cache: false
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Tag, version and changelog agree
+        id: version
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          version=$(bun scripts/release-notes.ts ${TAG:+--tag "$TAG"})
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check
+        run: bun run check
+
+      - name: Release archive in a sandbox (install, run, upgrade, uninstall)
+        run: bun run test:package
+
+      - name: Build the published archive
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          name="kosse-$VERSION-aarch64-apple-darwin"
+          bun run release:local --url "https://github.com/$REPOSITORY/releases/download/v$VERSION/$name.tar.gz"
+          cp packaging/install.sh artifacts/install.sh
+
+      - name: The archive is this commit, clean, and runs
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cd artifacts
+          name="kosse-$VERSION-aarch64-apple-darwin"
+          shasum -a 256 -c "$name.tar.gz.sha256"
+          tar -xzf "$name.tar.gz"
+          test "$(jq -r .commit "$name/MANIFEST.json")" = "$GITHUB_SHA"
+          test "$(jq -r .dirty "$name/MANIFEST.json")" = false
+          test "$("$name/kosse" --version)" = "kosse $VERSION"
+          rm -rf "$name"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            artifacts/kosse-*.tar.gz
+            artifacts/install.sh
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: |
+            artifacts/kosse-*.tar.gz
+            artifacts/kosse-*.tar.gz.sha256
+            artifacts/kosse.rb
+            artifacts/install.sh
+            artifacts/RELEASE_NOTES.md
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish the GitHub Release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: release
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          cd release
+          gh release create "$TAG" --repo "$REPOSITORY" --verify-tag \
+            --title "Kossé $VERSION" --notes-file RELEASE_NOTES.md \
+            "kosse-$VERSION-aarch64-apple-darwin.tar.gz" \
+            "kosse-$VERSION-aarch64-apple-darwin.tar.gz.sha256" \
+            kosse.rb install.sh

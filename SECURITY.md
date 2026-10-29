@@ -4,7 +4,9 @@
 
 Please report vulnerabilities privately through GitHub's [private vulnerability reporting](https://github.com/davidpp/kosse/security/advisories/new) rather than a public issue. Include the Kossé version (`kosse --version`), macOS version, and reproduction steps. Expect an acknowledgement within a few days; fixes ship in the next release.
 
-Only the latest release (or `main` before the first release) is supported.
+Only the latest [release](https://github.com/davidpp/kosse/releases) (or `main` before the first release) is supported.
+
+Every release archive ships with its SHA-256 and a build-provenance attestation from this repository's release workflow: `gh attestation verify kosse-<version>-aarch64-apple-darwin.tar.gz --repo davidpp/kosse` confirms it was built from the tagged commit by GitHub Actions. Releases are not code-signed or notarized.
 
 ## Threat model
 
