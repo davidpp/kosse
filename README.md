@@ -37,7 +37,15 @@ You start dev servers from terminals, scripts and coding agents. A day later the
 
 Kossé is one self-contained executable with the dashboard built in; it needs no Bun or Node at runtime. It is **not signed or notarized** (Apple silicon's mandatory signature is the linker's ad-hoc one). A binary fetched with `curl` and extracted with `tar` carries no quarantine attribute, so it runs as is; a browser download is quarantined and macOS refuses to open it.
 
-- **From GitHub Releases** (recommended). The installer downloads the latest [release](https://github.com/davidpp/kosse/releases) with `curl`, refuses it unless its SHA-256 matches, verifies its build provenance when an authenticated [`gh`](https://cli.github.com) is available, and installs `~/.local/bin/kosse`:
+- **Homebrew** (recommended; `brew upgrade` keeps it current):
+
+  ```sh
+  brew install davidpp/tap/kosse
+  ```
+
+  The [tap](https://github.com/davidpp/homebrew-tap)'s formula is committed by this repository's release workflow and pins each release archive by SHA-256. In a `Brewfile`: `tap "davidpp/tap"` and `brew "davidpp/tap/kosse", trusted: true` (`brew bundle` refuses formulae from third-party taps it has not been told to trust).
+
+- **From GitHub Releases**, without Homebrew. The installer downloads the latest [release](https://github.com/davidpp/kosse/releases) with `curl`, refuses it unless its SHA-256 matches, verifies its build provenance when an authenticated [`gh`](https://cli.github.com) is available, and installs `~/.local/bin/kosse`:
 
   ```sh
   curl -fsSL https://github.com/davidpp/kosse/releases/latest/download/install.sh | sh
@@ -64,8 +72,6 @@ Kossé is one self-contained executable with the dashboard built in; it needs no
   ```
 
   Only for an archive whose origin and checksum you trust, `xattr -d com.apple.quarantine kosse` lifts Gatekeeper's check after a browser download.
-
-- **Homebrew (no public tap yet).** Each release attaches `kosse.rb`, a formula for exactly that release's archive (from [`packaging/homebrew/kosse.rb.tmpl`](packaging/homebrew/kosse.rb.tmpl)). To use it: `brew tap-new <you>/kosse`, copy `kosse.rb` into that tap's `Formula/`, then `brew install <you>/kosse/kosse`.
 
 If `~/.local/bin` is not on your `PATH` (it is not on a stock Mac): `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile`, then open a new terminal. `kosse doctor` checks the setup.
 
