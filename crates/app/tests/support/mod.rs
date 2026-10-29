@@ -174,6 +174,33 @@ impl Server {
         serde_json::from_slice(&response.body).expect("snapshot json")
     }
 
+    /// [`Self::post_json`] once the route's one-per-second limit admits it: a `429 rateLimited`
+    /// is retried, anything else is returned.
+    pub fn post_json_admitted(&self, path: &str, token: &str, body: &str) -> HttpResponse {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let response = self.post_json(path, token, body);
+            if response.status != 429 || Instant::now() >= deadline {
+                return response;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    /// Waits until the scanner has published `count` snapshots after `revision`, so whatever a
+    /// scan would do (probe, publish) has had that many chances to happen.
+    pub fn after_scans(&self, revision: u64, count: u64) -> Snapshot {
+        eventually(Duration::from_secs(5 * count + 5), || {
+            Some(self.snapshot()).filter(|snapshot| snapshot.revision >= revision + count)
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "no {count} scans after revision {revision}: at {}",
+                self.snapshot().revision
+            )
+        })
+    }
+
     /// Sends SIGTERM to the child this test spawned and waits for it to exit.
     pub fn terminate(mut self) -> (ExitStatus, String) {
         let status = Command::new("kill")

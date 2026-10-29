@@ -17,7 +17,6 @@ use std::{
     os::unix::fs::{PermissionsExt, symlink},
     path::{Path, PathBuf},
     process::{Command, Output},
-    thread,
     time::{Duration, SystemTime},
 };
 
@@ -528,7 +527,7 @@ fn post_profile(
     root: &str,
     profile: &Value,
 ) -> support::HttpResponse {
-    server.post_json(
+    server.post_json_admitted(
         "/api/profile",
         token,
         &json!({ "root": root, "profile": profile }).to_string(),
@@ -609,7 +608,6 @@ fn customizing_writes_only_the_central_configuration() {
     assert_eq!(stored["projects"][&root]["name"], "Customized");
 
     // An invalid profile is refused with its location; the file stays as it was.
-    thread::sleep(Duration::from_millis(1100));
     let written = fs::read(&file).expect("read");
     let hostile = json!({ "version": 1, "services": { "web": {
         "links": [{ "label": "x", "url": "javascript:alert(1)" }],
@@ -625,7 +623,6 @@ fn customizing_writes_only_the_central_configuration() {
     assert_eq!(fs::read(&file).expect("read"), written);
 
     // Removing the profile: the next snapshot no longer labels the process.
-    thread::sleep(Duration::from_millis(1100));
     let removed = post_profile(&server, &token, &root, &Value::Null);
     assert_eq!(removed.status, 200, "{}", removed.text());
     eventually(APPLIED_WITHIN, || {
@@ -789,7 +786,6 @@ fn central_problems_are_reported_and_never_overwritten() {
             },
             "central problem reported",
         );
-        thread::sleep(Duration::from_millis(1100));
         let refused = post_profile(&server, &token, &root, &json!({ "version": 1 }));
         assert_eq!(refused.status, 409, "{}", refused.text());
         assert_eq!(refused.error_code(), "configUnavailable");
@@ -801,7 +797,6 @@ fn central_problems_are_reported_and_never_overwritten() {
         &|o| central_warning(o).is_none(),
         "deleted central file is no problem",
     );
-    thread::sleep(Duration::from_millis(1100));
     let saved = post_profile(
         &server,
         &token,
@@ -861,15 +856,10 @@ fn only_a_central_declaration_makes_a_probe_candidate_and_paths_wait_for_verifie
         },
         "a repository protocol is only a hint",
     );
-    thread::sleep(Duration::from_secs(4));
-    assert!(
-        sent_by(
-            fixture.received(port_of(&fixture)),
-            &server.snapshot().instance
-        )
-        .is_empty(),
-        "nothing probed on a repository's word"
-    );
+    let current = server.snapshot();
+    server.after_scans(current.revision, 2);
+    let sent = sent_by(fixture.received(port_of(&fixture)), &current.instance);
+    assert!(sent.is_empty(), "probed on a repository's word: {sent:?}");
 
     let token = server.token();
     let saved = post_profile(

@@ -466,13 +466,18 @@ async function flows(world: World, opened: string) {
 async function showRoute(world: World, route: Record<string, unknown>) {
   const origin = world.server.url;
   const { token } = (await (await fetch(`${origin}/api/session`)).json()) as { token: string };
-  // The window endpoint allows one request per second.
-  await delay(1100);
-  const response = await fetch(`${origin}/api/window`, {
-    method: "POST",
-    headers: { Origin: origin, "Content-Type": "application/json", "X-Kosse-Token": token },
-    body: JSON.stringify({ route }),
-  });
+  // The window endpoint allows one request per second: a 429 is retried until it is admitted.
+  const post = () =>
+    fetch(`${origin}/api/window`, {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "application/json", "X-Kosse-Token": token },
+      body: JSON.stringify({ route }),
+    });
+  let response = await post();
+  for (let waited = 0; response.status === 429 && waited < 5000; waited += 100) {
+    await delay(100);
+    response = await post();
+  }
   if (response.status !== 204) throw new Error(`POST /api/window: ${response.status}`);
   // The window loads the route's URL; wait for that page, not the previous one.
   const query = route.kind === "dashboard" ? "" : `?${String(route.kind)}=${String(route.pid)}.`;

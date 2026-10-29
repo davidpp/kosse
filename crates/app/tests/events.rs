@@ -51,16 +51,17 @@ fn reconnecting_resumes_from_a_fresh_snapshot_and_a_restart_is_a_new_instance() 
     drop(events);
 
     // Missed publications are not replayed: the first event after reconnecting is the newest.
-    std::thread::sleep(Duration::from_millis(3500));
+    let missed = server.after_scans(seen.revision, 2);
     let mut events = EventStream::open(&server);
     let resumed = events
         .next_snapshot(NEXT_TICK)
         .expect("snapshot after reconnect");
     assert_eq!(resumed.instance, seen.instance);
     assert!(
-        resumed.revision > seen.revision,
-        "{} then {}",
+        resumed.revision >= missed.revision,
+        "seen {}, missed up to {}, resumed at {}",
         seen.revision,
+        missed.revision,
         resumed.revision
     );
 
