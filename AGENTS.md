@@ -11,6 +11,7 @@ Kossé observes local development services (listeners, processes, projects) and 
 - `bun run budget` checks `web/dist` against the 50 kB gzipped JS + CSS budget (no web fonts); `test` and `build` run it after `vite build`.
 - `bun run test:e2e` runs the Playwright suite (WebKit + Chromium) against the real debug `kosse` with owned fixtures; it is not part of `check` (CI runs it after `check`). `bun run screenshots` regenerates `docs/screenshots/` from fixture data only.
 - `bun run fmt` and `bun run contracts` rewrite tracked files. CI fails if `check` leaves the tree dirty.
+- `bun run release:local` builds the macOS arm64 archive, checksum and unpublished Homebrew formula in `artifacts/`; `bun run install:local` / `uninstall:local` (`--prefix <dir>`, default `~/.local`) install or remove exactly the recorded files; `bun run test:package` runs the archive through install, the installed binary, upgrade and uninstall in a sandbox. None of them publishes, signs or touches login startup.
 
 ## Invariants
 
@@ -36,6 +37,7 @@ Kossé observes local development services (listeners, processes, projects) and 
 - Test real behaviour through real entrypoints: owned fixture processes (`crates/fixtures`, checked against `lsof`), the real HTTP server, a real browser. Mocks are only acceptable for pure domain logic or platform-provided test doubles.
 - Tests never stop a process they did not start. Fixtures are recorded and cleaned up by identity, never by process name.
 - Tests never open a window or a browser on the desktop: every spawned `kosse` that could gets the debug-only `KOSSE_TEST_WINDOW` (headless) and `KOSSE_TEST_OPENER` hooks (CONTRIBUTING.md).
+- Tests never write a real launch agent or call the real `launchctl` beyond read-only queries: startup tests set `HOME` to a temporary directory and the debug-only `KOSSE_TEST_LAUNCHCTL`. A release binary under test (no `--probe-only`) runs only under `test:package`'s `sandbox-exec` profile, which lets it reach nothing but its own fixtures. Never install into the real `~/.local` or use the real configuration in tests.
 - A slice is done when its acceptance holds through the user-facing entrypoint. Record commands, results and anything unverified in `docs/evidence/<slice>.md`. Never mark a human-only check (tray on a real desktop, login startup) as passed.
 - Do not weaken an assertion to get green; fix the cause or report the blocker.
 

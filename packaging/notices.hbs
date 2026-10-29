@@ -1,0 +1,27 @@
+# Third-party notices
+
+The `kosse` executable links the Rust crates listed below, and embeds the web dashboard, whose
+bundled JavaScript dependencies are listed after them. Each license text is reproduced once,
+followed by the crates it covers.
+
+Kossé itself is MIT-licensed (see LICENSE).
+
+## Rust crates
+
+{{#each overview}}
+- {{{name}}} ({{count}})
+{{/each}}
+
+{{#each licenses}}
+### {{{name}}}
+
+Used by:
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}{{#if crate.repository}} ({{crate.repository}}){{/if}}
+{{/each}}
+
+```text
+{{{text}}}
+```
+
+{{/each}}

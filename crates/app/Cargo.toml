@@ -23,6 +23,7 @@ png.workspace = true
 rust-embed.workspace = true
 rustls.workspace = true
 rustls-native-certs.workspace = true
+rustix.workspace = true
 serde_json.workspace = true
 tao.workspace = true
 thiserror.workspace = true

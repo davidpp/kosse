@@ -96,6 +96,12 @@ impl Git {
         run_bounded(&mut command, GIT_TIMEOUT)
     }
 
+    /// The `git` executable this runs (for `kosse doctor`).
+    #[must_use]
+    pub fn executable(&self) -> &Path {
+        &self.executable
+    }
+
     /// Commands run so far.
     #[must_use]
     pub fn commands(&self) -> u64 {

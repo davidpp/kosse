@@ -11,7 +11,7 @@ pub mod action;
 pub mod attribution;
 pub mod contract;
 mod endpoints;
-mod git;
+pub mod git;
 pub mod inspect;
 pub mod metrics;
 pub mod model;

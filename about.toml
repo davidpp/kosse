@@ -1,0 +1,23 @@
+# Third-party notices for the shipped `kosse` binary (`bun run release:local`).
+# https://embarkstudios.github.io/cargo-about/cli/generate/config.html
+# Keep `accepted` and the per-crate entries identical to [licenses] in deny.toml, which enforces
+# the policy; this file only renders it.
+accepted = ["Apache-2.0", "BSD-3-Clause", "MIT", "Unicode-3.0"]
+targets = ["aarch64-apple-darwin"]
+# Only what the release binary links: test-only and build-time crates are not distributed.
+ignore-dev-dependencies = true
+ignore-build-dependencies = true
+private = { ignore = true }
+workarounds = ["ring", "rustls"]
+
+[ring]
+accepted = ["ISC"]
+
+[rustls-webpki]
+accepted = ["ISC"]
+
+[untrusted]
+accepted = ["ISC"]
+
+[option-ext]
+accepted = ["MPL-2.0"]

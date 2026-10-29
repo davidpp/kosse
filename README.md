@@ -41,6 +41,28 @@ crates/fixtures   test-only: owned listener processes with an identity manifest,
 
 Every view (dashboard, tray and CLI) reads the same snapshot and uses the same action policy. Rust contract types generate the TypeScript types the UI consumes, and CI fails on drift. Details: [architecture](blueprint/architecture.md), [product contract](blueprint/product.md), [verification gates](blueprint/verification.md).
 
+## Install
+
+There is no published release yet. Kossé is one self-contained executable (macOS on Apple silicon) with the dashboard built in; it needs no Bun or Node at runtime. It is **not signed or notarized**.
+
+- **Local release from source.** With the [development setup](#development): `bun run release:local` builds `artifacts/kosse-<version>-aarch64-apple-darwin.tar.gz` with its `.sha256`, third-party notices and a manifest; `bun run install:local` verifies it and installs `~/.local/bin/kosse` (`--prefix <dir>` elsewhere); `bun run uninstall:local` removes exactly what it installed, keeping your saved profiles unless `--purge`.
+- **From the archive.** Next to the downloaded archive and its `.sha256`:
+
+  ```sh
+  shasum -a 256 -c kosse-<version>-aarch64-apple-darwin.tar.gz.sha256
+  tar -xzf kosse-<version>-aarch64-apple-darwin.tar.gz
+  mkdir -p ~/.local/bin && install -m 0755 kosse-<version>-aarch64-apple-darwin/kosse ~/.local/bin/
+  ```
+
+  Downloaded with `curl` and extracted with `tar`, the unsigned binary runs as is. A browser download is quarantined and macOS refuses to open it; only for an archive whose origin and checksum you trust, `xattr -d com.apple.quarantine kosse` lifts Gatekeeper's check for that file.
+
+- **Homebrew (unpublished).** `release:local` also writes a formula for that archive (`artifacts/kosse.rb`, from [`packaging/homebrew/kosse.rb.tmpl`](packaging/homebrew/kosse.rb.tmpl)); there is no tap. To try it: host the archive, run `bun run release:local --url <its URL>`, `brew tap-new <you>/kosse`, copy `artifacts/kosse.rb` into that tap's `Formula/`, then `brew install <you>/kosse/kosse`.
+- **Build only.** `bun run build` leaves the binary at `target/release/kosse`.
+
+If `~/.local/bin` is not on your `PATH` (it is not on a stock Mac): `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile`, then open a new terminal.
+
+Then `kosse doctor` checks the setup, and `kosse startup enable` (optional, off by default) starts the menu-bar app at each login; `kosse startup disable` undoes it.
+
 ## Development
 
 Requires macOS on Apple silicon and [mise](https://mise.jdx.dev). All tool versions are pinned in the repository.

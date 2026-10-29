@@ -1,6 +1,6 @@
 //! `kosse` entry point: parses the command line, picks the mode (menu-bar app, `open`, `serve`,
-//! `list`, `config`, the internal `window`), maps failures to exit codes (0 success, 1 runtime
-//! failure, 2 usage error via clap).
+//! `list`, `config`, `doctor`, `startup`, the internal `window`), maps failures to exit codes (0
+//! success, 1 runtime failure, 2 usage error via clap).
 
 /// `eprintln!` without its panic: diagnostics to a closed stderr (`kosse … 2>&-`, or a
 /// pipe whose reader exited) are dropped instead of aborting the process.
@@ -18,6 +18,7 @@ mod assets;
 mod cli;
 mod config;
 mod customize;
+mod doctor;
 mod guard;
 mod instance;
 mod launcher;
@@ -30,6 +31,7 @@ mod route;
 mod running;
 mod scheduler;
 mod server;
+mod startup;
 mod text;
 mod tray;
 mod window;
@@ -67,6 +69,10 @@ enum AppError {
     Tray(#[from] TrayError),
     #[error(transparent)]
     Instance(#[from] instance::InstanceError),
+    #[error("doctor: {0}")]
+    Doctor(#[from] doctor::DoctorError),
+    #[error("startup: {0}")]
+    Startup(#[from] startup::StartupError),
     #[error("the server task stopped unexpectedly")]
     Stopped,
 }
@@ -93,6 +99,8 @@ fn run(cli: Cli) -> Result<(), AppError> {
         Some(Command::Serve(args)) => runtime()?.block_on(serve(args)),
         Some(Command::List(args)) => Ok(list::run(&args)?),
         Some(Command::Config(command)) => Ok(config::run(&command)?),
+        Some(Command::Doctor(args)) => Ok(doctor::run(&args, &runtime()?)?),
+        Some(Command::Startup(command)) => Ok(startup::run(&command)?),
         Some(Command::Window(_)) => Ok(()),
     }
 }

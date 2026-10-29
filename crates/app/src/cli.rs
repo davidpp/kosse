@@ -31,6 +31,13 @@ pub enum Command {
     /// Project profiles: the schema, the configuration file, moved projects.
     #[command(subcommand)]
     Config(ConfigCommand),
+    /// Check the platform, configuration, port, git and login startup; changes nothing. Exits 1
+    /// when a check fails.
+    Doctor(DoctorArgs),
+    /// Start the menu-bar app at login (a per-user launch agent running this kosse with
+    /// `--no-open`), stop doing so, or show whether it does. Off until enabled.
+    #[command(subcommand)]
+    Startup(StartupCommand),
     /// Internal: the dashboard window (a `WKWebView` on a running instance's loopback URL), started
     /// by the app and `kosse open`.
     #[command(hide = true)]
@@ -81,6 +88,28 @@ pub enum ConfigCommand {
         /// The project's new root directory.
         to: std::path::PathBuf,
     },
+}
+
+#[derive(Debug, clap::Args)]
+pub struct DoctorArgs {
+    /// Print the checks as JSON.
+    #[arg(long)]
+    pub json: bool,
+
+    /// The port whose occupant to check.
+    #[arg(long, default_value_t = DEFAULT_PORT)]
+    pub port: u16,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum StartupCommand {
+    /// Write `~/Library/LaunchAgents/com.davidpp.kosse.plist` for this kosse and load it (which
+    /// also starts the menu-bar app now, or finds the one already running).
+    Enable,
+    /// Unload the agent (stopping a Kossé that launchd started) and remove its plist.
+    Disable,
+    /// Show whether the agent exists, which kosse it runs and whether launchd has it loaded.
+    Status,
 }
 
 #[derive(Debug, clap::Args)]

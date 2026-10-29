@@ -1583,6 +1583,7 @@ dependencies = [
  "objc2-app-kit",
  "png",
  "rust-embed",
+ "rustix",
  "rustls",
  "rustls-native-certs",
  "serde_json",
