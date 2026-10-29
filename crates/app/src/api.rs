@@ -381,7 +381,7 @@ async fn act(
         Err(rejection) => return body_refusal(&rejection),
     };
     if !state.action_limit.try_acquire() {
-        return rate_limited("a stop was requested less than a second ago");
+        return rate_limited("a stop or force was requested less than a second ago");
     }
     let Some(snapshot) = state.scheduler.latest() else {
         return scanner_busy();

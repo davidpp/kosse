@@ -20,6 +20,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use hyper::StatusCode;
 use kosse_core::{
     action::{ActionRequest, ActionResult, Ineligible, PortOwner, StaleReason},
     agent::{AGENT_SCHEMA_VERSION, ActionAnswer, CommandErrorCode, Confirmation},
@@ -43,6 +44,9 @@ use crate::{
 /// Bounds a whole action: the instance observes a `SIGTERM`ed process for 5 s and its ports for
 /// a respawn for 1 s more (see `actions.rs`), plus scans of the sockets around them.
 const ACTION_TIMEOUT: Duration = Duration::from_secs(30);
+/// One retry just after the instance's action rate limit window.
+const RATE_LIMIT_RETRY: Duration =
+    crate::api::WRITE_MIN_INTERVAL.saturating_add(Duration::from_millis(100));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verb {
@@ -180,14 +184,22 @@ impl Client {
         } else {
             runtime.block_on(instance::find(instance_port))
         };
-        let start = start_command(instance_port);
         let mut instance = match found {
             Found::Kosse(instance) => *instance,
+            Found::Nothing if instance_port == 0 => {
+                return Err(Failure::new(
+                    CommandErrorCode::NoInstance,
+                    format!(
+                        "--instance-port 0 asks no instance, and stop and force act only through one; nothing was signalled: give the port of a running Kossé (default {DEFAULT_PORT})"
+                    ),
+                ));
+            }
             Found::Nothing => {
                 return Err(Failure::new(
                     CommandErrorCode::NoInstance,
                     format!(
-                        "no Kossé instance runs on 127.0.0.1:{instance_port}; stop and force act only through one, which keeps the force offer: start `{start}` (or the menu-bar app) and retry"
+                        "no Kossé instance runs on 127.0.0.1:{instance_port}; stop and force act only through one, which keeps the force offer, so nothing was signalled: start one in the background (`{}`, or open the menu-bar app) and retry",
+                        start_command(instance_port)
                     ),
                 ));
             }
@@ -205,7 +217,7 @@ impl Client {
                 return Err(Failure::new(
                     CommandErrorCode::NoInstance,
                     format!(
-                        "{reason}; nothing was signalled: stop and force act only through a verified Kossé instance, so point --instance-port at yours (`kosse serve --no-open --port <free port>` starts one)"
+                        "{reason}; nothing was signalled: stop and force act only through a verified Kossé instance, so point --instance-port at yours (`kosse serve --no-open --port <free port> &` starts one in the background)"
                     ),
                 ));
             }
@@ -235,12 +247,21 @@ impl Client {
     fn send(&self, verb: Verb, request: &ActionRequest) -> Result<ActionResult, Failure> {
         let body = serde_json::to_vec(request)
             .map_err(|error| Failure::new(CommandErrorCode::ActionFailed, error.to_string()))?;
-        let posted = self.runtime.block_on(instance::post(
-            self.instance.addr,
-            verb.path(),
-            body,
-            ACTION_TIMEOUT,
-        ));
+        let post = || {
+            self.runtime.block_on(instance::post(
+                self.instance.addr,
+                verb.path(),
+                body.clone(),
+                ACTION_TIMEOUT,
+            ))
+        };
+        let mut posted = post();
+        // A refused request counts toward the instance's one-per-second limit too, so the
+        // confirming command printed by a refusal would otherwise be refused when run at once.
+        if matches!(&posted, Ok((status, _)) if *status == StatusCode::TOO_MANY_REQUESTS) {
+            std::thread::sleep(RATE_LIMIT_RETRY);
+            posted = post();
+        }
         let (status, body) = match posted {
             Ok(answer) => answer,
             Err(error @ PostError::Session(_)) => {
@@ -268,10 +289,11 @@ impl Client {
         }
         // The guard's and the handler's own refusals (rate limit, payload) signal nothing.
         let (code, message) = match serde_json::from_slice::<ApiError>(&body) {
-            Ok(error) if status.as_u16() == 429 => (
+            Ok(error) if status == StatusCode::TOO_MANY_REQUESTS => (
                 CommandErrorCode::RateLimited,
                 format!(
-                    "the instance is busy: {}; nothing was signalled, retry in a second",
+                    "the instance did not accept this {} ({}: a previous action request came less than a second ago, or one is still being observed); nothing was signalled, retry in a second",
+                    verb.name(),
                     error.message
                 ),
             ),
@@ -450,11 +472,12 @@ fn shown(identity: ProcessIdentity) -> String {
     )
 }
 
+/// `kosse serve` runs in the foreground: an agent starts it in the background.
 fn start_command(instance_port: u16) -> String {
     if instance_port == DEFAULT_PORT {
-        "kosse serve --no-open".to_owned()
+        "kosse serve --no-open &".to_owned()
     } else {
-        format!("kosse serve --no-open --port {instance_port}")
+        format!("kosse serve --no-open --port {instance_port} &")
     }
 }
 
@@ -473,6 +496,14 @@ fn answer(
         | ActionResult::Respawned { .. }
         | ActionResult::EndpointTaken { .. } => 1,
         ActionResult::ObservationFailed { .. } => 4,
+        // The process is proven gone: the instance saw it exit, or its PID now names another
+        // start time. For force the instance has no offer to check against, so look locally.
+        ActionResult::Stale {
+            reason: StaleReason::Exited | StaleReason::IdentityChanged,
+        } => return not_running(args, verb, client, request, result),
+        ActionResult::ForceNotOffered if gone(request.identity) => {
+            return not_running(args, verb, client, request, result);
+        }
         ActionResult::Stale { .. }
         | ActionResult::ForceNotOffered
         | ActionResult::Refused { .. }
@@ -499,6 +530,7 @@ fn answer(
                 schema_version: AGENT_SCHEMA_VERSION,
                 result,
                 force_command,
+                not_running: false,
             },
         )
     } else {
@@ -514,34 +546,43 @@ fn refusal(verb: Verb, client: &Client, request: &ActionRequest, result: ActionR
     let identity = request.identity;
     let (code, message, confirm) = match &result {
         ActionResult::Stale { reason } => {
-            // The processes the request could have meant: that PID, or what holds its ports now.
-            let confirm = client.confirmations(&client.fresh_observation(), verb, |service| {
-                service.process.identity.pid == identity.pid || listens_on(service, &request.ports)
+            // Only the same process (PID and start time) gets a command; another process now on
+            // those ports is named, never suggested, so nobody stops it by running what was
+            // printed.
+            let observation = client.fresh_observation();
+            let confirm =
+                client.confirmations(&observation, verb, |s| s.process.identity == identity);
+            let mut message = format!(
+                "{}; nothing was signalled.",
+                stale(*reason, identity, &request.ports)
+            );
+            message.push_str(&occupied(&observation, identity, &request.ports));
+            if !confirm.is_empty() {
+                message.push_str(" To confirm what it listens on now:");
+            }
+            (CommandErrorCode::Stale, message, confirm)
+        }
+        ActionResult::ForceNotOffered => {
+            let confirm = client.confirmations(&client.fresh_observation(), Verb::Stop, |s| {
+                s.process.identity == identity
             });
-            let to_confirm = if confirm.is_empty() {
-                ""
+            let next = if confirm.is_empty() {
+                format!(
+                    " Process {} is not observed listening, so there is nothing to stop first.",
+                    shown(identity)
+                )
             } else {
-                " To confirm what runs now:"
+                " Stop it first:".to_owned()
             };
             (
-                CommandErrorCode::Stale,
+                CommandErrorCode::ForceNotOffered,
                 format!(
-                    "{}; nothing was signalled.{to_confirm}",
-                    stale(*reason, identity, &request.ports)
+                    "force is offered only after a `kosse stop` of the same identity and ports ended stillRunning on this instance, for {} s and once; nothing was signalled.{next}",
+                    FORCE_OFFER_TTL.as_secs()
                 ),
                 confirm,
             )
         }
-        ActionResult::ForceNotOffered => (
-            CommandErrorCode::ForceNotOffered,
-            format!(
-                "force is offered only after a `kosse stop` of the same identity and ports ended stillRunning on this instance, for {} s and once; nothing was signalled. Stop it first:",
-                FORCE_OFFER_TTL.as_secs()
-            ),
-            client.confirmations(&client.fresh_observation(), Verb::Stop, |service| {
-                service.process.identity == identity
-            }),
-        ),
         ActionResult::Refused { reason } => (
             CommandErrorCode::ActionRefused,
             format!(
@@ -587,6 +628,98 @@ fn refusal(verb: Verb, client: &Client, request: &ActionRequest, result: ActionR
         result: Some(Box::new(result)),
         ..Failure::new(code, message)
     }
+}
+
+/// Whether the process `identity` names is proven gone: its PID has exited or names another
+/// start time. A read, never a signal.
+fn gone(identity: ProcessIdentity) -> bool {
+    match inspect::vitals(identity.pid) {
+        Presence::Exited => true,
+        Presence::Running(vitals) => {
+            vitals.started_at_secs.is_some() && vitals.started_at_secs != identity.started_at_secs
+        }
+        Presence::Unknown => false,
+    }
+}
+
+/// `" A different process now holds …"` when processes other than `identity` listen on `ports`
+/// in `observation`; empty otherwise.
+fn occupied(observation: &Observation, identity: ProcessIdentity, ports: &[u16]) -> String {
+    let others: Vec<String> = observation
+        .services
+        .iter()
+        .filter(|service| service.process.identity != identity && listens_on(service, ports))
+        .map(|service| {
+            let held: Vec<u16> = service
+                .endpoints
+                .iter()
+                .map(|endpoint| endpoint.port)
+                .filter(|port| ports.contains(port))
+                .collect();
+            format!(
+                "{} ({}, {}) on {}",
+                shown(service.process.identity),
+                service.process.name.as_deref().unwrap_or(UNKNOWN),
+                service.project.as_deref().unwrap_or("no project"),
+                port_list(&held)
+            )
+        })
+        .collect();
+    if others.is_empty() {
+        return String::new();
+    }
+    format!(
+        " A different process now holds these ports: {}. No command is suggested for it: check it with `kosse list --port <port>` and confirm its own identity only if you mean to stop it.",
+        others.join("; ")
+    )
+}
+
+/// The process had already exited, so the goal of a stop holds without a signal: exit 0 when
+/// its ports are free, or a `stale` refusal naming the process that now holds them.
+fn not_running(
+    args: &ActionArgs,
+    verb: Verb,
+    client: &Client,
+    request: &ActionRequest,
+    result: ActionResult,
+) -> Result<u8, Failure> {
+    let identity = request.identity;
+    let taken = occupied(&client.fresh_observation(), identity, &request.ports);
+    if !taken.is_empty() {
+        return Err(Failure {
+            result: Some(Box::new(result)),
+            ..Failure::new(
+                CommandErrorCode::Stale,
+                format!(
+                    "process {} is not running; nothing was signalled.{taken}",
+                    shown(identity)
+                ),
+            )
+        });
+    }
+    let mut stdout = io::stdout().lock();
+    let written = if args.json {
+        list::write_json(
+            &mut stdout,
+            &ActionAnswer {
+                schema_version: AGENT_SCHEMA_VERSION,
+                result,
+                force_command: None,
+                not_running: true,
+            },
+        )
+    } else {
+        writeln!(stdout, "outcome: notRunning").and_then(|()| {
+            writeln!(
+                stdout,
+                "process: {} (already exited; this {} signalled nothing)",
+                shown(identity),
+                verb.name()
+            )
+        })
+    };
+    failure::written(written)?;
+    Ok(0)
 }
 
 fn stale(reason: StaleReason, identity: ProcessIdentity, ports: &[u16]) -> String {
