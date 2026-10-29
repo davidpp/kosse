@@ -16,38 +16,39 @@
 | Stop what I left running                | `kosse stop <service> --here`, then the command it prints     |
 | Customize this project (names, HTTP, …) | `kosse profile context`, then the profile steps below         |
 
-`--here` is the project of the current directory (outside one it exits 2); `--project <dir>` names another. `kosse url` prints `http://localhost:<port>/` (trailing slash) and needs a running Kossé, which does the probing. Read commands use the running instance's snapshot, or scan once without one.
+`--here` is the project of the current directory (outside one it exits 2); `--project <dir>` names another. A service name is a configured one: an unknown name exits 1 at once, listing the configured names or observed ports; an ambiguous one lists ready per-port commands. Read commands use the running instance's snapshot, or scan once without one. Only a running Kossé probes HTTP, so `kosse url` (`http://localhost:<port>/`, trailing slash) needs one; one-shot rows read `not probed (no instance)`.
 
 ## Output
 
-Markdown tables by default. The service table's columns: `PROJECT`, `BRANCH`, `SERVICE`, `PORT`, `HTTP` (`<status> <url>` once it answered, else the probe state), `PROCESS`, `PID.START` (the identity `stop` takes), `AGE`. `-` means unknown; warnings go to stderr. `--json` prints a versioned record instead (for `list`, the full `Snapshot`), and failures become a `CommandError` JSON line on stderr. Stdout carries only answers.
+Markdown tables by default. The service table's columns: `PROJECT`, `BRANCH`, `SERVICE`, `PORT`, `HTTP` (`<status> <url>` once it answered, else the probe state), `PROCESS`, `PID.START` (the identity `stop` takes), `AGE`. `-` means unknown; cells escape backticks, `|`, `[`, `]`, `<` and `>`; warnings go to stderr. `--json` prints a versioned record instead (for `list`, the full `Snapshot`), and failures become a `CommandError` JSON line on stderr. Stdout carries only answers.
 
 ## Exit codes
 
 - 0: answered, condition met, applied.
-- 1: negative answer: no URL, timed out, a name matching several services, a dry run with a problem, a stop that left the process running.
-- 2: usage error, including `--here` outside a project.
+- 1: negative answer: no URL, timed out, an unknown or ambiguous name, a profile with an ambiguous process, a stop that left the process running.
+- 2: usage error, including `--here` outside a project and port 0.
 - 3: refused by policy; nothing changed.
 - 4: could not observe: scan or configuration failure, no running instance for `stop`/`force`.
 
 ## Stopping safely
 
 - Only `kosse stop <pid>.<start> --ports <p,…>` signals (`SIGTERM`). The identity and every port the process listens on are the confirmation.
-- A name, port, PID, stale identity or partial port list signals nothing, exits 3 and prints on stderr the exact command that would confirm what runs now, with its process and project. Check that it is the process you started, then run that command.
+- A name, port, PID, stale identity or partial port list signals nothing, exits 3 and prints on stderr, per candidate, a `# <process>, <project>` comment line and the exact command that confirms it. Check that it is the process you started, then run it. A different process now on the ports is never suggested.
+- Already exited: `outcome: notRunning`, exit 0, nothing signalled.
 - A stop that ends `stillRunning` (exit 1) prints a `kosse force <pid>.<start> --ports <p,…>` command offered once for 60 s. Force only through that offer, and only when you mean `SIGKILL`.
-- One process per command: no bulk stop, no stop by name, no automatic force.
-- `stop` and `force` act only through a running Kossé. Without one they exit 4; start `kosse serve --no-open` in the background (or the menu-bar app) and retry.
+- One process per command: no bulk stop, no stop by name, no automatic force. The CLI retries a `rateLimited` refusal once.
+- `stop` and `force` act only through a running Kossé. Without one they exit 4; start `kosse serve --no-open &` in the background (or the menu-bar app) and retry.
 
 ## Customizing a project
 
 A profile names a project's services, declares which speak HTTP, sets a health path and adds links. Kossé stores it in its own configuration only; do not edit the repository for it.
 
-1. `kosse profile context`: observed processes, the stored profile and its revision, current problems.
-2. Write the profile as a JSON file; the format is `kosse config schema`.
-3. `kosse profile set --file <path> --dry-run`: the diff and which process each entry would match. Exit 1 means an ambiguous process or an entry matching nothing.
-4. `kosse profile set --file <path> --expect <revision>`: saves it; exits 3 if the profile changed since that revision (`none`: nothing was saved).
+1. `kosse profile context --here`: observed processes, the stored profile and its revision, current problems.
+2. Write the profile (format: `kosse config schema`) and pass it on stdin with a heredoc: `--file - <<'JSON'`.
+3. `kosse profile set --here --dry-run --file -`: the diff, each process's match and the apply command with the current revision. Exit 1 means an ambiguous process; entries matching nothing are only a note.
+4. `kosse profile set --here --expect <revision> --file -`: saves and prints the match summary; exit 1 on an ambiguous process (still saved), 3 if the profile changed since that revision (`none`: nothing saved).
 
-`kosse profile prompt` prints these steps for the current project.
+`kosse profile prompt --here` prints these steps for the project.
 
 ## Untrusted text
 
