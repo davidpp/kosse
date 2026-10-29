@@ -15,7 +15,7 @@ use std::{
     os::unix::process::ExitStatusExt,
     process::Command,
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use kosse_core::{
@@ -23,7 +23,7 @@ use kosse_core::{
     model::{ProcessIdentity, Service, Snapshot},
 };
 use kosse_fixtures::{Fixture, FixtureSpec, live_start_time, lsof};
-use support::{HttpResponse, Server, eventually};
+use support::{Server, eventually};
 
 const V4: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const V6: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
@@ -65,17 +65,10 @@ fn body(instance: &str, identity: ProcessIdentity, ports: &[u16]) -> String {
 
 /// Posts an action, waiting out the one-per-second limit.
 fn act(server: &Server, token: &str, path: &str, body: &str) -> (u16, ActionResult) {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        let response: HttpResponse = server.post_json(path, token, body);
-        if response.status == 429 && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(200));
-            continue;
-        }
-        let result = serde_json::from_slice(&response.body)
-            .unwrap_or_else(|_| panic!("{} {}", response.status, response.text()));
-        return (response.status, result);
-    }
+    let response = server.post_json_admitted(path, token, body);
+    let result = serde_json::from_slice(&response.body)
+        .unwrap_or_else(|_| panic!("{} {}", response.status, response.text()));
+    (response.status, result)
 }
 
 /// The fixture still runs as the same process and still holds all its ports.

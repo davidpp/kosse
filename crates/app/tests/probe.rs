@@ -296,8 +296,7 @@ fn only_attributed_processes_are_probed_automatically_and_try_http_is_explicit()
     assert_eq!(shown, probed);
 
     // A recycled or ended identity is a conflict; malformed requests are refused.
-    std::thread::sleep(Duration::from_millis(1100));
-    let stale = server.post_json("/api/probe", &token, &body(started - 1));
+    let stale = server.post_json_admitted("/api/probe", &token, &body(started - 1));
     assert_eq!(
         (stale.status, stale.error_code().as_str()),
         (409, "staleIdentity")

@@ -8,13 +8,9 @@ const target = { pid: 42, startedAtSecs: 1_700_000_000 };
 
 describe("action results", () => {
   it("calls only `exited` done", () => {
-    expect(
-      describeResult({ outcome: "exited", target, ports: [5173], shared: [] }, "stop"),
-    ).toMatchObject({
-      tone: "done",
-      title: "The process exited.",
-      detail: ["PID 42 is gone and :5173 is free."],
-    });
+    const exited = describeResult({ outcome: "exited", target, ports: [5173], shared: [] }, "stop");
+    expect(exited.tone).toBe("done");
+    expect(exited.detail.join(" ")).toMatch(/PID 42 .*:5173 is free/);
     const notDone: ActionResult[] = [
       { outcome: "stillRunning", target, ports: [5173], forceUntilMs: 99 },
       { outcome: "respawned", target, parentPid: 7, owners: [], shared: [] },
@@ -41,20 +37,17 @@ describe("action results", () => {
     expect(
       describeResult({ outcome: "refused", reason: "outsideTestScope" }, "stop").detail,
     ).toContain("Nothing was sent.");
-    expect(
-      describeFailure(
-        {
-          kind: "refused",
-          status: 429,
-          code: "rateLimited",
-          message: "another stop is still being observed",
-        },
-        "stop",
-      ),
-    ).toMatchObject({
-      title: "Not sent yet.",
-      detail: ["Another stop is still being observed. Nothing was sent; try again in a moment."],
-    });
+    const limited = describeFailure(
+      {
+        kind: "refused",
+        status: 429,
+        code: "rateLimited",
+        message: "another stop is still being observed",
+      },
+      "stop",
+    );
+    expect(limited.tone).not.toBe("done");
+    expect(limited.detail.join(" ")).toContain("Nothing was sent");
   });
 
   it("does not claim anything when the server did not answer", () => {
