@@ -546,14 +546,16 @@ fn the_window_endpoint_is_guarded_and_routes_to_the_one_window() {
 
     let accepted = post(Some(&token.token), inspect, origin);
     assert_eq!(accepted.status, 204, "{}", accepted.text());
-    app.stdout_line(
-        |line| line == format!("window: loaded {origin}/?inspect=4242.1761000000"),
-        LOAD_WITHIN,
-    );
+    // Straight after the accepted request, before waiting for the window: loading it can take
+    // longer than the one-second limit on a slow machine.
     assert_eq!(
         post(Some(&token.token), inspect, origin).status,
         429,
         "one per second"
+    );
+    app.stdout_line(
+        |line| line == format!("window: loaded {origin}/?inspect=4242.1761000000"),
+        LOAD_WITHIN,
     );
 
     // A headless instance has no window.
