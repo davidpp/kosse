@@ -154,7 +154,7 @@ fn act(args: &ActionArgs, verb: Verb) -> Result<u8, Failure> {
                 format!(
                     "{} needs --ports with every port {} listens on; nothing was signalled. To confirm what runs now:",
                     verb.name(),
-                    shown(identity)
+                    list::identity_label(identity)
                 ),
             )
         });
@@ -394,7 +394,7 @@ impl Client {
         let mut command = format!(
             "kosse {} {} --ports {}",
             verb.name(),
-            shown(identity),
+            list::identity_label(identity),
             ports.join(",")
         );
         if self.instance_port != DEFAULT_PORT {
@@ -444,7 +444,7 @@ impl Client {
             CommandErrorCode::Stale,
             format!(
                 "process {} is not observed by the Kossé at {} (it exited, listens on no TCP port, or is never signalled); nothing was signalled",
-                shown(identity),
+                list::identity_label(identity),
                 self.instance.url
             ),
         )
@@ -460,16 +460,6 @@ fn listens_on(service: &Service, ports: &[u16]) -> bool {
         .endpoints
         .iter()
         .any(|endpoint| ports.contains(&endpoint.port))
-}
-
-fn shown(identity: ProcessIdentity) -> String {
-    format!(
-        "{}.{}",
-        identity.pid,
-        identity
-            .started_at_secs
-            .map_or_else(|| UNKNOWN.to_owned(), |start| start.to_string())
-    )
 }
 
 /// `kosse serve` runs in the foreground: an agent starts it in the background.
@@ -569,7 +559,7 @@ fn refusal(verb: Verb, client: &Client, request: &ActionRequest, result: ActionR
             let next = if confirm.is_empty() {
                 format!(
                     " Process {} is not observed listening, so there is nothing to stop first.",
-                    shown(identity)
+                    list::identity_label(identity)
                 )
             } else {
                 " Stop it first:".to_owned()
@@ -587,7 +577,7 @@ fn refusal(verb: Verb, client: &Client, request: &ActionRequest, result: ActionR
             CommandErrorCode::ActionRefused,
             format!(
                 "Kossé never signals process {}: {}; nothing was signalled",
-                shown(identity),
+                list::identity_label(identity),
                 ineligible(*reason)
             ),
             Vec::new(),
@@ -596,7 +586,7 @@ fn refusal(verb: Verb, client: &Client, request: &ActionRequest, result: ActionR
             CommandErrorCode::ActionRefused,
             format!(
                 "the OS refused to signal process {}; nothing was signalled",
-                shown(*target)
+                list::identity_label(*target)
             ),
             Vec::new(),
         ),
@@ -658,7 +648,7 @@ fn occupied(observation: &Observation, identity: ProcessIdentity, ports: &[u16])
                 .collect();
             format!(
                 "{} ({}, {}) on {}",
-                shown(service.process.identity),
+                list::identity_label(service.process.identity),
                 service.process.name.as_deref().unwrap_or(UNKNOWN),
                 service.project.as_deref().unwrap_or("no project"),
                 port_list(&held)
@@ -692,7 +682,7 @@ fn not_running(
                 CommandErrorCode::Stale,
                 format!(
                     "process {} is not running; nothing was signalled.{taken}",
-                    shown(identity)
+                    list::identity_label(identity)
                 ),
             )
         });
@@ -713,7 +703,7 @@ fn not_running(
             writeln!(
                 stdout,
                 "process: {} (already exited; this {} signalled nothing)",
-                shown(identity),
+                list::identity_label(identity),
                 verb.name()
             )
         })
@@ -723,7 +713,7 @@ fn not_running(
 }
 
 fn stale(reason: StaleReason, identity: ProcessIdentity, ports: &[u16]) -> String {
-    let id = shown(identity);
+    let id = list::identity_label(identity);
     match reason {
         StaleReason::InstanceChanged => "the Kossé instance changed during the request".to_owned(),
         StaleReason::Exited => format!("process {id} has already exited"),
@@ -772,7 +762,7 @@ fn write_text(
             shared,
         } => {
             writeln!(out, "outcome: exited")?;
-            writeln!(out, "process: {} (exited)", shown(*target))?;
+            writeln!(out, "process: {} (exited)", list::identity_label(*target))?;
             let free = if shared.is_empty() {
                 "free"
             } else {
@@ -790,7 +780,7 @@ fn write_text(
             writeln!(
                 out,
                 "process: {} (still running; it may ignore SIGTERM)",
-                shown(*target)
+                list::identity_label(*target)
             )?;
             writeln!(out, "ports: {}", port_list(ports))?;
             match (force_command, force_until_ms) {
@@ -814,7 +804,7 @@ fn write_text(
             shared,
         } => {
             writeln!(out, "outcome: respawned")?;
-            writeln!(out, "process: {} (exited)", shown(*target))?;
+            writeln!(out, "process: {} (exited)", list::identity_label(*target))?;
             writeln!(
                 out,
                 "parent: {parent_pid} (likely a supervisor that restarted it; not signalled)"
@@ -828,7 +818,7 @@ fn write_text(
             shared,
         } => {
             writeln!(out, "outcome: endpointTaken")?;
-            writeln!(out, "process: {} (exited)", shown(*target))?;
+            writeln!(out, "process: {} (exited)", list::identity_label(*target))?;
             owners.extend(new.iter().map(|owner| (owner, "new")));
             owners.extend(shared.iter().map(|owner| (owner, "shared")));
         }
@@ -843,7 +833,7 @@ fn write_text(
             } else {
                 "unknown"
             };
-            writeln!(out, "process: {} ({state})", shown(*target))?;
+            writeln!(out, "process: {} ({state})", list::identity_label(*target))?;
             writeln!(out, "reason: {}", printable(reason))?;
         }
         // Signalled nothing: reported as failures by `answer`.
@@ -866,7 +856,7 @@ fn write_owners(out: &mut impl Write, owners: &[(&PortOwner, &str)]) -> io::Resu
     for &(owner, role) in owners {
         table.row([
             &owner.port.to_string(),
-            &shown(owner.identity),
+            &list::identity_label(owner.identity),
             owner.name.as_deref().unwrap_or(UNKNOWN),
             &owner
                 .parent_pid

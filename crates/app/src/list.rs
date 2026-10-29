@@ -26,10 +26,13 @@ use std::{
 
 use kosse_core::{
     model::{
-        Endpoint, GitHead, HttpProbe, Observation, ProbeResult, ProbeSkip, Project, Service,
-        Snapshot, TlsFailure,
+        Endpoint, GitHead, HttpProbe, Observation, ProbeResult, ProbeSkip, ProcessIdentity,
+        Project, Service, Snapshot, TlsFailure,
     },
-    profiles::view::{ConfiguredService, ProfileMatch, ProjectMetadata},
+    profiles::{
+        document::ServiceMatch,
+        view::{ConfiguredService, ProfileMatch, ProjectMetadata},
+    },
 };
 
 use crate::{
@@ -116,14 +119,7 @@ pub fn services_table(observation: &Observation, port: Option<u16>, probes_run: 
         let (project_label, branch) = labels(service, project);
         let configured = configured_label(service, &observation.profiles);
         let process = service.process.name.as_deref().unwrap_or(UNKNOWN);
-        let identity = &service.process.identity;
-        let identity = format!(
-            "{}.{}",
-            identity.pid,
-            identity
-                .started_at_secs
-                .map_or_else(|| UNKNOWN.to_owned(), |start| start.to_string())
-        );
+        let identity = identity_label(service.process.identity);
         let age = service
             .process
             .age_secs
@@ -197,6 +193,34 @@ pub fn http_state(endpoint: &Endpoint, probes_run: bool) -> String {
     }
 }
 
+/// The `PID.START` cell, as `stop` and `force` take it: `<pid>.<start>`, `-` for an unknown start.
+pub fn identity_label(identity: ProcessIdentity) -> String {
+    format!(
+        "{}.{}",
+        identity.pid,
+        identity
+            .started_at_secs
+            .map_or_else(|| UNKNOWN.to_owned(), |start| start.to_string())
+    )
+}
+
+/// `cwd apps/web, port 5173`: what a configured entry's `match` narrows.
+pub fn matcher_label(matcher: &ServiceMatch) -> String {
+    let mut parts = Vec::new();
+    if let Some(cwd) = &matcher.cwd {
+        parts.push(format!("cwd {cwd}"));
+    }
+    if let Some(port) = matcher.port {
+        parts.push(format!("port {port}"));
+    }
+    parts.join(", ")
+}
+
+/// `ambiguous: api, web`: a process several entries match.
+pub fn ambiguous_label(services: &[String]) -> String {
+    format!("ambiguous: {}", services.join(", "))
+}
+
 /// `42s`, `5m`, `3h`, `2d`: the largest whole unit.
 fn age(secs: u64) -> String {
     match secs {
@@ -212,9 +236,7 @@ fn age(secs: u64) -> String {
 pub fn configured_label(service: &Service, profiles: &[ProjectMetadata]) -> String {
     match &service.profile {
         None => UNKNOWN.to_owned(),
-        Some(ProfileMatch::Ambiguous { services }) => {
-            format!("ambiguous: {}", services.join(", "))
-        }
+        Some(ProfileMatch::Ambiguous { services }) => ambiguous_label(services),
         Some(ProfileMatch::Matched { service: id }) => {
             configured_entry(service, profiles, id).map_or_else(|| id.clone(), service_label)
         }
@@ -275,19 +297,10 @@ fn write_unobserved(out: &mut impl Write, profiles: &[ProjectMetadata]) -> io::R
                 .matcher
                 .or(entry.sources.name)
                 .map_or_else(|| UNKNOWN.to_owned(), |source| source.to_string());
-            let matcher = entry.matcher.as_ref().map_or_else(
-                || "no match (declared only)".to_owned(),
-                |matcher| {
-                    let mut parts = Vec::new();
-                    if let Some(cwd) = &matcher.cwd {
-                        parts.push(format!("cwd {cwd}"));
-                    }
-                    if let Some(port) = matcher.port {
-                        parts.push(format!("port {port}"));
-                    }
-                    parts.join(", ")
-                },
-            );
+            let matcher = entry
+                .matcher
+                .as_ref()
+                .map_or_else(|| "no match (declared only)".to_owned(), matcher_label);
             table.row([&project, &service_label(entry), &source, &matcher]);
         }
     }

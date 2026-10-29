@@ -51,6 +51,7 @@ use crate::{
         ProfileSetArgs,
     },
     failure::{self, Failure},
+    list,
     markdown::{Table, UNKNOWN, cell},
     scope,
     text::printable,
@@ -539,9 +540,7 @@ fn print<T: Serialize>(
 ) -> Result<(), Failure> {
     let mut stdout = io::stdout().lock();
     let written = if json {
-        serde_json::to_writer_pretty(&mut stdout, record)
-            .map_err(io::Error::other)
-            .and_then(|()| stdout.write_all(b"\n"))
+        list::write_json(&mut stdout, record)
     } else {
         markdown(&mut stdout)
     };
@@ -767,7 +766,10 @@ fn write_configured(out: &mut impl Write, effective: Option<&ProjectMetadata>) -
         table.row([
             &entry.id,
             entry.name.as_deref().unwrap_or(UNKNOWN),
-            &matcher_label(entry),
+            &entry
+                .matcher
+                .as_ref()
+                .map_or_else(|| "declared only".to_owned(), list::matcher_label),
             &entry
                 .protocol
                 .map_or_else(|| UNKNOWN.to_owned(), |protocol| name_of(&protocol)),
@@ -926,24 +928,8 @@ fn match_label(profile: Option<&ProfileMatch>) -> String {
     match profile {
         None => UNKNOWN.to_owned(),
         Some(ProfileMatch::Matched { service }) => service.clone(),
-        Some(ProfileMatch::Ambiguous { services }) => {
-            format!("ambiguous: {}", services.join(", "))
-        }
+        Some(ProfileMatch::Ambiguous { services }) => list::ambiguous_label(services),
     }
-}
-
-fn matcher_label(entry: &ConfiguredService) -> String {
-    let Some(matcher) = &entry.matcher else {
-        return "declared only".to_owned();
-    };
-    let mut parts = Vec::new();
-    if let Some(cwd) = &matcher.cwd {
-        parts.push(format!("cwd {cwd}"));
-    }
-    if let Some(port) = matcher.port {
-        parts.push(format!("port {port}"));
-    }
-    parts.join(", ")
 }
 
 fn sources_label(entry: &ConfiguredService) -> String {
