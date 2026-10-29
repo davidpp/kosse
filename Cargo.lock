@@ -1568,7 +1568,7 @@ dependencies = [
 
 [[package]]
 name = "kosse"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "axum",
  "block2",
@@ -1601,7 +1601,7 @@ dependencies = [
 
 [[package]]
 name = "kosse-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "jsonschema",
  "kosse-fixtures",
@@ -1620,7 +1620,7 @@ dependencies = [
 
 [[package]]
 name = "kosse-fixtures"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "rcgen",

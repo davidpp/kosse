@@ -4,6 +4,8 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 
 ## Unreleased
 
+## 0.2.1 - 2026-10-29
+
 ### Fixed
 
 - The dashboard window's Dock and ⌘-Tab icon is Kossé's tile, not the generic `exec` icon. 0.1.1 set it before the app had finished launching, when macOS had no Dock tile to update.
