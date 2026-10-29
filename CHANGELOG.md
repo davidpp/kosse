@@ -8,6 +8,10 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 
 First published release: a GitHub Release with checksum and build provenance (0.1.0 was built and verified locally only, never tagged).
 
+### Changed
+
+- New Relay brand identity: a separated K mark with dedicated menu-bar templates, a Québec-inspired blue palette in light and dark, a Kibernetyk Mono wordmark drawn as SVG outlines (no web font), a new app icon and favicon, and split-stem preview icons for development builds.
+
 ### Fixed
 
 - Dialogs in the dashboard window (Stop, Force, Customize, the removal confirmation) drew as a 2px sliver behind the backdrop in macOS's WKWebView; service rows overflowed the window horizontally between 768 and about 820 px wide ([S11](docs/evidence/S11.md)).
@@ -16,7 +20,7 @@ First published release: a GitHub Release with checksum and build provenance (0.
 
 ### Added
 
-- `bun run app` drives the real app and window from an agent (debug-only control socket; [docs/agent-drive.md](docs/agent-drive.md)); `bun run test:window` is the real-window regression suite. Debug builds carry a preview identity (mirrored-K icons, `Kossé · preview (<branch>)`).
+- `bun run app` drives the real app and window from an agent (debug-only control socket; [docs/agent-drive.md](docs/agent-drive.md)); `bun run test:window` is the real-window regression suite. Debug builds carry a preview identity (split-stem preview icons, `Kossé · preview (<branch>)`).
 - Tag-driven GitHub releases (`.github/workflows/release.yml`): a `vX.Y.Z` tag is checked against the Cargo version and this changelog, built from a clean slate through `check` and `test:package`, attested for build provenance and published with the archive, its SHA-256, the Homebrew formula and `install.sh`, a `curl | sh` installer that verifies the checksum (and provenance when `gh` is available) ([CONTRIBUTING](CONTRIBUTING.md#releasing)).
 
 ## 0.1.0 - 2026-10-28
