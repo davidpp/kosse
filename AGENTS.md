@@ -36,6 +36,9 @@ Kossé observes local development services (listeners, processes, projects) and 
 ## Tests and evidence
 
 - Test real behaviour through real entrypoints: owned fixture processes (`crates/fixtures`, checked against `lsof`), the real HTTP server, a real browser. Mocks are only acceptable for pure domain logic or platform-provided test doubles.
+- Every test must be able to fail for a reason a user or maintainer cares about: a product rule, a contract (API, schema, CLI output, files written), a safety or security invariant, or a regression that actually happened. Don't restate the implementation: no asserting a constant or a lookup table against a copy of itself, mirroring a function's branches, pinning incidental structure or wording, or testing the language, framework or a dependency. A test that could not catch a plausible bug is deleted, not kept for coverage; name tests after the rule they hold.
+- Expected values come from their source of truth (the workspace version, a shared constant, the contract), never a copied literal that goes stale.
+- Real-entrypoint tests wait on observable conditions, never fixed sleeps or a single poll; they respect the product's own limits (rate limits, debounce, scan cadence) instead of racing them; a failed check reports the state it observed.
 - Tests never stop a process they did not start. Fixtures are recorded and cleaned up by identity, never by process name.
 - Tests never open a window or a browser on the desktop: every spawned `kosse` that could gets the debug-only `KOSSE_TEST_WINDOW` (`headless`, or `transparent` for `test:window`) and `KOSSE_TEST_OPENER` hooks (CONTRIBUTING.md). `bun run app` is the one deliberate exception, for an agent or person looking at the window.
 - Debug builds carry the preview identity (split-stem K icons, `Kossé · preview (<branch>)`) and the window control socket; release builds contain neither (check with `strings`).
