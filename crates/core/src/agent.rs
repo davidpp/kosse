@@ -57,8 +57,10 @@ pub enum PortState {
 }
 
 /// `kosse stop --json` and `kosse force --json`: the instance's [`ActionResult`] for a request it
-/// signalled (`exited`, `stillRunning`, `respawned`, `endpointTaken`, `observationFailed`).
-/// Requests that signalled nothing are a [`CommandError`] instead.
+/// signalled (`exited`, `stillRunning`, `respawned`, `endpointTaken`, `observationFailed`), or,
+/// with `notRunning`, for one that found the process already gone (`stale` with `exited` or
+/// `identityChanged`, or `forceNotOffered`) while no other process holds its ports. Other requests
+/// that signalled nothing are a [`CommandError`] instead.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionAnswer {
@@ -67,6 +69,8 @@ pub struct ActionAnswer {
     /// For `stillRunning` with a force offer: the `kosse force` command that sends `SIGKILL`
     /// before `forceUntilMs`. Never run automatically.
     pub force_command: Option<String>,
+    /// The process had already exited, so nothing was sent and the ports are free (exit 0).
+    pub not_running: bool,
 }
 
 /// The exact command that confirms stopping one observed process: its identity and every port it

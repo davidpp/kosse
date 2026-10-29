@@ -98,11 +98,16 @@ impl From<StoreError> for Failure {
     }
 }
 
-/// `<command>  (<process>, <project>)`; the command holds only numbers.
-fn described(confirmation: &Confirmation) -> String {
+/// A confirmation as two lines meant for pasting into any shell: a `# <process>, <project>`
+/// comment (untrusted text, kept on one line by [`printable`], inert in sh, bash, zsh and fish),
+/// then the command alone, which holds only the verb, numbers and flags.
+fn described(confirmation: &Confirmation) -> [String; 2] {
     let process = confirmation.process.as_deref().unwrap_or("-");
     let project = confirmation.project.as_deref().unwrap_or("no project");
-    printable(&format!("{}  ({process}, {project})", confirmation.command))
+    [
+        format!("# {}", printable(&format!("{process}, {project}"))),
+        printable(&confirmation.command),
+    ]
 }
 
 /// Writes a command's output; a closed pipe (`kosse list | head`) just means the reader has seen
@@ -143,7 +148,9 @@ pub fn failed(failure: &Failure, json: bool) -> ExitCode {
         // Messages can quote paths and names: untrusted text.
         report!("kosse: {}", printable(&failure.message));
         for confirmation in &failure.confirm {
-            report!("  {}", described(confirmation));
+            for line in described(confirmation) {
+                report!("  {line}");
+            }
         }
     }
     ExitCode::from(failure.exit_code())

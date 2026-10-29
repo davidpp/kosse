@@ -659,15 +659,21 @@ projects: Array<Project>, };
 
 /**
  * `kosse stop --json` and `kosse force --json`: the instance's [`ActionResult`] for a request it
- * signalled (`exited`, `stillRunning`, `respawned`, `endpointTaken`, `observationFailed`).
- * Requests that signalled nothing are a [`CommandError`] instead.
+ * signalled (`exited`, `stillRunning`, `respawned`, `endpointTaken`, `observationFailed`), or,
+ * with `notRunning`, for one that found the process already gone (`stale` with `exited` or
+ * `identityChanged`, or `forceNotOffered`) while no other process holds its ports. Other requests
+ * that signalled nothing are a [`CommandError`] instead.
  */
 export type ActionAnswer = { schemaVersion: number, result: ActionResult, 
 /**
  * For `stillRunning` with a force offer: the `kosse force` command that sends `SIGKILL`
  * before `forceUntilMs`. Never run automatically.
  */
-forceCommand: string | null, };
+forceCommand: string | null, 
+/**
+ * The process had already exited, so nothing was sent and the ports are free (exit 0).
+ */
+notRunning: boolean, };
 
 export type WaitCondition = "listening" | "http" | "gone";
 
