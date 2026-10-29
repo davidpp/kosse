@@ -4,6 +4,10 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 
 ## Unreleased
 
+### Added
+
+- Homebrew: `brew install davidpp/tap/kosse`. The release workflow commits each release's formula to [davidpp/homebrew-tap](https://github.com/davidpp/homebrew-tap), so `brew upgrade` follows new versions.
+
 ## 0.1.1 - 2026-10-29
 
 First published release: a GitHub Release with checksum and build provenance (0.1.0 was built and verified locally only, never tagged).
