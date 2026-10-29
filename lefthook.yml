@@ -5,13 +5,13 @@ pre-commit:
   jobs:
     - name: format
       run: bun run fmt:check
-    - name: lint-web
-      run: bun run lint:web
+    - name: lint-scripts
+      run: bun run oxlint --deny-warnings
     - name: typecheck
       run: bun run typecheck
     - name: contracts
       glob:
         - "crates/core/**"
-        - "web/src/generated/**"
+        - "contracts/**"
         - "docs/kosse.schema.json"
       run: cargo nextest run --locked -p kosse-core --test contracts --test profile_schema -E "test(typescript_bindings_are_current) | test(committed_schema_is_current)"

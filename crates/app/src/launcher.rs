@@ -1,10 +1,12 @@
-//! Starting the dashboard window (`kosse window`, see [`crate::window`]) as a child process, and
-//! falling back to the default browser, with the reason, when it cannot start.
+//! Starting the dashboard window (`kosse window`, see [`crate::native`]) as a child process, and
+//! reporting a native startup failure to the owner when it cannot start.
 //!
 //! The window is owned through its stdin: when the owner exits (even when it is killed) the pipe
-//! closes and the window closes too, so a window never outlives its owner. Its exit is reaped by
-//! the thread that reads its output, as soon as it happens.
+//! closes and the window closes too, so a window never outlives its owner. Routes travel on that
+//! pipe as one JSON [`Show`] per line, the first one right after the spawn. Its exit is reaped by
+//! the thread that reads its output, as soon as it happens, and reported as [`Notice::Exited`].
 
+use crate::route::{Route, Show};
 use std::{
     io::{self, BufRead, BufReader, Write},
     process::{Child, ChildStdin, Command, Stdio},
@@ -16,8 +18,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::opener;
-
 /// How long a closing window may take before its owner kills it (through its own child handle).
 const CLOSE_DEADLINE: Duration = Duration::from_secs(2);
 /// How long the reader waits for an exited window's process to be reapable.
@@ -27,7 +27,7 @@ const REAP_DEADLINE: Duration = Duration::from_secs(5);
 #[cfg(not(debug_assertions))]
 pub const TITLE: &str = "Kossé";
 /// Debug builds (`bun run app`, `bun run dev`, tests) say they are a preview, and of which branch,
-/// so they are never mistaken for the installed app (with the mirrored-K icons, `tray.rs`,
+/// so they are never mistaken for the installed app (with the split-stem preview icons, `tray.rs`,
 /// `activation.rs`).
 #[cfg(debug_assertions)]
 pub const TITLE: &str = concat!("Kossé · preview", env!("KOSSE_PREVIEW_SUFFIX"));
@@ -37,19 +37,20 @@ pub fn title_for(service: &str) -> String {
     format!("{TITLE} — {service}")
 }
 
-/// Opens `url` in the default browser because the window is unavailable, and says why.
+/// Report a native window failure without launching an unrelated application.
 pub fn fallback(url: &str, reason: &str) {
-    report!("kosse: {reason}; opening {url} in the default browser");
-    opener::open_or_report(url);
+    report!("kosse: {reason}; native window unavailable for {url}. Retry with `kosse open`.");
 }
 
 /// What the owner learns about a window after the fact (from the reader thread).
 pub enum Notice {
-    /// It never started; the browser fallback ran.
+    /// It never started; the failure was reported.
     Unavailable { reason: String },
     /// It ended with a route it had been asked to show but had not shown yet (closed by the user
     /// at that moment): the owner shows that route again in a new window.
-    Lost { url: String, title: String },
+    Lost { route: Route, title: String },
+    /// Its process ended (after any other notice about it).
+    Exited,
 }
 
 pub type Notify = Arc<dyn Fn(Notice) + Send + Sync>;
@@ -68,19 +69,19 @@ struct State {
     started: AtomicBool,
     exited: AtomicBool,
     /// Sent but not yet acknowledged with `shown`.
-    pending: Mutex<Option<(String, String)>>,
+    pending: Mutex<Option<(Route, String)>>,
 }
 
 impl State {
-    fn pending(&self) -> std::sync::MutexGuard<'_, Option<(String, String)>> {
+    fn pending(&self) -> std::sync::MutexGuard<'_, Option<(Route, String)>> {
         self.pending.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
 impl Window {
-    /// Starts `kosse window <url>`. If it exits before reporting `ready`, `url` opens in the
-    /// default browser instead and the reason is reported (and passed to `notify`).
-    pub fn spawn(url: &str, title: &str, notify: Option<Notify>) -> io::Result<Self> {
+    /// Starts `kosse window <url>` (the instance's base URL) showing `route`. Failure before
+    /// `ready` is reported and passed to `notify`.
+    pub fn spawn(url: &str, route: Route, title: &str, notify: Option<Notify>) -> io::Result<Self> {
         let mut child = Command::new(std::env::current_exe()?)
             .args(["window", url, "--title", title])
             .stdin(Stdio::piped())
@@ -117,30 +118,40 @@ impl Window {
             }
             None => None,
         };
-        Ok(Self {
+        let mut window = Self {
             child,
             pid,
             stdin,
             state,
             reader,
-        })
+        };
+        // A window that cannot take its first route has exited; the reader reports that.
+        let _ = window.show(route, title);
+        Ok(window)
     }
 
     pub fn pid(&self) -> u32 {
         self.pid
     }
 
-    /// Asks the running window to show `url` and come forward. `false` if it is gone: the caller
-    /// then starts a new one.
-    pub fn show(&mut self, url: &str, title: &str) -> bool {
+    /// Asks the running window to show `route` and come forward. `false` if it is gone: the
+    /// caller then starts a new one.
+    pub fn show(&mut self, route: Route, title: &str) -> bool {
         if self.exited() {
             return false;
         }
         let Some(stdin) = self.stdin.as_mut() else {
             return false;
         };
-        *self.state.pending() = Some((url.to_owned(), title.to_owned()));
-        let sent = writeln!(stdin, "{url}\t{title}").and_then(|()| stdin.flush());
+        let show = Show {
+            route: route.into(),
+            title: title.to_owned(),
+        };
+        let Ok(line) = serde_json::to_string(&show) else {
+            return false;
+        };
+        *self.state.pending() = Some((route, show.title));
+        let sent = writeln!(stdin, "{line}").and_then(|()| stdin.flush());
         if sent.is_err() {
             // Closed between the check and the write: the caller starts a new window.
             *self.state.pending() = None;
@@ -173,7 +184,7 @@ impl Window {
     }
 
     /// Closes the window: end of input asks it to close, then this child is killed if it is still
-    /// running after [`CLOSE_DEADLINE`]. Also waits for the fallback, if one is running.
+    /// running after [`CLOSE_DEADLINE`]. Also joins the output reader.
     pub fn close(mut self) {
         // Closing on purpose: nothing it was asked to show is "lost".
         *self.state.pending() = None;
@@ -244,44 +255,52 @@ fn follow(
         fallback(url, &reason);
         if let Some(notify) = notify {
             notify(Notice::Unavailable { reason });
+            notify(Notice::Exited);
         }
-    } else if let Some((url, title)) = state.pending().take()
-        && let Some(notify) = notify
-    {
-        notify(Notice::Lost { url, title });
+        return;
+    }
+    let lost = state.pending().take();
+    if let Some(notify) = notify {
+        if let Some((route, title)) = lost {
+            notify(Notice::Lost { route, title });
+        }
+        notify(Notice::Exited);
     }
 }
 
 /// The app's one window: focus-or-spawn, so repeated Open Dashboard / Inspect / Stop… reuse it.
 pub struct Windows {
+    /// The instance's base URL, `http://127.0.0.1:<port>/`.
+    url: String,
     current: Option<Window>,
     notify: Notify,
 }
 
 impl Windows {
-    pub fn new(notify: Notify) -> Self {
+    pub fn new(url: &str, notify: Notify) -> Self {
         Self {
+            url: url.to_owned(),
             current: None,
             notify,
         }
     }
 
-    /// Shows `url` in the window. Returns the PID of a window that already ran (the caller brings
-    /// it forward); a new window comes forward by itself.
-    pub fn show(&mut self, url: &str, title: &str) -> Option<u32> {
+    /// Shows `route` in the window. Returns the PID of a window that already ran (the caller
+    /// brings it forward); a new window comes forward by itself.
+    pub fn show(&mut self, route: Route, title: &str) -> Option<u32> {
         if let Some(window) = self.current.as_mut()
-            && window.show(url, title)
+            && window.show(route, title)
         {
             return Some(window.pid());
         }
         if let Some(gone) = self.current.take() {
             gone.close();
         }
-        match Window::spawn(url, title, Some(Arc::clone(&self.notify))) {
+        match Window::spawn(&self.url, route, title, Some(Arc::clone(&self.notify))) {
             Ok(window) => self.current = Some(window),
             Err(error) => {
                 let reason = format!("could not start the dashboard window ({error})");
-                fallback(url, &reason);
+                fallback(&self.url, &reason);
                 (self.notify)(Notice::Unavailable { reason });
             }
         }

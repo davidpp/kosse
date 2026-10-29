@@ -48,7 +48,7 @@ pub fn claim(
     {
         return Ok(Claim::Existing(existing));
     }
-    match runtime.block_on(Running::start(args, false, mode, window)) {
+    match runtime.block_on(Running::start(args, mode, window)) {
         Ok(running) => Ok(Claim::Started(running)),
         Err(AppError::Serve(ServeError::PortInUse { addr })) if args.port != 0 => match look()? {
             Some(existing) => Ok(Claim::Existing(existing)),
@@ -68,12 +68,10 @@ pub struct Running {
 }
 
 impl Running {
-    /// Binds the port (refusing one another process serves) and starts the scanner. `dev` admits
-    /// the Vite dev server's authority; only debug builds' `serve --dev` sets it. Only the
-    /// resident app passes a `window` sink.
+    /// Binds the port (refusing one another process serves) and starts the scanner. Owners with
+    /// a native window pass a `window` sink.
     pub async fn start(
         args: &ServerArgs,
-        dev: bool,
         mode: InstanceMode,
         window: Option<WindowSink>,
     ) -> Result<Self, AppError> {
@@ -83,7 +81,7 @@ impl Running {
             source,
         })?;
         let token = ActionToken::generate().map_err(AppError::Token)?;
-        let policy = Arc::new(Policy::new(addr.port(), dev, token));
+        let policy = Arc::new(Policy::new(addr.port(), token));
         // The only scanner of this instance; every route and the tray read its snapshots.
         let probes = Arc::new(Probes::new(probe_scope(args)));
         let store = CentralStore::from_env()?;

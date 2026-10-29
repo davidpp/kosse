@@ -1,6 +1,6 @@
-//! Opening a URL in the user's default browser (`/usr/bin/open`): service links from the tray and
-//! the window, `serve` without `--no-open`, and the fallback when the dashboard window cannot
-//! start. Only `http(s)` URLs are passed on, as one argument, never through a shell. `open` is
+//! Opening a URL in the user's default browser (`/usr/bin/open`): a service's Open in the tray and
+//! the window, and declared profile links in the window. Only `http(s)` URLs are passed on, as one
+//! argument, never through a shell. `open` is
 //! spawned and reaped on a short-lived thread, so no caller (the `AppKit` main threads included)
 //! ever waits for it.
 

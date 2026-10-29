@@ -1,8 +1,8 @@
 //! The menu-bar app, `kosse open` and second launches through the real binary.
 //!
 //! Debug-build test hooks keep the developer's desktop untouched: `KOSSE_TEST_WINDOW=headless`
-//! runs the real dashboard window (`WKWebView` on the real server) invisibly and reports each
-//! finished page load; `KOSSE_TEST_OPENER` replaces `/usr/bin/open` with a script that records
+//! runs the real native dashboard window (Rune, on the real server) invisibly and reports each
+//! route it finished showing; `KOSSE_TEST_OPENER` replaces `/usr/bin/open` with a script that records
 //! the URL; `KOSSE_TEST_TRAY=1` prints each rendered tray menu and takes `activate <id>` on stdin,
 //! dispatched exactly like a click. The tray icon itself is real and appears briefly in the menu
 //! bar. Its look and real clicks are the human checklist in docs/evidence/S08.md.
@@ -62,15 +62,6 @@ impl Opener {
         }
     }
 
-    /// The URLs once at least one arrived (the opener runs asynchronously), within 5 s.
-    fn wait_for_urls(&self) -> Vec<String> {
-        eventually(Duration::from_secs(5), || {
-            let urls = self.urls();
-            (!urls.is_empty()).then_some(urls)
-        })
-        .unwrap_or_default()
-    }
-
     fn urls(&self) -> Vec<String> {
         std::fs::read_to_string(&self.opened)
             .unwrap_or_default()
@@ -97,6 +88,7 @@ impl Kosse {
         let mut command = Command::new(env!("CARGO_BIN_EXE_kosse"));
         command
             .env("KOSSE_CONFIG_DIR", NO_CONFIG)
+            .env("KOSSE_TEST_WINDOW", "headless")
             .env("KOSSE_TEST_OPENER", &opener.script)
             .args(args)
             .stdin(Stdio::piped())
@@ -360,12 +352,11 @@ fn the_menu_bar_app_routes_every_item_and_quit_leaves_services_running() {
     // confirmation, so nothing is signalled here.
     // The real dashboard (S07) opens that service's Inspect sheet, then its own Stop
     // confirmation (which nothing here confirms), then no dialog.
-    let pid = fixture.pid();
     activate_and_see(
         &mut app,
         &inspect_id,
         &format!("{origin}{inspect_id}"),
-        &format!("\"kosse-fixture · PID {pid}\""),
+        "\"kosse-fixture\"",
     );
     let windows = children_of(app.pid());
     assert_eq!(windows.len(), 1, "{windows:?}");
@@ -373,7 +364,7 @@ fn the_menu_bar_app_routes_every_item_and_quit_leaves_services_running() {
         &mut app,
         &stop_id,
         &format!("{origin}{stop_id}"),
-        &format!("\"Stop kosse-fixture (PID {pid})?\""),
+        "\"Stop this process?\"",
     );
     activate_and_see(&mut app, "dashboard", &format!("{origin}/"), "null");
     assert_eq!(
@@ -469,9 +460,7 @@ fn a_second_launch_refocuses_the_menu_bar_app_without_a_second_window_or_scanner
     assert_eq!(open.exit_code(), Some(0));
     assert_eq!(
         open.rest_of_stderr(),
-        [format!(
-            "kosse: showing the window of the Kossé menu-bar app at {url}"
-        )]
+        [format!("kosse: showing the native window at {url}")]
     );
     app.stdout_line(
         |line| line == format!("window: loaded {origin}/"),
@@ -493,6 +482,7 @@ fn a_second_launch_refocuses_the_menu_bar_app_without_a_second_window_or_scanner
     // `list` reads that instance's snapshot instead of scanning.
     let listed = Command::new(env!("CARGO_BIN_EXE_kosse"))
         .env("KOSSE_CONFIG_DIR", NO_CONFIG)
+        .env("KOSSE_TEST_WINDOW", "headless")
         .args(["list", "--json", "--port", &port])
         .output()
         .expect("run list");
@@ -558,11 +548,10 @@ fn the_window_endpoint_is_guarded_and_routes_to_the_one_window() {
         LOAD_WITHIN,
     );
 
-    // A headless instance has no window.
+    // A foreground owner also accepts native window requests.
     let server = Server::start();
-    let refused = server.post_json("/api/window", &server.token(), inspect);
-    assert_eq!(refused.status, 409, "{}", refused.text());
-    assert!(refused.text().contains("notResident"), "{}", refused.text());
+    let accepted = server.post_json("/api/window", &server.token(), inspect);
+    assert_eq!(accepted.status, 204, "{}", accepted.text());
 }
 
 #[test]
@@ -579,26 +568,17 @@ fn a_second_launch_never_duplicates_a_headless_or_ephemeral_instance() {
             "kosse: `kosse serve` is already running at {url} (no menu-bar app)"
         )]
     );
-    for (args, reason) in [
-        (
-            vec!["--port", &port],
-            format!("`kosse serve` is already running at {url}, without a menu-bar app or window"),
-        ),
-        (
-            vec!["open", "--port", &port],
-            format!("the Kossé at {url} is `kosse serve`, which has no window to show"),
-        ),
-    ] {
+    for args in [vec!["--port", &port], vec!["open", "--port", &port]] {
         let mut launch = Kosse::spawn(&args, &[]);
-        assert_eq!(launch.exit_code(), Some(0), "{args:?}");
-        assert_eq!(
-            launch.rest_of_stderr(),
-            [format!(
-                "kosse: {reason}; opening {url} in the default browser"
-            )]
-        );
-        assert_eq!(launch.opener.wait_for_urls(), std::slice::from_ref(&url));
+        assert_eq!(launch.exit_code(), Some(0), "{:?}", launch.rest_of_stderr());
+        assert_eq!(launch.opener.urls(), Vec::<String>::new());
+        thread::sleep(Duration::from_millis(1100));
     }
+    assert_eq!(
+        children_of(server.child.0.id()).len(),
+        1,
+        "one reused native window"
+    );
     assert_eq!(
         listening_pids(server.addr.port()),
         vec![server.child.0.id()]
@@ -621,7 +601,7 @@ fn a_second_launch_never_duplicates_a_headless_or_ephemeral_instance() {
     );
     let mut open = Kosse::spawn(&["open", "--port", &port], &[]);
     assert_eq!(open.exit_code(), Some(0));
-    assert_eq!(open.opener.wait_for_urls(), std::slice::from_ref(&url));
+    assert_eq!(open.opener.urls(), Vec::<String>::new());
     let status = Command::new("kill")
         .args(["-TERM", &ephemeral.pid().to_string()])
         .status()
@@ -659,18 +639,18 @@ fn a_killed_owner_takes_its_window_with_it() {
 }
 
 #[test]
-fn the_trays_window_fallback_opens_the_browser_and_says_why_in_the_menu() {
+fn native_window_failure_is_reported_in_the_tray() {
     let (mut app, url) = bare_app("fail");
     app.activate("dashboard");
-    assert_eq!(app.opener.wait_for_urls(), std::slice::from_ref(&url));
-    let notice = "tray: text Dashboard window unavailable: the dashboard window did not start (disabled by KOSSE_TEST_WINDOW=fail) (opened in the browser)";
+    assert_eq!(app.opener.urls(), Vec::<String>::new());
+    let notice = "tray: text Dashboard window unavailable: the dashboard window did not start (disabled by KOSSE_TEST_WINDOW=fail)";
     let menu = app.menu(|menu| menu.iter().any(|line| line == notice));
     assert_eq!(menu[1], notice, "{menu:#?}");
     let stderr = app.stderr_line(|line| line.contains("did not start"));
     assert_eq!(
         stderr,
         format!(
-            "kosse: the dashboard window did not start (disabled by KOSSE_TEST_WINDOW=fail); opening {url} in the default browser"
+            "kosse: the dashboard window did not start (disabled by KOSSE_TEST_WINDOW=fail); native window unavailable for {url}. Retry with `kosse open`."
         )
     );
     // The notice is one-shot: the next click clears it.
@@ -710,6 +690,7 @@ fn an_unrelated_port_occupant_is_never_trusted() {
         }
         let listed = Command::new(env!("CARGO_BIN_EXE_kosse"))
             .env("KOSSE_CONFIG_DIR", NO_CONFIG)
+            .env("KOSSE_TEST_WINDOW", "headless")
             .args(["list", "--json", "--port", &port])
             .output()
             .expect("run list");
@@ -751,7 +732,7 @@ fn open_serves_until_its_window_closes_then_leaves_nothing_running() {
 }
 
 #[test]
-fn a_window_that_cannot_start_falls_back_to_the_browser_with_the_reason() {
+fn a_window_that_cannot_start_reports_failure_and_stops_its_owner() {
     let mut open = Kosse::spawn(
         &["open", "--port", "0", "--probe-only=", "--act-only="],
         &[("KOSSE_TEST_WINDOW", "fail")],
@@ -761,18 +742,11 @@ fn a_window_that_cannot_start_falls_back_to_the_browser_with_the_reason() {
     assert_eq!(
         reason,
         format!(
-            "kosse: the dashboard window did not start (disabled by KOSSE_TEST_WINDOW=fail); opening {url} in the default browser"
+            "kosse: the dashboard window did not start (disabled by KOSSE_TEST_WINDOW=fail); native window unavailable for {url}. Retry with `kosse open`."
         )
     );
-    open.stderr_line(|line| line == format!("kosse: serving {url} until interrupted"));
-    assert_eq!(open.opener.wait_for_urls(), std::slice::from_ref(&url));
-    // The browser needs the server, so it keeps serving until interrupted.
-    let status = Command::new("kill")
-        .args(["-TERM", &open.pid().to_string()])
-        .status()
-        .expect("kill");
-    assert!(status.success());
-    assert_eq!(open.exit_code(), Some(0));
+    assert_eq!(open.opener.urls(), Vec::<String>::new());
+    assert_eq!(open.exit_code(), Some(1));
     assert_eq!(listening_pids(port_of(&url)), Vec::<u32>::new());
 }
 

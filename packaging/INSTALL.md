@@ -12,12 +12,20 @@ Before extracting, next to the downloaded archive:
 shasum -a 256 -c kosse-{{version}}-aarch64-apple-darwin.tar.gz.sha256
 ```
 
+For an archive from the project's GitHub Releases, the GitHub CLI can also check that it was built
+by the repository's release workflow (build provenance):
+
+```sh
+gh attestation verify kosse-{{version}}-aarch64-apple-darwin.tar.gz -R davidpp/kosse
+```
+
 `MANIFEST.json` (inside the archive) lists the SHA-256 of every file in it and the commit it was
 built from.
 
 ## Install
 
-Installed with Homebrew? Skip this.
+Installed with Homebrew or the release's `install.sh`? Skip this: `install.sh` performs these
+steps itself after checking the SHA-256 (and the provenance, when `gh` is installed).
 
 ```sh
 tar -xzf kosse-{{version}}-aarch64-apple-darwin.tar.gz
@@ -46,7 +54,9 @@ the checksums, records the files it installed and can remove exactly those again
 
 - `kosse` runs the menu-bar app and opens the dashboard window (`--no-open` to skip the window).
 - `kosse open` shows the dashboard without leaving anything running.
-- `kosse serve` serves the dashboard at `http://127.0.0.1:47831/` for any browser.
+- `kosse serve` runs Kossé in the foreground without a menu-bar icon and opens the dashboard
+  window (`--no-open` to skip). Its loopback page at `http://127.0.0.1:47831/` only says so; the
+  dashboard is the native window.
 - `kosse list` prints the listening ports once; `kosse doctor` checks the setup.
 - `kosse startup enable` starts the menu-bar app at each login (`disable` to stop, `status`).
   It runs the `kosse` you enable it from, so use the installed one.

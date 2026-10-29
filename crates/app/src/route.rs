@@ -2,6 +2,7 @@
 //! opens the dashboard's own confirmation, so no native surface ever signals a process itself.
 
 use kosse_core::{contract::WindowRoute, model::ProcessIdentity};
+use serde::{Deserialize, Serialize};
 
 /// A process with a known start time: the only identity a deep link can name, because the
 /// dashboard (like every action) matches PID and start time together.
@@ -18,6 +19,21 @@ impl Target {
             started_at_secs: identity.started_at_secs?,
         })
     }
+
+    pub fn identity(self) -> ProcessIdentity {
+        ProcessIdentity {
+            pid: self.pid,
+            started_at_secs: Some(self.started_at_secs),
+        }
+    }
+}
+
+/// One line on the window's stdin: show `route` under `title` and come forward.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Show {
+    pub route: WindowRoute,
+    pub title: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

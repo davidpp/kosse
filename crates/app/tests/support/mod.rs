@@ -36,6 +36,7 @@ impl OwnedChild {
     pub fn spawn_configured(config_dir: &Path, args: &[&str]) -> Self {
         let child = Command::new(env!("CARGO_BIN_EXE_kosse"))
             .env("KOSSE_CONFIG_DIR", config_dir)
+            .env("KOSSE_TEST_WINDOW", "headless")
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())

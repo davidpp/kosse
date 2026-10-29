@@ -9,6 +9,8 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+rune = { git = "https://github.com/anomalyco/rune", rev = "b63efb3db3a2fa59bf4a11a947944de2a8b69303", default-features = false }
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "b63efb3db3a2fa59bf4a11a947944de2a8b69303" }
 kosse-core.workspace = true
 axum.workspace = true
 block2.workspace = true
@@ -19,11 +21,10 @@ hyper.workspace = true
 hyper-util.workspace = true
 muda.workspace = true
 objc2.workspace = true
+objc2-core-graphics.workspace = true
 objc2-app-kit.workspace = true
 objc2-foundation.workspace = true
-objc2-web-kit.workspace = true
 png.workspace = true
-rust-embed.workspace = true
 rustls.workspace = true
 rustls-native-certs.workspace = true
 rustix.workspace = true
@@ -34,7 +35,6 @@ thiserror.workspace = true
 tokio.workspace = true
 tokio-rustls.workspace = true
 tray-icon.workspace = true
-wry.workspace = true
 
 [dev-dependencies]
 kosse-fixtures.workspace = true

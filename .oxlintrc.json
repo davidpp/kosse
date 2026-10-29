@@ -1,64 +1,26 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "unicorn", "oxc", "react", "jsx-a11y", "import", "vitest"],
+  "plugins": ["typescript", "unicorn", "oxc", "import"],
   "categories": {
     "correctness": "error",
     "suspicious": "error",
     "perf": "warn"
   },
   "env": {
-    "builtin": true,
-    "browser": true
+    "builtin": true
   },
   "rules": {
     "typescript/no-explicit-any": "error",
     "typescript/ban-ts-comment": "error",
-    "typescript/no-non-null-assertion": "error",
-    "react/react-in-jsx-scope": "off",
-    "import/no-unassigned-import": [
-      "error",
-      {
-        "allow": ["**/*.css", "@testing-library/jest-dom/vitest"]
-      }
-    ],
-    "no-restricted-imports": [
-      "error",
-      {
-        "paths": [
-          {
-            "name": "react-dom/client",
-            "importNames": ["hydrateRoot"],
-            "message": "Redact's hydration feature is off (web/vite.config.ts); mount with createRoot."
-          },
-          {
-            "name": "react",
-            "importNames": [
-              "Activity",
-              "unstable_Activity",
-              "Suspense",
-              "lazy",
-              "memo",
-              "Component",
-              "PureComponent",
-              "ViewTransition",
-              "unstable_ViewTransition"
-            ],
-            "message": "This Redact feature is off (web/vite.config.ts); enable it there first."
-          },
-          {
-            "name": "react-dom",
-            "importNames": ["createPortal"],
-            "message": "Redact's portal feature is off (web/vite.config.ts); enable it there first."
-          }
-        ]
-      }
-    ]
+    "typescript/no-non-null-assertion": "error"
   },
   "overrides": [
     {
       "files": ["scripts/app.ts", "scripts/window-test.ts"],
-      "rules": { "no-await-in-loop": "off" }
+      "rules": {
+        "no-await-in-loop": "off"
+      }
     }
   ],
-  "ignorePatterns": ["web/dist/**", "web/src/generated/**"]
+  "ignorePatterns": ["contracts/**", "brand/tools/node_modules/**"]
 }

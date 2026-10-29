@@ -1,13 +1,12 @@
 # Contributor toolchain, resolved per repository (no global defaults needed).
 # Keep rust in sync with rust-toolchain.toml and bun with package.json "packageManager".
-# Node is needed only by the web test/build tooling (Vitest); the shipped binary needs neither.
+# The shipped binary needs neither Bun nor any other runtime.
 [tools]
 rust = "1.99.1"
 bun = "1.4.2"
-node = "24.21.0"
 cargo-deny = "0.20.2"
 zizmor = "1.31.1"
-# Lossless PNG compression for docs/screenshots (`bun run screenshots`).
+# Lossless PNG compression for the committed docs/screenshots PNGs after recapturing them.
 oxipng = "10.2.1"
 # Release packaging (`bun run release:local`): third-party notices for the shipped binary, and its
 # dependency list embedded for `cargo audit bin` and other SBOM scanners.

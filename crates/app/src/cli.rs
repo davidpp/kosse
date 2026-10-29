@@ -38,7 +38,7 @@ pub enum Command {
     /// `--no-open`), stop doing so, or show whether it does. Off until enabled.
     #[command(subcommand)]
     Startup(StartupCommand),
-    /// Internal: the dashboard window (a `WKWebView` on a running instance's loopback URL), started
+    /// Internal: the dashboard window (Rune connected to a running instance's loopback API), started
     /// by the app and `kosse open`.
     #[command(hide = true)]
     Window(WindowArgs),
@@ -62,7 +62,7 @@ pub struct OpenArgs {
 
 #[derive(Debug, clap::Args)]
 pub struct WindowArgs {
-    /// The dashboard URL: `http://127.0.0.1:<port>/…` only.
+    /// The owner's base URL, `http://127.0.0.1:<port>/`. Routes arrive on stdin.
     pub url: String,
     /// The window title.
     #[arg(long, default_value = crate::launcher::TITLE)]
@@ -126,15 +126,9 @@ pub struct ListArgs {
 
 #[derive(Debug, clap::Args)]
 pub struct ServeArgs {
-    /// Do not open the dashboard in the default browser.
+    /// Do not open the native dashboard window.
     #[arg(long)]
     pub no_open: bool,
-
-    /// Development only (`bun run dev`): also answer for the Vite dev server's authority. Not
-    /// present in release builds.
-    #[cfg(debug_assertions)]
-    #[arg(long, hide = true)]
-    pub dev: bool,
 
     #[command(flatten)]
     pub server: ServerArgs,

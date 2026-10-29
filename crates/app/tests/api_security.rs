@@ -1,13 +1,11 @@
 //! The request policy through the real binary over raw HTTP: forged `Host`, cross-origin reads,
-//! preflights, cross-site form posts, missing and stale tokens, bad payloads, the dev authority,
+//! preflights, cross-site form posts, missing and stale tokens, bad payloads,
 //! and the security headers on every kind of route.
 
 mod support;
 
 use kosse_core::model::Snapshot;
 use support::{HttpResponse, RawRequest, Server};
-
-const DEV_AUTHORITY: &str = "127.0.0.1:47833";
 
 fn assert_refused(response: &HttpResponse, status: u16, code: &str) {
     // Bodies are truncated in messages: a wrongly accepted request returns real host data.
@@ -21,20 +19,11 @@ fn assert_refused(response: &HttpResponse, status: u16, code: &str) {
 fn every_kind_of_route_carries_the_security_headers() {
     let server = Server::start();
     let index = server.get("/");
-    let script = index
-        .text()
-        .split('"')
-        .find(|part| {
-            part.starts_with("/assets/")
-                && std::path::Path::new(part).extension() == Some("js".as_ref())
-        })
-        .expect("index references a hashed script")
-        .to_owned();
     let refused = server.send(&RawRequest::new("GET", "/").host("evil.example"));
     for (what, response) in [
         ("index", index),
         ("client route", server.get("/services/example")),
-        ("asset", server.get(&script)),
+        ("asset", server.get("/assets/removed.js")),
         ("license notice", server.get("/.vite/license.md")),
         ("api", server.get("/api/health")),
         ("api 404", server.get("/api/nope")),
@@ -81,22 +70,11 @@ fn every_kind_of_route_carries_the_security_headers() {
 }
 
 #[test]
-fn the_embedded_bundle_needs_no_inline_script() {
+fn the_api_information_page_has_no_scripts() {
     let server = Server::start();
     let html = server.get("/").text();
-    for tag in html.split("<script").skip(1) {
-        let open = tag.split('>').next().unwrap_or_default();
-        assert!(
-            open.contains("src=\"/assets/"),
-            "inline or remote script: <script{open}>"
-        );
-        assert!(
-            tag.split('>')
-                .nth(1)
-                .is_some_and(|rest| rest.starts_with("</script")),
-            "script element with a body: <script{tag}"
-        );
-    }
+    assert!(html.contains("kosse open"));
+    assert!(!html.contains("<script"));
 }
 
 #[test]
@@ -118,7 +96,6 @@ fn foreign_hosts_are_refused_on_every_route() {
             format!("[::1]:{port}"),
             format!("127.0.0.1:{}", port.wrapping_add(1)),
             "127.0.0.1".to_owned(),
-            DEV_AUTHORITY.to_owned(),
         ] {
             let response = server.send(&RawRequest::new("GET", path).host(&host));
             assert_refused(&response, 421, "hostNotAllowed");
@@ -340,38 +317,4 @@ fn unsafe_requests_to_the_bundle_pass_the_same_policy() {
             .body("a=1"),
     );
     assert_refused(&response, 403, "originNotAllowed");
-}
-
-#[test]
-fn the_dev_authority_is_admitted_only_in_dev_mode() {
-    let production = Server::start();
-    let refused = production.send(&RawRequest::new("GET", "/api/health").host(DEV_AUTHORITY));
-    assert_refused(&refused, 421, "hostNotAllowed");
-
-    // Through the Vite proxy the browser's Host and Origin are the dev server's.
-    let dev = Server::start_with(&["--dev"]);
-    let token = dev.token();
-    let health = dev.send(&RawRequest::new("GET", "/api/health").host(DEV_AUTHORITY));
-    assert_eq!(health.status, 200);
-    let refresh = dev.send(
-        &RawRequest::new("POST", "/api/refresh")
-            .host(DEV_AUTHORITY)
-            .header("Origin", &format!("http://{DEV_AUTHORITY}"))
-            .header("Content-Type", "application/json")
-            .header("X-Kosse-Token", &token)
-            .body("{}"),
-    );
-    assert_eq!(refresh.status, 200, "{}", refresh.text());
-    // Dev mode admits exactly that authority, and still refuses cross-origin writes.
-    let mismatch = dev.send(
-        &RawRequest::new("POST", "/api/refresh")
-            .host(DEV_AUTHORITY)
-            .header("Origin", &dev.origin())
-            .header("Content-Type", "application/json")
-            .header("X-Kosse-Token", &token)
-            .body("{}"),
-    );
-    assert_refused(&mismatch, 403, "originNotAllowed");
-    let localhost = dev.send(&RawRequest::new("GET", "/api/health").host("localhost:47833"));
-    assert_refused(&localhost, 421, "hostNotAllowed");
 }

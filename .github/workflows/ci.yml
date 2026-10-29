@@ -49,23 +49,6 @@ jobs:
       - name: Check
         run: bun run check
 
-      - name: Read the Playwright version
-        id: playwright
-        run: echo "version=$(jq -r '.devDependencies["@playwright/test"]' package.json)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/Library/Caches/ms-playwright
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
-
-      - name: Install Playwright browsers
-        run: bunx playwright install webkit chromium chromium-headless-shell
-
-      - name: Browser suite (real server, owned fixtures)
-        run: bun run test:e2e
-
-      # The shipped WKWebView window (transparent, click-through), driven by real AppKit events (S11). The runner's
-      # Aqua session already runs the app tests' tray and hidden windows in `check`.
       - name: Real-window suite (kosse window, owned fixtures)
         run: bun run test:window
 

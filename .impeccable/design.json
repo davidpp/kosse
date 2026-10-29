@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-29T04:45:03.147228+00:00",
+  "title": "Design System: Kossé",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Accent",
+        "tonalRamp": [
+          "oklch(0.15 0.1765 261.2387)",
+          "oklch(0.26 0.1765 261.2387)",
+          "oklch(0.38 0.1765 261.2387)",
+          "oklch(0.49 0.1765 261.2387)",
+          "oklch(0.61 0.1765 261.2387)",
+          "oklch(0.72 0.1765 261.2387)",
+          "oklch(0.84 0.1765 261.2387)",
+          "oklch(0.95 0.1765 261.2387)"
+        ]
+      },
+      "accent-dark": {
+        "role": "primary",
+        "displayName": "Accent Dark",
+        "tonalRamp": [
+          "oklch(0.15 0.1157 265.3437)",
+          "oklch(0.26 0.1157 265.3437)",
+          "oklch(0.38 0.1157 265.3437)",
+          "oklch(0.49 0.1157 265.3437)",
+          "oklch(0.61 0.1157 265.3437)",
+          "oklch(0.72 0.1157 265.3437)",
+          "oklch(0.84 0.1157 265.3437)",
+          "oklch(0.95 0.1157 265.3437)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "tonalRamp": [
+          "oklch(0.15 0.0026 106.4483)",
+          "oklch(0.26 0.0026 106.4483)",
+          "oklch(0.38 0.0026 106.4483)",
+          "oklch(0.49 0.0026 106.4483)",
+          "oklch(0.61 0.0026 106.4483)",
+          "oklch(0.72 0.0026 106.4483)",
+          "oklch(0.84 0.0026 106.4483)",
+          "oklch(0.95 0.0026 106.4483)"
+        ]
+      },
+      "canvas-dark": {
+        "role": "neutral",
+        "displayName": "Canvas Dark",
+        "tonalRamp": [
+          "oklch(0.15 0.0039 286.0588)",
+          "oklch(0.26 0.0039 286.0588)",
+          "oklch(0.38 0.0039 286.0588)",
+          "oklch(0.49 0.0039 286.0588)",
+          "oklch(0.61 0.0039 286.0588)",
+          "oklch(0.72 0.0039 286.0588)",
+          "oklch(0.84 0.0039 286.0588)",
+          "oklch(0.95 0.0039 286.0588)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "tonalRamp": [
+          "oklch(0.15 0.0056 286.0023)",
+          "oklch(0.26 0.0056 286.0023)",
+          "oklch(0.38 0.0056 286.0023)",
+          "oklch(0.49 0.0056 286.0023)",
+          "oklch(0.61 0.0056 286.0023)",
+          "oklch(0.72 0.0056 286.0023)",
+          "oklch(0.84 0.0056 286.0023)",
+          "oklch(0.95 0.0056 286.0023)"
+        ]
+      },
+      "ink-dark": {
+        "role": "neutral",
+        "displayName": "Ink Dark",
+        "tonalRamp": [
+          "oklch(0.15 0.0027 106.4502)",
+          "oklch(0.26 0.0027 106.4502)",
+          "oklch(0.38 0.0027 106.4502)",
+          "oklch(0.49 0.0027 106.4502)",
+          "oklch(0.61 0.0027 106.4502)",
+          "oklch(0.72 0.0027 106.4502)",
+          "oklch(0.84 0.0027 106.4502)",
+          "oklch(0.95 0.0027 106.4502)"
+        ]
+      },
+      "on-accent": {
+        "role": "neutral",
+        "displayName": "On Accent",
+        "tonalRamp": [
+          "oklch(0.15 0 89.8756)",
+          "oklch(0.26 0 89.8756)",
+          "oklch(0.38 0 89.8756)",
+          "oklch(0.49 0 89.8756)",
+          "oklch(0.61 0 89.8756)",
+          "oklch(0.72 0 89.8756)",
+          "oklch(0.84 0 89.8756)",
+          "oklch(0.95 0 89.8756)"
+        ]
+      },
+      "on-accent-dark": {
+        "role": "neutral",
+        "displayName": "On Accent Dark",
+        "tonalRamp": [
+          "oklch(0.15 0.0039 286.0588)",
+          "oklch(0.26 0.0039 286.0588)",
+          "oklch(0.38 0.0039 286.0588)",
+          "oklch(0.49 0.0039 286.0588)",
+          "oklch(0.61 0.0039 286.0588)",
+          "oklch(0.72 0.0039 286.0588)",
+          "oklch(0.84 0.0039 286.0588)",
+          "oklch(0.95 0.0039 286.0588)"
+        ]
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Focus",
+        "tonalRamp": [
+          "oklch(0.15 0.1765 261.2387)",
+          "oklch(0.26 0.1765 261.2387)",
+          "oklch(0.38 0.1765 261.2387)",
+          "oklch(0.49 0.1765 261.2387)",
+          "oklch(0.61 0.1765 261.2387)",
+          "oklch(0.72 0.1765 261.2387)",
+          "oklch(0.84 0.1765 261.2387)",
+          "oklch(0.95 0.1765 261.2387)"
+        ]
+      },
+      "focus-dark": {
+        "role": "primary",
+        "displayName": "Focus Dark",
+        "tonalRamp": [
+          "oklch(0.15 0.1157 265.3437)",
+          "oklch(0.26 0.1157 265.3437)",
+          "oklch(0.38 0.1157 265.3437)",
+          "oklch(0.49 0.1157 265.3437)",
+          "oklch(0.61 0.1157 265.3437)",
+          "oklch(0.72 0.1157 265.3437)",
+          "oklch(0.84 0.1157 265.3437)",
+          "oklch(0.95 0.1157 265.3437)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "body": {
+        "displayName": "Inter interface text",
+        "purpose": "Interface text, controls and headings; Inter is bundled in the executable."
+      },
+      "wordmark": {
+        "displayName": "Kibernetyk Mono wordmark",
+        "purpose": "Identity only; preserve monospace advances."
+      },
+      "data": {
+        "displayName": "Runtime facts",
+        "purpose": "Ports, commands, paths and compact metrics."
+      }
+    },
+    "shadows": [
+      {
+        "name": "native-overlay-light",
+        "value": "0 8px 16px rgba(0,0,0,0.12)",
+        "purpose": "Pinned rune-kit overlay drop shadow; kit additionally applies its derived border ring."
+      },
+      {
+        "name": "native-overlay-dark",
+        "value": "0 8px 16px rgba(0,0,0,0.30)",
+        "purpose": "Dark appearance overlay drop shadow."
+      }
+    ],
+    "motion": [],
+    "breakpoints": [
+      {
+        "name": "compact-window",
+        "value": "950px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Save changes; light appearance translation of the native Contrast control. All sidecar HTML/CSS snippets are portable panel illustrations; native kit geometry, derived colors and behavior remain authoritative. Tonal ramps are generated inspection aids, not additional runtime tokens.",
+      "html": "<button class=\"ds-button ds-primary\">Save changes</button>",
+      "css": ".ds-button{font:500 13px/20px Inter,system-ui;height:24px;padding:0 12px;border:0;border-radius:6px;cursor:pointer}.ds-button:focus-visible{outline:2px solid oklch(.58 .15 264);outline-offset:2px}.ds-primary{background:#003DA5;color:#fff;box-shadow:0 1px 1.5px #0000001f}.ds-primary:hover{filter:brightness(1.08)}.ds-primary:active{filter:brightness(.92)}"
+    },
+    {
+      "name": "Quiet action",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Inspect, Open and Customize actions.",
+      "html": "<button class=\"ds-button ds-quiet\">Inspect</button>",
+      "css": ".ds-button{font:500 13px/20px Inter,system-ui;height:24px;padding:0 12px;border:0;border-radius:6px;cursor:pointer}.ds-button:focus-visible{outline:2px solid oklch(.58 .15 264);outline-offset:2px}.ds-quiet{background:transparent;color:#232326}.ds-quiet:hover{background:#2323260d}.ds-quiet:active{background:#23232614}"
+    },
+    {
+      "name": "Danger action",
+      "kind": "button",
+      "description": "Native semantic danger action; this sample demonstrates hierarchy, not a brand danger-token alias.",
+      "html": "<button class=\"ds-button ds-danger\">Stop process</button>",
+      "css": ".ds-button{font:500 13px/20px Inter,system-ui;height:24px;padding:0 12px;border:0;border-radius:6px;cursor:pointer}.ds-button:focus-visible{outline:2px solid oklch(.58 .15 264);outline-offset:2px}.ds-danger{background:oklch(.95 .04 25);color:oklch(.5 .15 25)}.ds-danger:hover{filter:brightness(.97)}.ds-danger:active{filter:brightness(.93)}"
+    },
+    {
+      "name": "Labeled field",
+      "kind": "input",
+      "description": "Service customization field with visible inheritance hint. Browser translation of Rune TextField.",
+      "html": "<label class=\"ds-field\">Display name<input placeholder=\"Use the process name\"><span>Leave blank to inherit.</span></label>",
+      "css": ".ds-field{display:grid;gap:8px;font:400 13px/20px Inter,system-ui;color:#232326}.ds-field input{font:inherit;border:1px solid #73737d;border-radius:6px;padding:4px 8px;background:#f7f7f5;color:#232326}.ds-field input:hover{border-color:#232326}.ds-field input:focus-visible{outline:2px solid oklch(.58 .15 264);outline-offset:1px}.ds-field span{color:#606069}"
+    },
+    {
+      "name": "Customization navigation",
+      "kind": "nav",
+      "description": "Project and service choices; active choice uses the action accent.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Customize\"><button aria-current=\"page\">Project</button><span>Services</span><button>web</button></nav>",
+      "css": ".ds-nav{display:grid;gap:4px;width:136px;padding:12px;background:#eeeef0;font:400 13px/20px Inter,system-ui}.ds-nav button{border:0;border-radius:6px;height:24px;padding:0 12px;font:500 13px/20px Inter,system-ui;color:#232326;background:transparent}.ds-nav button[aria-current]{background:#003da5;color:white}.ds-nav span{margin-top:12px}.ds-nav button:hover{filter:brightness(.95)}.ds-nav button:focus-visible{outline:2px solid oklch(.58 .15 264);outline-offset:2px}"
+    },
+    {
+      "name": "Service identity and metrics",
+      "kind": "custom",
+      "refersTo": "service-row",
+      "description": "Compact native service-row composition. Demonstration facts are fictional.",
+      "html": "<div class=\"ds-row\"><div><strong>web</strong><code>apps/web</code></div><div><code>:5173</code><span>HTTP 200</span></div><div><code>0.2% CPU · 64 MB</code><code>3m</code></div></div>",
+      "css": ".ds-row{display:flex;gap:16px;align-items:center;min-height:52px;padding:10px 14px;border-radius:8px;background:#efefed;color:#232326;font:400 13px/20px Inter,system-ui}.ds-row>div{display:grid;gap:5px}.ds-row strong{font-weight:500}.ds-row code{font:400 12px/20px ui-monospace;color:#606069}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Operate",
+    "overview": "A compact native switchboard of projects and worktrees. Kossé is read briefly beside an editor or terminal: recognise a service, inspect its identity, open it or explicitly confirm a stop. Neutral surfaces keep process facts prominent; Québec-inspired blue identifies primary actions and selected form choices.\n\nThis records the owner-approved native replacement of the retired browser dashboard. It was a code-led operational port, without a seeded concept roll or an approved composition. There is no retrospective seed, quality score or claim of visual approval. The authority is `crates/app/src/native/view.rs`, `customize.rs`, `customize/form.rs` and `customize/fields.rs`, with Rune and rune-kit pinned to `b63efb3d`. Earlier review screenshots predate the final density and blue-control changes. The surface composition is recorded separately in [.impeccable/surfaces/native.md](.impeccable/surfaces/native.md).",
+    "keyCharacteristics": [
+      "Compact project groups with stable process identity.",
+      "Neutral light and dark appearance with a single action accent.",
+      "Explicit observation text and quiet, current metrics.",
+      "Structured customization with visible inheritance and a fixed save footer."
+    ],
+    "rules": [
+      {
+        "name": "The Observation Rule",
+        "body": "An HTTP response is an observation, including an error status; blue selection and destructive red never imply service health.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do retain observed identity when filtering, inspecting or customizing a display name.",
+      "Do show unknown, warming-up, configured-only and ended states in words.",
+      "Do keep Save and Cancel visible while customization details scroll.",
+      "Do distinguish inherited repository values, local overrides and observations."
+    ],
+    "donts": [
+      "Don't use the action accent as a service-health verdict.",
+      "Don't infer that brand palette swatches equal every generated native kit color.",
+      "Don't carry browser-only CSS, dialogs, keyboard shortcuts or font restrictions into native guidance.",
+      "Don't substitute a font glyph for the Relay mark or alter the wordmark's monospace advances."
+    ]
+  }
+}

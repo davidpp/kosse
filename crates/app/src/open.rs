@@ -1,32 +1,26 @@
-//! `kosse open`: the dashboard window without a resident app.
-//!
-//! - The menu-bar app runs on the port: it is asked to show its own window (`POST /api/window`)
-//!   and this exits; there is never a second window or scanner.
-//! - Another Kossé runs there (`serve`, or another `open`): it has no window to show, so the
-//!   default browser opens its dashboard, with the reason.
-//! - Nothing runs there: this serves the dashboard until its window closes, then exits, so
-//!   nothing stays running.
-
-use std::time::Duration;
+//! A temporary scanner owner and its Rune window; existing owners refocus their one window.
+use std::sync::Arc;
 
 use kosse_core::contract::InstanceMode;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     AppError,
     cli::OpenArgs,
     instance::{self, Instance},
-    launcher::{self, Window},
+    launcher::{self, Notice, Window},
     route::Route,
     running::{self, Claim},
 };
 
-/// How often `open` checks whether the window has closed.
-const WINDOW_POLL: Duration = Duration::from_millis(100);
-
 pub fn run(args: &OpenArgs) -> Result<(), AppError> {
     let runtime = crate::runtime()?;
-    let running = match running::claim(&runtime, &args.server, InstanceMode::Ephemeral, None)? {
+    let (routes, mut incoming) = mpsc::unbounded_channel();
+    let sink = Arc::new(move |route| {
+        let _ = routes.send(route);
+    });
+    let running = match running::claim(&runtime, &args.server, InstanceMode::Ephemeral, Some(sink))?
+    {
         Claim::Existing(existing) => return show_existing(&runtime, &existing),
         Claim::Started(running) => running,
     };
@@ -37,15 +31,24 @@ pub fn run(args: &OpenArgs) -> Result<(), AppError> {
         let mut server = tokio::spawn(running.run(async move {
             let _ = quit_requested.await;
         }));
-        let window = match Window::spawn(&url, launcher::TITLE, None) {
+        // The window's output reader says when it ended; nothing polls for it.
+        let (exits, mut exited) = mpsc::unbounded_channel();
+        let notify: launcher::Notify = Arc::new(move |notice| {
+            if matches!(notice, Notice::Exited) {
+                let _ = exits.send(());
+            }
+        });
+        let mut window = match Window::spawn(&url, Route::Dashboard, launcher::TITLE, Some(notify))
+        {
             Ok(window) => window,
             Err(error) => {
                 launcher::fallback(
                     &url,
                     &format!("could not start the dashboard window ({error})"),
                 );
-                report!("kosse: serving {url} until interrupted");
-                return server.await;
+                let _ = quit.send(());
+                let _ = server.await;
+                return Err(AppError::Window(error.to_string()));
             }
         };
         loop {
@@ -53,46 +56,31 @@ pub fn run(args: &OpenArgs) -> Result<(), AppError> {
                 // SIGINT/SIGTERM stopped the server: close the window too.
                 result = &mut server => {
                     window.close();
-                    return result;
+                    return result.map_err(|_| AppError::Stopped)?;
                 }
-                () = tokio::time::sleep(WINDOW_POLL) => if window.exited() { break },
+                Some(route) = incoming.recv() => {
+                    window.show(Route::from(route), launcher::TITLE);
+                }
+                _ = exited.recv() => break,
             }
         }
         let started = window.started();
-        // Waits for the browser fallback, if the window never started.
         window.close();
-        if started {
-            let _ = quit.send(());
-        } else {
-            // The browser fallback has opened the dashboard; it needs the server.
-            report!("kosse: serving {url} until interrupted");
+        let _ = quit.send(());
+        server.await.map_err(|_| AppError::Stopped)??;
+        if !started {
+            return Err(AppError::Window("the native window did not start".into()));
         }
-        server.await
+        Ok(())
     });
-    result.map_err(|_| AppError::Stopped)??;
+    result?;
     report!("kosse stopped");
     Ok(())
 }
 
-/// The menu-bar app shows its own window; any other instance gets a browser tab.
+/// The owner on the port shows its own one window (`POST /api/window`).
 fn show_existing(runtime: &tokio::runtime::Runtime, existing: &Instance) -> Result<(), AppError> {
-    let url = &existing.url;
-    match existing.mode {
-        InstanceMode::Resident => {
-            runtime.block_on(instance::show_window(existing, Route::Dashboard))?;
-            report!("kosse: showing the window of the Kossé menu-bar app at {url}");
-        }
-        InstanceMode::Ephemeral | InstanceMode::Headless => {
-            let kind = if existing.mode == InstanceMode::Headless {
-                "`kosse serve`"
-            } else {
-                "another `kosse open`"
-            };
-            launcher::fallback(
-                url,
-                &format!("the Kossé at {url} is {kind}, which has no window to show"),
-            );
-        }
-    }
+    runtime.block_on(instance::show_window(existing, Route::Dashboard))?;
+    report!("kosse: showing the native window at {}", existing.url);
     Ok(())
 }

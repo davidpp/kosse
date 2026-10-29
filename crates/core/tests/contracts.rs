@@ -5,7 +5,7 @@ use std::{env, fs, path::PathBuf};
 
 use kosse_core::contract::typescript_bindings;
 
-const BINDINGS: &str = "web/src/generated/contracts.ts";
+const BINDINGS: &str = "contracts/contracts.ts";
 
 fn bindings_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

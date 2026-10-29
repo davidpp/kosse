@@ -58,7 +58,8 @@ const FIRST_SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Minimum time between scans triggered through `POST /api/refresh`, between requested probes,
 /// and between accepted stop/force requests.
 pub const WRITE_MIN_INTERVAL: Duration = Duration::from_secs(1);
-const KEEP_ALIVE: Duration = Duration::from_secs(15);
+/// SSE keep-alive comments; the window treats a silence well beyond this as a lost stream.
+pub const KEEP_ALIVE: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
 pub struct AppState {
@@ -175,7 +176,7 @@ pub async fn window(
         return Refusal::new(
             StatusCode::CONFLICT,
             ApiErrorCode::NotResident,
-            "this Kossé is not the menu-bar app and has no window; open the dashboard in a browser",
+            "this Kossé owner has no native window handler",
         )
         .into_response();
     };

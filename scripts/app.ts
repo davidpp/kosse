@@ -1,19 +1,20 @@
-// `bun run app -- <command>`: the real menu-bar app (tray + WKWebView window) on a fictional
+// `bun run app -- <command>`: the real menu-bar app (tray + Rune window) on a fictional
 // fixture world, driven through the window's debug-only control socket. See docs/agent-drive.md.
 //
 // `start` launches a detached host (`app.ts host`) that owns everything it starts: the fixture
-// world (temporary Git projects and listeners, e2e/support/world.ts), the debug `kosse` app on
+// world (temporary Git projects and listeners, scripts/support/world.ts), the debug `kosse` app on
 // this checkout's own port with `--probe-only`/`--act-only` scoped to those fixtures, an isolated
 // KOSSE_CONFIG_DIR and a capturing opener. `stop` asks that host to release them by identity.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, openSync, statSync } from "node:fs";
-import { chmod, copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { appendFileSync, openSync } from "node:fs";
+import { chmod, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { dirname, join, resolve } from "node:path";
 
-import { startKosseApp } from "../e2e/support/processes.ts";
-import { createWorld, type World } from "../e2e/support/world.ts";
+import { startKosseApp } from "./support/processes.ts";
+import { delay, elements, isRecord } from "./support/window.ts";
+import { createWorld, type World } from "./support/world.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const varDir = join(root, "var", "app");
@@ -22,7 +23,7 @@ const appLog = join(varDir, "kosse.log");
 const hostLog = join(varDir, "host.log");
 const openedLog = join(varDir, "opened.log");
 const checkout = createHash("sha256").update(root).digest("hex").slice(0, 10);
-/** This checkout's port: away from 47831 (installed default) and 47832/47833 (`bun run dev`). */
+/** This checkout's port stays separate from the default owner on 47831. */
 export const appPort = 48100 + (Number.parseInt(checkout.slice(0, 6), 16) % 800);
 const uid = process.getuid?.() ?? 0;
 /** A Unix socket path is limited to 104 bytes on macOS; a checkout path may be longer. */
@@ -34,17 +35,17 @@ const usage = `bun run app -- <command>
   start [--hidden]   Build what is stale, start the real app (tray + window) on a fixture world
                      on 127.0.0.1:${appPort}; prints status JSON once the window answers.
                      --hidden: invisible window (KOSSE_TEST_WINDOW=headless), for unattended runs.
-  status             JSON: session, window URL/title/size/visibility (or why it does not answer).
-  eval <js>          Run code in the real WKWebView; prints its JSON value. An expression, or a
-                     body with return; await works. Elements come back as their HTML.
-  shot [--out path]  PNG of the window's page (default var/app/shot.png).
+  status             JSON: session, window title/size/visibility (or why it does not answer).
+  tree               Read the rendered Rune element tree.
+  text <text>        Type text into the focused native field.
+  shot [--out path]  PNG of the native window (default var/app/shot.png).
   resize <w>x<h>     Set the window's content size in points.
-  click <x> <y> | click <selector> [text]
-                     A real AppKit click (NSEvent) at page coordinates or an element's centre.
+  click <x> <y> | click <element-key>
+                     A real AppKit click (NSEvent) at window coordinates or an element's centre.
   key <key>          A real key press: j, k, /, Enter, Escape, Tab, Backspace, ArrowDown,
                      ArrowUp, or one character.
   theme <light|dark|system>
-                     The window's appearance (the page's prefers-color-scheme).
+                     The native window's appearance.
   show [route]       Ask the app for its window (POST /api/window): dashboard, inspect:<pid>.<start>
                      or stop:<pid>.<start> — the path the tray's Inspect and Stop… take.
                      <start> is the process's startedAtSecs (status lists the fixtures').
@@ -68,11 +69,26 @@ function print(value: unknown) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-const delay = (ms: number) => new Promise((done) => setTimeout(done, ms));
+/** Enough of a session file to act on safely; anything else is treated as no session. */
+function isSession(value: unknown): value is Session {
+  if (!isRecord(value) || !isRecord(value.host) || !isRecord(value.app)) return false;
+  const { host: owner, app } = value;
+  return (
+    typeof owner.pid === "number" &&
+    typeof owner.marker === "string" &&
+    typeof app.pid === "number" &&
+    typeof app.started === "string" &&
+    typeof app.url === "string" &&
+    typeof app.port === "number" &&
+    typeof value.socket === "string" &&
+    Array.isArray(value.fixtures)
+  );
+}
 
 export async function readSession(): Promise<Session | null> {
   try {
-    return JSON.parse(await readFile(sessionFile, "utf8")) as Session;
+    const value: unknown = JSON.parse(await readFile(sessionFile, "utf8"));
+    return isSession(value) ? value : null;
   } catch {
     return null;
   }
@@ -84,8 +100,7 @@ function isHost(pid: number): boolean {
   return ps.status === 0 && ps.stdout.includes(hostMarker);
 }
 
-/** Whether the console session's screen is locked: every window is then occluded, so WebKit
- * treats the page as hidden (timers and rendering throttled, evaluations unanswered). */
+/** Native rendering and input tests require an unlocked graphical session. */
 export function screenLocked(): boolean {
   const ioreg = spawnSync("/usr/sbin/ioreg", ["-n", "Root", "-d1"], { encoding: "utf8" });
   return /"CGSSessionScreenIsLocked"=Yes/.test(ioreg.stdout ?? "");
@@ -129,8 +144,9 @@ export function control(
     );
     socket.on("end", () => {
       try {
-        const reply = JSON.parse(data) as Record<string, unknown>;
-        if (typeof reply.error === "string") fail(new Error(reply.error));
+        const reply: unknown = JSON.parse(data);
+        if (!isRecord(reply)) fail(new Error(`unexpected reply: ${data}`));
+        else if (typeof reply.error === "string") fail(new Error(reply.error));
         else done(reply);
       } catch {
         fail(new Error(`unexpected reply: ${data}`));
@@ -139,90 +155,8 @@ export function control(
   });
 }
 
-// --- eval ------------------------------------------------------------------------------------
-
-const AsyncFunction = (async () => {}).constructor as new (body: string) => unknown;
-/** Throws a `SyntaxError` unless `body` parses as an async function body (it is never run). */
-const parses = (body: string) => typeof new AsyncFunction(body) === "function";
-
-/** `code` as an async function body: an expression's value is returned, statements run as is. */
-function asyncBody(code: string): string {
-  const expression = `return (${code}\n);`;
-  try {
-    parses(expression);
-    return expression;
-  } catch {
-    try {
-      parses(code);
-    } catch (error) {
-      throw new Error(`not valid JavaScript: ${(error as Error).message}`, { cause: error });
-    }
-    return code;
-  }
-}
-
-/** Runs `code` in the window. WebKit returns no promise's value, so the result is parked in a
- * page global and read back until it settles. */
-export async function evaluate(
-  code: string,
-  { timeoutMs = 30_000, socket = socketPath } = {},
-): Promise<unknown> {
-  const id = `e${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
-  const key = JSON.stringify(id);
-  await control(
-    {
-      op: "eval",
-      js: `(() => {
-  const box = (globalThis.__kosseAgent ??= {});
-  box[${key}] = { pending: true };
-  (async () => { ${asyncBody(code)} })().then(
-    (value) => { box[${key}] = { value: value instanceof Element ? value.outerHTML.slice(0, 4000) : value === undefined ? null : value }; },
-    (error) => { box[${key}] = { error: error instanceof Error ? error.name + ": " + error.message : String(error) }; },
-  );
-  return true;
-})()`,
-    },
-    socket,
-  );
-  const read = `(() => { const box = globalThis.__kosseAgent || {}; const r = box[${key}]; if (r && !r.pending) delete box[${key}]; return JSON.stringify(r ?? { error: "the page reloaded before the code finished" }); })()`;
-  for (let waited = 0; waited < timeoutMs; waited += 50) {
-    const reply = await control({ op: "eval", js: read }, socket);
-    const result = JSON.parse(String(reply.value)) as {
-      pending?: boolean;
-      value?: unknown;
-      error?: string;
-    };
-    if (result.pending) {
-      await delay(50);
-      continue;
-    }
-    if (result.error !== undefined) throw new Error(result.error);
-    return result.value;
-  }
-  throw new Error(`the code did not finish within ${timeoutMs / 1000} s`);
-}
-
-// --- start / host / stop ---------------------------------------------------------------------
-
-async function newest(dir: string): Promise<number> {
-  let latest = 0;
-  for (const entry of await readdir(dir, { withFileTypes: true, recursive: true })) {
-    if (entry.isFile())
-      latest = Math.max(latest, (await stat(join(entry.parentPath, entry.name))).mtimeMs);
-  }
-  return latest;
-}
-
-/** The web bundle when `web/` changed since, then the debug `kosse` and fixture (cargo decides). */
+/** Build the native app and owned fixture executable. */
 export async function build() {
-  const dist = join(root, "web", "dist", "index.html");
-  const sources = Math.max(
-    await newest(join(root, "web", "src")),
-    statSync(join(root, "web", "index.html")).mtimeMs,
-  );
-  if (!existsSync(dist) || statSync(dist).mtimeMs < sources) {
-    run(["bun", "run", "--cwd", "web", "build"]);
-  }
   run(["cargo", "build", "--locked", "-p", "kosse", "-p", "kosse-fixtures", "--bins"]);
 }
 
@@ -239,7 +173,7 @@ async function start(args: string[]) {
     return;
   }
   if (screenLocked()) {
-    throw new Error("the screen is locked: the window would be hidden to WebKit; unlock it first");
+    throw new Error("the screen is locked; unlock it to render and drive the native window");
   }
   await build();
   await mkdir(varDir, { recursive: true });
@@ -265,7 +199,7 @@ async function start(args: string[]) {
       await control({ op: "status" });
       print({
         ...(await status()),
-        next: "bun run app -- eval <js> | shot | resize <w>x<h> | logs | stop",
+        next: "bun run app -- tree | shot | resize <w>x<h> | logs | stop",
       });
       return;
     } catch {
@@ -382,18 +316,23 @@ export async function status(): Promise<Record<string, unknown>> {
   try {
     window = await control({ op: "status" });
   } catch (error) {
-    window = { error: (error as Error).message };
+    window = { error: error instanceof Error ? error.message : String(error) };
   }
   // `<start>` for `show inspect:<pid>.<start>`: each fixture's startedAtSecs from the snapshot.
   const started = new Map<number, number>();
   try {
-    const snapshot = (await (await fetch(`${session.app.url}/api/snapshot`)).json()) as {
-      observation: {
-        services: { process: { identity: { pid: number; startedAtSecs: number } } }[];
-      } | null;
-    };
-    for (const { process: proc } of snapshot.observation?.services ?? []) {
-      started.set(proc.identity.pid, proc.identity.startedAtSecs);
+    const snapshot: unknown = await (await fetch(`${session.app.url}/api/snapshot`)).json();
+    const services =
+      isRecord(snapshot) && isRecord(snapshot.observation) ? snapshot.observation.services : [];
+    for (const service of Array.isArray(services) ? services : []) {
+      const identity =
+        isRecord(service) && isRecord(service.process) ? service.process.identity : null;
+      if (
+        isRecord(identity) &&
+        typeof identity.pid === "number" &&
+        typeof identity.startedAtSecs === "number"
+      )
+        started.set(identity.pid, identity.startedAtSecs);
     }
   } catch {
     // The window status still says what it can.
@@ -428,34 +367,19 @@ export async function resize(size: string, socket = socketPath): Promise<Record<
   return control({ op: "resize", width: Number(match[1]), height: Number(match[2]) }, socket);
 }
 
-/** A real click at `x y` (page CSS pixels), or at the centre of the first element matching a
- * CSS selector (optionally the one whose text is exactly `text`). */
+/** Real AppKit input, addressed by coordinates or an exact rendered Rune element key. */
 export async function click(
   target: string[],
   socket = socketPath,
 ): Promise<Record<string, unknown>> {
-  const [first = "", ...rest] = target;
-  let point: { x: number; y: number };
-  if (/^\d+(\.\d+)?$/.test(first) && rest.length === 1) {
-    point = { x: Number(first), y: Number(rest[0]) };
-  } else {
-    const text = rest.join(" ");
-    const found = await evaluate(
-      `(() => {
-  const all = [...document.querySelectorAll(${JSON.stringify(first)})];
-  const el = ${JSON.stringify(text)} === "" ? all[0] : all.find((e) => e.textContent.trim() === ${JSON.stringify(text)});
-  if (!el) return null;
-  el.scrollIntoView({ block: "center", inline: "nearest" });
-  const r = el.getBoundingClientRect();
-  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-})()`,
-      { socket },
-    );
-    if (found === null || typeof found !== "object")
-      throw new Error(`nothing matches ${target.join(" ")}`);
-    point = found as { x: number; y: number };
+  const [first = "", second] = target;
+  if (/^\d+(\.\d+)?$/.test(first) && second !== undefined) {
+    return control({ op: "click", x: Number(first), y: Number(second) }, socket);
   }
-  return control({ op: "click", ...point }, socket);
+  const found = elements(await control({ op: "tree" }, socket)).find((e) => e.key === first);
+  if (found === undefined) throw new Error(`No rendered control with key ${first}`);
+  const [x, y, width, height] = found.rect;
+  return control({ op: "click", x: x + width / 2, y: y + height / 2 }, socket);
 }
 
 /** `POST /api/window`, the request a second launch or the tray's Inspect/Stop… path makes. */
@@ -470,7 +394,10 @@ export async function show(route = "dashboard") {
     route: kind === "dashboard" ? { kind: "dashboard" } : { kind, pid, startedAtSecs },
   };
   const origin = session.app.url;
-  const token = ((await (await fetch(`${origin}/api/session`)).json()) as { token: string }).token;
+  const reply: unknown = await (await fetch(`${origin}/api/session`)).json();
+  if (!isRecord(reply) || typeof reply.token !== "string")
+    throw new Error("GET /api/session: no token");
+  const token = reply.token;
   const response = await fetch(`${origin}/api/window`, {
     method: "POST",
     headers: { Origin: origin, "Content-Type": "application/json", "X-Kosse-Token": token },
@@ -497,8 +424,19 @@ async function main() {
       return host(rest);
     case "status":
       return print(await status());
-    case "eval":
-      return print(await evaluate(rest.join(" ")));
+    case "scroll":
+      return print(
+        await control({
+          op: "scroll",
+          x: Number(rest[0]),
+          y: Number(rest[1]),
+          delta: Number(rest[2]),
+        }),
+      );
+    case "tree":
+      return print(await control({ op: "tree" }));
+    case "text":
+      return print(await control({ op: "text", text: rest.join(" ") }));
     case "shot":
       return print({ path: await shot(rest) });
     case "resize":

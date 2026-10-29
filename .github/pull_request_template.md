@@ -7,4 +7,5 @@
 <!-- Commands you ran and their results (`bun run check`, targeted tests, the real entrypoint you exercised). Note anything you could not verify. Screenshots for UI changes. -->
 
 - [ ] `bun run check` passes
+- [ ] UI changes: `bun run test:window` passes and the change was seen in the real window (`bun run app`)
 - [ ] Blueprint/docs updated if a contract or command changed
