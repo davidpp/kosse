@@ -176,6 +176,9 @@ pub fn typescript_bindings() -> String {
     module.add::<Preferences>();
     module.add::<WindowRequest>();
     module.add::<crate::model::Snapshot>();
+    module.add::<crate::agent::UrlAnswer>();
+    module.add::<crate::agent::PortAnswer>();
+    module.add::<crate::agent::CommandError>();
     module.finish()
 }
 

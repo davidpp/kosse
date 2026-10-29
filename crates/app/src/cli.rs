@@ -25,9 +25,18 @@ pub enum Command {
     Open(OpenArgs),
     /// Serve the dashboard and API in the foreground until interrupted (no tray).
     Serve(ServeArgs),
-    /// Print the TCP listeners on this machine and their processes: the running instance's
-    /// snapshot, or a one-shot scan when none runs.
+    /// Print the TCP listeners on this machine and their processes as a Markdown table (one row
+    /// per port), then the configured services no process matches: the running instance's
+    /// snapshot, or a one-shot scan when none runs. Exits 3 when `--here` is outside a project, 4
+    /// when nothing could be observed.
     List(ListArgs),
+    /// Print the URL (`http(s)://localhost:<port>/`) of a service or port that answered HTTP.
+    /// Exits 1 with the endpoint's probe state on stderr when there is none, or when the name
+    /// matches several services.
+    Url(UrlArgs),
+    /// Say whether a TCP port is free, as far as this user can see, or which process, project
+    /// and service listen on it.
+    Port(PortArgs),
     /// Project profiles: the schema, the configuration file, moved projects.
     #[command(subcommand)]
     Config(ConfigCommand),
@@ -218,14 +227,75 @@ pub enum StartupCommand {
 
 #[derive(Debug, clap::Args)]
 pub struct ListArgs {
-    /// Print the scan as JSON: the versioned `Snapshot` contract; see its `schemaVersion`.
+    /// Print the scan as JSON: the versioned `Snapshot` contract (see its `schemaVersion`),
+    /// holding only what the filters keep.
     #[arg(long)]
     pub json: bool,
 
+    #[command(flatten)]
+    pub scope: Scope,
+
+    /// Only the services listening on this port.
+    #[arg(long)]
+    pub port: Option<u16>,
+
+    /// Only the services matching this configured service (ID or name).
+    #[arg(long, value_name = "NAME")]
+    pub service: Option<String>,
+
+    #[command(flatten)]
+    pub instance: InstanceArgs,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct UrlArgs {
+    /// A configured service (ID or name), or a port.
+    pub target: String,
+
+    /// Print the `UrlAnswer` JSON record; errors as a `CommandError` on stderr.
+    #[arg(long)]
+    pub json: bool,
+
+    #[command(flatten)]
+    pub scope: Scope,
+
+    #[command(flatten)]
+    pub instance: InstanceArgs,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct PortArgs {
+    /// The TCP port.
+    pub port: u16,
+
+    /// Print the `PortAnswer` JSON record; errors as a `CommandError` on stderr.
+    #[arg(long)]
+    pub json: bool,
+
+    #[command(flatten)]
+    pub instance: InstanceArgs,
+}
+
+/// Which project a read command is about.
+#[derive(Debug, clap::Args)]
+pub struct Scope {
+    /// Only the project of the current directory (its worktree root, found as attribution finds
+    /// it). Fails outside a project instead of printing everything.
+    #[arg(long, conflicts_with = "project")]
+    pub here: bool,
+
+    /// Only this project: its root (as `kosse list --json` prints it) or a directory inside it.
+    #[arg(long, value_name = "DIR")]
+    pub project: Option<std::path::PathBuf>,
+}
+
+/// The Kossé instance a read command asks before scanning itself.
+#[derive(Debug, clap::Args)]
+pub struct InstanceArgs {
     /// The port of the running instance to ask; scans once when no Kossé answers there (or with
     /// 0).
-    #[arg(long, default_value_t = DEFAULT_PORT)]
-    pub port: u16,
+    #[arg(long, value_name = "PORT", default_value_t = DEFAULT_PORT)]
+    pub instance_port: u16,
 }
 
 #[derive(Debug, clap::Args)]

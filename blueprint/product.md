@@ -10,6 +10,10 @@
 
 No project registration or modified launch commands should be necessary. Optional machine-local project profiles improve attribution and links without touching repositories. UI customization writes centrally; repo-local metadata is an optional shareable alternative. See [project metadata](project-metadata.md). Observed runtime facts always remain distinguishable from declared intent.
 
+## Agent surface
+
+Coding agents are users too: one `kosse` call answers which services run for this worktree, which URL or port to use, whether a port is free, and (later) waits, stops and customizes under the same policy. Markdown tables by default, `--json` for tooling. See [agent surface](agent-surface.md).
+
 ## Dashboard surface
 
 Served on loopback; shown in Kossé's own window (opened from the tray or on explicit launch) and reachable from any browser at the same URL.

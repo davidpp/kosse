@@ -9,6 +9,7 @@ Ship a small tool a developer wants to keep running, not a general-purpose proce
 | [Product](product.md) | Scope, interactions, acceptance |
 | [Architecture](architecture.md) | Stack, service model, security, command contract |
 | [Project metadata](project-metadata.md) | Optional integration without mandatory orchestration |
+| [Agent surface](agent-surface.md) | Commands and contracts for coding agents (S13–S20) |
 | [Implementation plan](implementation-plan.md) | Work packages and dependency graph; live status stays in the tracker |
 | [Verification](verification.md) | Fixtures, entry-point proof, completion gates |
 | [Loop](loop.md) | How a fresh agent resumes and executes bounded work |

@@ -316,7 +316,7 @@ async function main(): Promise<void> {
   assert(after.artifactSha256 === sha256(second), "the record names the rebuilt archive");
   assert(before.artifactSha256 !== after.artifactSha256, "a different archive was installed");
   assert(sha256(configFile) === configDigest, "the configuration file is byte-identical");
-  const listed: Snapshot = JSON.parse(kosse(["list", "--json", "--port", "0"]).stdout);
+  const listed: Snapshot = JSON.parse(kosse(["list", "--json", "--instance-port", "0"]).stdout);
   assert(
     listed.observation?.profiles.some(
       (profile) => profile.root === service.found.project && profile.name === "Packaged shop",
