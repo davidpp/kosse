@@ -166,7 +166,10 @@ async function sweep(size: string) {
   await setAllListeners(true);
   await fits(`${size} all listeners`);
 
-  // Kossé's own row: no Stop, and it says why.
+  // Kossé's own row: no Stop, and it says why. It appears with the all-listeners render.
+  await until(
+    `[...document.querySelectorAll("li[data-row]")].some((e) => e.textContent.includes("this Kossé"))`,
+  );
   const own = (await page(`(() => {
     const r = [...document.querySelectorAll("li[data-row]")].find((e) => e.textContent.includes("this Kossé"));
     if (!r) return null;
