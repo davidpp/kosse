@@ -14,7 +14,8 @@
 //!    no request.
 //! 3. Plain HTTP/1.1 `GET /`, `Host: localhost:<port>`. Once `GET /` got an HTTP response from
 //!    that identity and port, later probes request the service profile's validated `probePath`
-//!    instead, if it has one. No credentials or cookies. The head must arrive within
+//!    instead, if it has one. No credentials or cookies; the sending instance's opaque ID is in
+//!    [`probe::INSTANCE_HEADER`]. The head must arrive within
 //!    [`HEAD_TIMEOUT`]; at most [`BODY_LIMIT`] of the body is read, within [`BODY_TIMEOUT`].
 //!    Redirects are recorded (redacted), never followed.
 //! 4. If the answer looked like TLS (a TLS record, a silent close, or a 400 that asks for HTTPS),
@@ -200,12 +201,19 @@ impl Probes {
         due
     }
 
-    async fn probe(&self, key: Key, target: SocketAddr, path: &str, requested: bool) -> HttpProbe {
+    async fn probe(
+        &self,
+        key: Key,
+        target: SocketAddr,
+        path: &str,
+        requested: bool,
+        instance: &str,
+    ) -> HttpProbe {
         let Ok(_permit) = self.limit.acquire().await else {
             return HttpProbe::Pending;
         };
         let probed_at_ms = unix_millis(SystemTime::now());
-        let result = probe_endpoint(target, path, &self.tls).await;
+        let result = probe_endpoint(target, path, instance, &self.tls).await;
         let mut state = self.lock();
         state.in_flight.remove(&key);
         let verified_http = if path == "/" {
@@ -231,19 +239,20 @@ impl Probes {
     /// One user-requested probe ("try HTTP") of an endpoint that may receive one (see
     /// `probe::requested_target`); the result also appears in the next snapshot, marked
     /// `requested`. `configured` is the profile's validated `probePath`, requested only once
-    /// `GET /` has verified the endpoint as HTTP.
+    /// `GET /` has verified the endpoint as HTTP. `instance` is this instance's `Snapshot.instance`.
     pub async fn request(
         &self,
         key: Key,
         target: SocketAddr,
         configured: Option<&str>,
+        instance: &str,
     ) -> HttpProbe {
         let path = {
             let mut state = self.lock();
             state.in_flight.insert(key);
             path_for(&state, key, configured)
         };
-        self.probe(key, target, &path, true).await
+        self.probe(key, target, &path, true, instance).await
     }
 }
 
@@ -281,8 +290,9 @@ pub async fn run(
         if let Some(snapshot) = latest {
             for (key, target, path) in probes.claim_due(&snapshot, Instant::now()) {
                 let probes = Arc::clone(&probes);
+                let instance = snapshot.instance.clone();
                 running.spawn(async move {
-                    probes.probe(key, target, &path, false).await;
+                    probes.probe(key, target, &path, false, &instance).await;
                 });
             }
         }
@@ -302,19 +312,24 @@ pub fn open_url(tls: bool, port: u16) -> String {
 }
 
 /// Probes one endpoint as described in the module documentation, requesting `path`.
-async fn probe_endpoint(target: SocketAddr, path: &str, tls: &TlsClient) -> ProbeResult {
+async fn probe_endpoint(
+    target: SocketAddr,
+    path: &str,
+    instance: &str,
+    tls: &TlsClient,
+) -> ProbeResult {
     // Checked before connecting: a path the request builder refuses must never surface as a
     // protocol failure (which would then send a TLS ClientHello to a plain HTTP server).
     if hyper::http::uri::PathAndQuery::try_from(path).is_err() {
         return ProbeResult::InvalidPath;
     }
-    let plain = match attempt(target, path, None).await {
+    let plain = match attempt(target, path, instance, None).await {
         Attempt::Answered(answer) if answer.asks_for_https => Some(answer.result),
         Attempt::Answered(answer) => return answer.result,
         Attempt::Done(result) => return result,
         Attempt::MaybeTls => None,
     };
-    match attempt(target, path, Some(tls)).await {
+    match attempt(target, path, instance, Some(tls)).await {
         Attempt::Answered(answer) => answer.result,
         Attempt::Done(failed @ ProbeResult::TlsFailed { .. }) => failed,
         Attempt::Done(result) => plain.unwrap_or(result),
@@ -389,7 +404,12 @@ enum Attempt {
     Done(ProbeResult),
 }
 
-async fn attempt(target: SocketAddr, path: &str, tls: Option<&TlsClient>) -> Attempt {
+async fn attempt(
+    target: SocketAddr,
+    path: &str,
+    instance: &str,
+    tls: Option<&TlsClient>,
+) -> Attempt {
     let stream = match tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(target)).await {
         Ok(Ok(stream)) => stream,
         Ok(Err(_)) => return Attempt::Done(ProbeResult::Refused),
@@ -404,7 +424,7 @@ async fn attempt(target: SocketAddr, path: &str, tls: Option<&TlsClient>) -> Att
             Err(_) => {}
         }
         let io = Recorded::new(stream, Arc::clone(&received));
-        return match exchange(io, target.port(), path, false).await {
+        return match exchange(io, target.port(), path, instance, false).await {
             Ok(answer) => Attempt::Answered(answer),
             Err(Failure::TimedOut) => Attempt::Done(ProbeResult::TimedOut),
             Err(Failure::InvalidRequest) => Attempt::Done(ProbeResult::InvalidPath),
@@ -450,7 +470,7 @@ async fn attempt(target: SocketAddr, path: &str, tls: Option<&TlsClient>) -> Att
         }
         Err(_) => return Attempt::Done(ProbeResult::TimedOut),
     };
-    match exchange(stream, target.port(), path, true).await {
+    match exchange(stream, target.port(), path, instance, true).await {
         Ok(answer) => Attempt::Answered(answer),
         Err(Failure::TimedOut) => Attempt::Done(ProbeResult::TimedOut),
         Err(Failure::Protocol) => Attempt::Done(ProbeResult::NotHttp),
@@ -480,7 +500,13 @@ impl Drop for AbortOnDrop {
     }
 }
 
-async fn exchange<S>(io: S, port: u16, path: &str, tls: bool) -> Result<Answer, Failure>
+async fn exchange<S>(
+    io: S,
+    port: u16,
+    path: &str,
+    instance: &str,
+    tls: bool,
+) -> Result<Answer, Failure>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -499,6 +525,7 @@ where
             USER_AGENT,
             concat!("kosse/", env!("CARGO_PKG_VERSION"), " (probe)"),
         )
+        .header(probe::INSTANCE_HEADER, instance)
         .header(ACCEPT, "text/html,*/*;q=0.8")
         .header(CONNECTION, "close")
         .body(Empty::<Bytes>::new())
@@ -712,7 +739,7 @@ mod tests {
             let target = listener.local_addr().expect("addr");
             for hostile in ["/<script>", "/a>b", "/`id`", "/a b"] {
                 assert!(kosse_core::profiles::validate::probe_path(hostile).is_err());
-                let result = probe_endpoint(target, hostile, &TlsClient::default()).await;
+                let result = probe_endpoint(target, hostile, "test", &TlsClient::default()).await;
                 assert_eq!(result, ProbeResult::InvalidPath, "{hostile}");
             }
             let accepted =

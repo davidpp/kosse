@@ -469,6 +469,17 @@ impl EventStream {
 }
 
 /// Polls `condition` every 100 ms until it holds or `timeout` passes.
+/// The requests in `received` (a fixture's recorded connections) that the Kossé instance
+/// `instance` sent. Any other Kossé on the machine, such as the developer's own, probes the same
+/// fixture projects; its requests carry its own instance ID and are not counted.
+pub fn sent_by(received: Vec<String>, instance: &str) -> Vec<String> {
+    let line = format!("\r\n{}: {instance}\r\n", kosse_core::probe::INSTANCE_HEADER);
+    received
+        .into_iter()
+        .filter(|request| request.to_ascii_lowercase().contains(&line))
+        .collect()
+}
+
 pub fn eventually<T>(timeout: Duration, mut condition: impl FnMut() -> Option<T>) -> Option<T> {
     let deadline = Instant::now() + timeout;
     loop {

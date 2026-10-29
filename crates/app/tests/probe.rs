@@ -1,6 +1,8 @@
 //! HTTP enrichment through the real binary: owned fixtures in every `--serve` mode, observed via
 //! `/api/snapshot` of a running `kosse serve`. Each server probes only its own test's fixtures
-//! (`--probe-only`), so request counts are exact and no real service is ever probed.
+//! (`--probe-only`), so no real service is ever probed. Counts are exact per server: they include
+//! only requests that carry its instance ID, so a developer's own running Kossé, which probes the
+//! fixture projects too, does not disturb them.
 #![expect(
     clippy::expect_used,
     clippy::panic,
@@ -21,7 +23,7 @@ use kosse_fixtures::{
     protocol::{REDIRECT_PATH, Serve},
     repo::Sandbox,
 };
-use support::{RawRequest, Server, eventually};
+use support::{RawRequest, Server, eventually, sent_by};
 
 const V4: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const V6: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
@@ -84,6 +86,11 @@ fn results(server: &Server, fixtures: &[&Fixture]) -> Vec<(u64, ProbeResult)> {
     .unwrap_or_else(|| panic!("not every fixture was probed within {PROBED_WITHIN:?}"))
 }
 
+/// The requests `fixture` received from `server`.
+fn requests(server: &Server, fixture: &Fixture) -> Vec<String> {
+    sent_by(fixture.received(port(fixture)), &server.snapshot().instance)
+}
+
 fn port(fixture: &Fixture) -> u16 {
     fixture.record().endpoints[0].port()
 }
@@ -118,13 +125,8 @@ fn responses_of_any_status_are_reachable_http_with_loopback_urls() {
         assert_eq!(*seen, status);
         assert_eq!(url, &format!("http://localhost:{}/", port(fixture)));
         assert!(!tls && location.is_none() && !body_truncated);
-        // One probe, one plain GET: no TLS retry for an HTTP answer, nothing from anyone else.
-        assert_eq!(
-            fixture.received(port(fixture)).len(),
-            1,
-            "{}",
-            fixture.pid()
-        );
+        // One probe, one plain GET: no TLS retry for an HTTP answer.
+        assert_eq!(requests(&server, fixture).len(), 1, "{}", fixture.pid());
     }
     let ProbeResult::Response { title: page, .. } = &found[0].1 else {
         unreachable!()
@@ -135,8 +137,9 @@ fn responses_of_any_status_are_reachable_http_with_loopback_urls() {
     };
     assert_eq!(json, &None, "a JSON 404 has no title");
 
-    // The plain GET carries the loopback Host and nothing that identifies the user.
-    let request = title.received(port(&title)).remove(0).to_ascii_lowercase();
+    // The plain GET carries the loopback Host, the instance's opaque snapshot ID and nothing
+    // that identifies the user.
+    let request = requests(&server, &title).remove(0).to_ascii_lowercase();
     assert!(request.starts_with("get / http/1.1\r\n"), "{request}");
     assert!(
         request.contains(&format!("host: localhost:{}\r\n", port(&title))),
@@ -186,15 +189,12 @@ fn hanging_huge_and_redirecting_endpoints_are_bounded() {
     assert!(!location.contains("fixture-redirect-secret"));
     // Recorded, not followed: the target is the fixture itself, which saw exactly one request,
     // `GET /`, and never `GET /next`.
-    let requests = redirect.received(port(&redirect));
-    assert_eq!(requests.len(), 1, "{requests:?}");
-    assert!(
-        requests[0].starts_with("GET / HTTP/1.1\r\n"),
-        "{requests:?}"
-    );
-    assert!(!requests[0].contains(REDIRECT_PATH));
+    let sent = requests(&server, &redirect);
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert!(sent[0].starts_with("GET / HTTP/1.1\r\n"), "{sent:?}");
+    assert!(!sent[0].contains(REDIRECT_PATH));
     for fixture in [&hang, &huge] {
-        assert_eq!(fixture.received(port(fixture)).len(), 1);
+        assert_eq!(requests(&server, fixture).len(), 1);
     }
     // Probing is cached: a later snapshot reuses the same results.
     let later = server.snapshot();
@@ -222,8 +222,13 @@ fn self_signed_tls_is_a_certificate_failure_and_banners_get_no_request() {
     assert_eq!(*failure, TlsFailure::Certificate, "{reason}");
     assert!(reason.contains("certificate"), "{reason}");
     assert_eq!(found[1].1, ProbeResult::NotHttp);
-    // The banner server spoke first: one connection, closed without writing anything.
-    assert_eq!(banner.received(port(&banner)), [String::new()]);
+    // The banner server spoke first: connected to, closed without writing anything. A silent
+    // connection carries no instance ID, so another running Kossé's may be among them.
+    let connections = banner.received(port(&banner));
+    assert!(
+        !connections.is_empty() && connections.iter().all(String::is_empty),
+        "{connections:?}"
+    );
 }
 
 #[test]
@@ -249,7 +254,7 @@ fn only_attributed_processes_are_probed_automatically_and_try_http_is_explicit()
         }
     );
     assert_eq!(
-        loose.received(port(&loose)).len(),
+        requests(&server, &loose).len(),
         0,
         "never probed on its own"
     );
@@ -275,7 +280,7 @@ fn only_attributed_processes_are_probed_automatically_and_try_http_is_explicit()
     else {
         panic!("requested probe: {probed:?}");
     };
-    assert_eq!(loose.received(port(&loose)).len(), 1);
+    assert_eq!(requests(&server, &loose).len(), 1);
     let limited = server.post_json("/api/probe", &token, &body(started));
     assert_eq!(limited.status, 429);
     assert_eq!(limited.error_code(), "rateLimited");
@@ -311,7 +316,7 @@ fn only_attributed_processes_are_probed_automatically_and_try_http_is_explicit()
     );
     assert_eq!(foreign.error_code(), "originNotAllowed");
     assert_eq!(
-        loose.received(port(&loose)).len(),
+        requests(&server, &loose).len(),
         1,
         "refused requests probe nothing"
     );
@@ -329,5 +334,9 @@ fn a_one_shot_list_reports_candidates_as_pending() {
     assert!(output.status.success());
     let snapshot: Snapshot = serde_json::from_slice(&output.stdout).expect("snapshot");
     assert_eq!(probe_of(&snapshot, &title), HttpProbe::Pending);
-    assert_eq!(title.received(port(&title)).len(), 0, "list never probes");
+    assert_eq!(
+        sent_by(title.received(port(&title)), &snapshot.instance).len(),
+        0,
+        "list never probes"
+    );
 }

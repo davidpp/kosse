@@ -12,7 +12,7 @@ mod support;
 use std::{
     collections::BTreeMap,
     fs,
-    io::ErrorKind,
+    io::{ErrorKind, Read as _},
     net::{IpAddr, Ipv4Addr, TcpListener},
     os::unix::fs::{PermissionsExt, symlink},
     path::{Path, PathBuf},
@@ -35,7 +35,7 @@ use kosse_fixtures::{
     repo::{Sandbox, git, init_repo},
 };
 use serde_json::{Value, json};
-use support::{RawRequest, Server, eventually};
+use support::{RawRequest, Server, eventually, sent_by};
 
 const V4: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 /// A scan (3 s cadence), the file check interval and slack.
@@ -478,13 +478,48 @@ fn profiles_are_inert_data() {
         (service_of(&observation, &fixture).profile == matched("web")).then_some(())
     })
     .expect("serve applies the profile too");
+    let ours = server.snapshot().instance;
     let (status, _) = server.terminate();
     assert!(status.success());
+    let intrusions = connections_except_foreign_probes(&canary, &ours);
     assert!(
-        matches!(canary.accept(), Err(error) if error.kind() == ErrorKind::WouldBlock),
-        "nothing may connect to a $schema, include or link host"
+        intrusions.is_empty(),
+        "nothing may connect to a $schema, include or link host: {intrusions:?}"
     );
     assert!(!marker.exists(), "nothing in a profile is executed");
+}
+
+/// What each pending connection to `listener` sent, except probes by a Kossé instance other than
+/// `ours`: this test process runs in a project, so a developer's own running Kossé probes its
+/// listeners too. Accepted connections stay open until all are read, so no prober sees a close
+/// and retries over TLS mid-drain.
+fn connections_except_foreign_probes(listener: &TcpListener, ours: &str) -> Vec<String> {
+    let marker = format!("\r\n{}: ", kosse_core::probe::INSTANCE_HEADER);
+    let mut open = Vec::new();
+    let mut others = Vec::new();
+    loop {
+        let mut stream = match listener.accept() {
+            Ok((stream, _)) => stream,
+            Err(error) if error.kind() == ErrorKind::WouldBlock => return others,
+            Err(error) => panic!("accept: {error}"),
+        };
+        stream.set_nonblocking(false).expect("blocking");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .expect("read timeout");
+        let mut head = [0; 4096];
+        let read = stream.read(&mut head).unwrap_or(0);
+        let text = String::from_utf8_lossy(&head[..read]).to_ascii_lowercase();
+        let foreign = text.split(&marker).skip(1).any(|rest| {
+            rest.split("\r\n")
+                .next()
+                .is_some_and(|instance| instance != ours)
+        });
+        if !foreign {
+            others.push(text);
+        }
+        open.push(stream);
+    }
 }
 
 fn post_profile(
@@ -828,7 +863,11 @@ fn only_a_central_declaration_makes_a_probe_candidate_and_paths_wait_for_verifie
     );
     thread::sleep(Duration::from_secs(4));
     assert!(
-        fixture.received(port_of(&fixture)).is_empty(),
+        sent_by(
+            fixture.received(port_of(&fixture)),
+            &server.snapshot().instance
+        )
+        .is_empty(),
         "nothing probed on a repository's word"
     );
 
@@ -852,7 +891,8 @@ fn only_a_central_declaration_makes_a_probe_candidate_and_paths_wait_for_verifie
         matches!(result, ProbeResult::Response { status: 404, .. }),
         "{result:?}"
     );
-    let first = fixture.received(port_of(&fixture));
+    let instance = server.snapshot().instance;
+    let first = sent_by(fixture.received(port_of(&fixture)), &instance);
     assert_eq!(first.len(), 1, "{first:?}");
     assert!(first[0].starts_with("GET / HTTP/1.1\r\n"), "{first:?}");
 
@@ -866,7 +906,7 @@ fn only_a_central_declaration_makes_a_probe_candidate_and_paths_wait_for_verifie
     })
     .expect("requested probe");
     assert!(probed.text().contains("404"), "{}", probed.text());
-    let received = fixture.received(port_of(&fixture));
+    let received = sent_by(fixture.received(port_of(&fixture)), &instance);
     assert_eq!(received.len(), 2, "{received:?}");
     assert!(
         received[1].starts_with("GET /healthz?ready=1 HTTP/1.1\r\n"),

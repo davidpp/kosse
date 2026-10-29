@@ -95,6 +95,9 @@ fn start(args: &WindowArgs) -> Result<Infallible, WindowError> {
     let webview = WebViewBuilder::new()
         .with_url(&args.url)
         .with_incognito(true)
+        // A click on the inactive window both activates it and reaches the page (macOS otherwise
+        // swallows the first click, so a button seems to do nothing).
+        .with_accept_first_mouse(true)
         .with_navigation_handler(move |url| {
             if navigation_origin.contains(&url) {
                 return true;

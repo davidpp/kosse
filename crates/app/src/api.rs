@@ -344,7 +344,13 @@ pub async fn probe(
             .find(|service| service.process.identity == request.identity)?;
         profiles::probe_path(observation, service, request.port)
     });
-    Json(state.probes.request(key, target, path).await).into_response()
+    Json(
+        state
+            .probes
+            .request(key, target, path, &snapshot.instance)
+            .await,
+    )
+    .into_response()
 }
 
 pub async fn stop(

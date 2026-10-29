@@ -12,6 +12,11 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use crate::model::{Endpoint, HttpProbe, ProbeSkip};
 
+/// The request header that names the sending instance on every probe: its `Snapshot.instance`,
+/// the same opaque per-process ID the API already serves. Lets a server (or a test fixture) tell
+/// apart probes from several Kossé instances on one machine.
+pub const INSTANCE_HEADER: &str = "x-kosse-instance";
+
 /// Ports of common protocols that are not HTTP (SSH, SMTP, DNS, POP3, IMAP, databases, caches,
 /// message brokers, the Erlang port mapper, Zookeeper).
 const NON_HTTP_PORTS: [u16; 22] = [
