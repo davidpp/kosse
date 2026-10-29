@@ -23,7 +23,7 @@ use std::{
 use muda::{Menu, PredefinedMenuItem, Submenu};
 use tao::{
     dpi::LogicalSize,
-    event::{Event, WindowEvent},
+    event::{Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
     platform::macos::{ActivationPolicy, EventLoopExtMacOS},
     window::WindowBuilder,
@@ -126,7 +126,6 @@ fn start(args: &WindowArgs) -> Result<Infallible, WindowError> {
     serve_control(&proxy, &webview, mode);
     listen_to_owner(proxy, origin);
     if mode.visible() {
-        activation::set_app_icon();
         activation::activate_self();
     }
     say("ready");
@@ -136,6 +135,9 @@ fn start(args: &WindowArgs) -> Result<Infallible, WindowError> {
         // Owned by the loop so the menu bar stays alive with the window.
         let _menu = &menu;
         match event {
+            // Not before the loop runs: the Dock tile exists only once tao applies the Regular
+            // policy in `applicationDidFinishLaunching`, and an icon set earlier never reaches it.
+            Event::NewEvents(StartCause::Init) if mode.visible() => activation::set_app_icon(),
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
