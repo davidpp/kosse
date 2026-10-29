@@ -46,6 +46,10 @@ Only **default** and **attention**. The latter cuts a 2 × 2 pt notch from the l
 
 The 18 pt template has black RGB and transparent alpha, a 14 pt tall glyph in a 16 pt inner grid, and whole-pixel stem and notch edges at 1×. macOS supplies the tint. No animation. The preview simulates tint on menu-bar greys; native template rendering remains to be checked in the app.
 
+## Preview builds
+
+Development and preview (debug) builds mirror the K, so a branch build is never mistaken for the installed app. The mirror happens inside the same 16-unit grid, so stem and notch edges stay on whole pixels and the attention notch lands on the stem's outer edge. The tray has `preview` and `preview-attention`, with the same template rules. The app icon also inverts its tile: a Fleuve K on a Fond tile with a Fleuve rim (`app-icon-preview-1024.png`, `Kosse-preview.icns`). Release builds never use these.
+
 ## Voice
 
 Strictly plain, specific and unhurried, written for a developer looking after their own services. Never infer “forgotten”, “safe” or “healthy” from observations alone. No French in the interface; the name carries the Québec link.

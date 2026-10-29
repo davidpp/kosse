@@ -23,8 +23,9 @@ const C = colours(),
 const write = (name, data) => writeFileSync(root + name, data);
 const svg = (box, body) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${box}" role="img" aria-label="Kosse">${body}</svg>\n`;
-const glyph = (colour, small = false, attention = false) =>
-  `<path fill="${colour}" d="${attention ? attentionPath(small ? SMALL : {}) : markPath(small ? SMALL : {})}"/>`;
+// Preview (debug) builds mirror the K inside the same 16-unit grid, so whole-pixel edges survive.
+const glyph = (colour, small = false, attention = false, mirrored = false) =>
+  `<path fill="${colour}"${mirrored ? ' transform="matrix(-1 0 0 1 16 0)"' : ""} d="${attention ? attentionPath(small ? SMALL : {}) : markPath(small ? SMALL : {})}"/>`;
 const mark = (colour, small = false) => svg("0 0 16 16", glyph(colour, small));
 const raster = (source, size) => sharp(Buffer.from(source)).resize(size, size).png().toBuffer();
 for (const [name, colour] of [
@@ -82,25 +83,32 @@ function squircle(inset, size, n = 5) {
   return `M${points.join("L")}Z`;
 }
 // macOS canvas: 100 px clear margin, 824 px tile. Glyph occupies 70% of the tile.
-const icon = (small = false, favicon = false) => {
+// The preview icon inverts the tile (Fleuve K on Fond, Fleuve rim) on top of the mirrored K.
+const icon = (small = false, favicon = false, preview = false) => {
   const inset = favicon ? 0 : 100,
     tile = 1024 - inset * 2;
   const extent = tile * (favicon ? 0.84 : small ? 0.78 : 0.76);
+  const rim = small ? 56 : 40;
+  const ground = preview
+    ? `<path fill="${C.accent}" d="${squircle(inset, tile)}"/><path fill="${C.canvas}" d="${squircle(inset + rim, tile - rim * 2)}"/>`
+    : `<path fill="${C.accent}" d="${squircle(inset, tile)}"/>`;
   return svg(
     "0 0 1024 1024",
-    `<path fill="${C.accent}" d="${squircle(inset, tile)}"/><g transform="translate(${(1024 - extent) / 2} ${(1024 - extent) / 2}) scale(${extent / 16})">${glyph("#FFFFFF", small)}</g>`,
+    `${ground}<g transform="translate(${(1024 - extent) / 2} ${(1024 - extent) / 2}) scale(${extent / 16})">${glyph(preview ? C.accent : "#FFFFFF", small, false, preview)}</g>`,
   );
 };
 write("app-icon.svg", icon());
 write("app-icon-1024.png", await raster(icon(), 1024));
+write("app-icon-preview.svg", icon(false, false, true));
+write("app-icon-preview-1024.png", await raster(icon(false, false, true), 1024));
 write("favicon.svg", icon(true, true));
 write("favicon-32.png", await raster(icon(true, true), 32));
 const renderJobs = [];
 mkdirSync(root + "tray", { recursive: true });
-for (const state of ["default", "attention"]) {
+for (const state of ["default", "attention", "preview", "preview-attention"]) {
   const tray = svg(
     "0 0 18 18",
-    `<g transform="translate(1 1)">${glyph("#000000", true, state === "attention")}</g>`,
+    `<g transform="translate(1 1)">${glyph("#000000", true, state.endsWith("attention"), state.startsWith("preview"))}</g>`,
   );
   write(`tray/tray-${state}.svg`, tray);
   for (const scale of [1, 2])
@@ -110,27 +118,34 @@ for (const state of ["default", "attention"]) {
       ),
     );
 }
-// Retain the iconset as inspectable source for iconutil, with point-size-aware masters.
-mkdirSync(root + "Kosse.iconset", { recursive: true });
-for (const size of [16, 32, 128, 256, 512])
-  for (const scale of [1, 2]) {
-    renderJobs.push(
-      raster(icon(size <= 32), size * scale).then((data) =>
-        write(`Kosse.iconset/icon_${size}x${size}${scale === 2 ? "@2x" : ""}.png`, data),
-      ),
-    );
-  }
+// Retain the iconsets as inspectable source for iconutil, with point-size-aware masters.
+const iconsets = [
+  ["Kosse", false],
+  ["Kosse-preview", true],
+];
+for (const [name, preview] of iconsets) {
+  mkdirSync(root + `${name}.iconset`, { recursive: true });
+  for (const size of [16, 32, 128, 256, 512])
+    for (const scale of [1, 2]) {
+      renderJobs.push(
+        raster(icon(size <= 32, false, preview), size * scale).then((data) =>
+          write(`${name}.iconset/icon_${size}x${size}${scale === 2 ? "@2x" : ""}.png`, data),
+        ),
+      );
+    }
+}
 await Promise.all(renderJobs);
 let iconError;
-try {
-  execFileSync(
-    "/usr/bin/iconutil",
-    ["-c", "icns", root + "Kosse.iconset", "-o", root + "Kosse.icns"],
-    { stdio: "pipe" },
-  );
-} catch (error) {
-  iconError = error;
-}
+for (const [name] of iconsets)
+  try {
+    execFileSync(
+      "/usr/bin/iconutil",
+      ["-c", "icns", root + `${name}.iconset`, "-o", root + `${name}.icns`],
+      { stdio: "pipe" },
+    );
+  } catch (error) {
+    iconError ??= error;
+  }
 const tokens = {
   $description:
     "Kosse — Le raccord. Scheme groups contain W3C DTCG OKLCH colour tokens; hex preserves the accepted sRGB source.",
@@ -226,6 +241,10 @@ Only **default** and **attention**. The latter cuts a 2 × 2 pt notch from the l
 
 The 18 pt template has black RGB and transparent alpha, a 14 pt tall glyph in a 16 pt inner grid, and whole-pixel stem and notch edges at 1×. macOS supplies the tint. No animation. The preview simulates tint on menu-bar greys; native template rendering remains to be checked in the app.
 
+## Preview builds
+
+Development and preview (debug) builds mirror the K, so a branch build is never mistaken for the installed app. The mirror happens inside the same 16-unit grid, so stem and notch edges stay on whole pixels and the attention notch lands on the stem's outer edge. The tray has \`preview\` and \`preview-attention\`, with the same template rules. The app icon also inverts its tile: a Fleuve K on a Fond tile with a Fleuve rim (\`app-icon-preview-1024.png\`, \`Kosse-preview.icns\`). Release builds never use these.
+
 ## Voice
 
 Strictly plain, specific and unhurried, written for a developer looking after their own services. Never infer “forgotten”, “safe” or “healthy” from observations alone. No French in the interface; the name carries the Québec link.
@@ -276,7 +295,11 @@ add(
   790,
   265,
 );
-sheet += label("Tray · actual 18 px and 36 px exports · default / attention", 48, 445);
+sheet += label(
+  "Tray · actual 18 px and 36 px exports · default / attention / preview / preview attention",
+  48,
+  445,
+);
 for (const [i, bg, fg] of [
   [0, "#E4E4E4", "#000000"],
   [1, "#303030", "#FFFFFF"],
@@ -286,7 +309,7 @@ for (const [i, bg, fg] of [
     `<rect x="48" y="${top}" width="1504" height="84" fill="${bg}"/>` +
     label("1×", 76, top + 48, 18, fg) +
     label("2× pixels", 450, top + 48, 18, fg);
-  for (const [j, state] of ["default", "attention"].entries())
+  for (const [j, state] of ["default", "attention", "preview", "preview-attention"].entries())
     for (const scale of [1, 2]) {
       const buf = readFileSync(root + `tray/tray-${state}${scale === 2 ? "@2x" : ""}.png`);
       const tinted = i
@@ -294,7 +317,11 @@ for (const [i, bg, fg] of [
         : Promise.resolve(buf);
       previewJobs.push(
         tinted.then((data) =>
-          add(data, (scale === 1 ? 180 : 610) + j * 130, top + Math.floor((84 - 18 * scale) / 2)),
+          add(
+            data,
+            scale === 1 ? 150 + j * 70 : 610 + j * 110,
+            top + Math.floor((84 - 18 * scale) / 2),
+          ),
         ),
       );
     }
@@ -302,11 +329,15 @@ for (const [i, bg, fg] of [
 sheet +=
   label("App icon · 1024 px master", 48, 710) +
   label("32 px optical icon", 1170, 760) +
-  label("Favicon · 16 / 32 px", 1170, 880);
+  label("Favicon · 16 / 32 px", 1170, 880) +
+  label("Preview builds · mirrored", 1170, 1000);
 add(readFileSync(root + "app-icon-1024.png"), 48, 735);
 add(readFileSync(root + "Kosse.iconset/icon_32x32.png"), 1170, 790);
 add(await raster(icon(true, true), 16), 1170, 910);
 add(readFileSync(root + "favicon-32.png"), 1220, 902);
+add(await raster(icon(false, false, true), 256), 1170, 1025);
+add(readFileSync(root + "Kosse-preview.iconset/icon_32x32.png"), 1170, 1300);
+add(readFileSync(root + "Kosse-preview.iconset/icon_16x16.png"), 1220, 1308);
 sheet += label("Palette · light / dark", 48, 1790);
 for (const [i, p] of palette.entries()) {
   const sx = 48 + (i % 7) * 216,
@@ -337,16 +368,24 @@ const entries = [
   ...["app-icon.svg", "app-icon-1024.png", "Kosse.icns", "favicon.svg", "favicon-32.png"].map(
     (n) => [n, "Le raccord on a generated Fleuve superellipse; tools/generate.mjs"],
   ),
-  ...[16, 32, 128, 256, 512].flatMap((s) =>
-    [1, 2].map((d) => [
-      `Kosse.iconset/icon_${s}x${s}${d === 2 ? "@2x" : ""}.png`,
-      "Generated icon; optical master at 16 and 32 pt",
-    ]),
+  ...["app-icon-preview.svg", "app-icon-preview-1024.png", "Kosse-preview.icns"].map((n) => [
+    n,
+    "Preview (debug) builds: mirrored Le raccord on an inverted Fond tile with a Fleuve rim; tools/generate.mjs",
+  ]),
+  ...["Kosse", "Kosse-preview"].flatMap((set) =>
+    [16, 32, 128, 256, 512].flatMap((s) =>
+      [1, 2].map((d) => [
+        `${set}.iconset/icon_${s}x${s}${d === 2 ? "@2x" : ""}.png`,
+        "Generated icon; optical master at 16 and 32 pt",
+      ]),
+    ),
   ),
-  ...["default", "attention"].flatMap((s) =>
+  ...["default", "attention", "preview", "preview-attention"].flatMap((s) =>
     [".svg", ".png", "@2x.png"].map((e) => [
       `tray/tray-${s}${e}`,
-      "Parametric monochrome Le raccord; tools/mark.mjs",
+      s.startsWith("preview")
+        ? "Parametric monochrome Le raccord, mirrored for preview builds; tools/mark.mjs"
+        : "Parametric monochrome Le raccord; tools/mark.mjs",
     ]),
   ),
   ["tokens.json", "Accepted Le raccord palette; tools/palette.mjs"],
@@ -371,7 +410,7 @@ All original Kosse artwork and tooling are MIT, under the repository licence. No
 |---|---|
 ${entries.map(([n, s]) => `| [${n}](${n}) | MIT — ${s}. |`).join("\n")}
 
-${iconError ? "**Packaging status:** ICNS is not present: /usr/bin/iconutil rejected the iconset as Invalid Iconset in this generation. All ten PNG entries remain available.\n" : ""}
+${iconError ? "**Packaging status:** an ICNS is missing: /usr/bin/iconutil rejected an iconset in this generation. The PNG entries remain available.\n" : ""}
 ## Regenerate
 
 Requires Node.js, macOS /usr/bin/iconutil, and an external tool directory with opentype.js 1.3.4, @fontsource/bricolage-grotesque 5 and sharp 0.34 already installed. All three resolve through createRequire(BRAND_TOOLS); the repository needs no new dependency. The font file is files/bricolage-grotesque-latin-700-normal.woff.
