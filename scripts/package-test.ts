@@ -32,9 +32,17 @@ import { createInterface } from "node:readline";
 import { type Fixture, release, startFixture } from "../e2e/support/processes.ts";
 import { createRepo } from "../e2e/support/repos.ts";
 import type { ActionResult, Health, Session, Snapshot } from "../web/src/generated/contracts.ts";
-import { defaultTarball, output, recordPath, repoRoot, sha256 } from "./packaging.ts";
+import {
+  defaultTarball,
+  output,
+  recordPath,
+  repoRoot,
+  sha256,
+  workspaceVersion,
+} from "./packaging.ts";
 
 const systemPath = "/usr/bin:/bin:/usr/sbin:/sbin";
+const expectedVersion = workspaceVersion();
 const owned: ChildProcess[] = [];
 const fixtures: Fixture[] = [];
 let passed = 0;
@@ -118,7 +126,10 @@ async function main(): Promise<void> {
     );
   }
   const version = kosse(["--version"]);
-  assert(version.status === 0 && version.stdout.trim() === "kosse 0.1.0", version.stdout);
+  assert(
+    version.status === 0 && version.stdout.trim() === `kosse ${expectedVersion}`,
+    version.stdout,
+  );
   step(`installed kosse --version without Bun or Node on PATH: ${version.stdout.trim()}`);
 
   const free = await freePort();
@@ -173,7 +184,7 @@ async function main(): Promise<void> {
   const asset = await fetch(`${base}${script}`);
   assert(asset.status === 200 && (await asset.arrayBuffer()).byteLength > 10_000, "bundle served");
   const health = await getJson<Health>(`${base}/api/health`);
-  assert(health.mode === "headless" && health.version === "0.1.0", JSON.stringify(health));
+  assert(health.mode === "headless" && health.version === expectedVersion, JSON.stringify(health));
   step("installed kosse serve: dashboard page and bundle served from the binary");
 
   const service = await waitFor("the fixture with an HTTP probe result", async () => {
@@ -281,7 +292,10 @@ async function main(): Promise<void> {
   const unpacked = join(download, basename(first).replace(/\.tar\.gz$/, ""), "kosse");
   assert(!quarantine(unpacked), "extracted kosse has no com.apple.quarantine");
   const ran = spawnSync(unpacked, ["--version"], { encoding: "utf8", env: { PATH: systemPath } });
-  assert(ran.status === 0 && ran.stdout.trim() === "kosse 0.1.0", "downloaded kosse runs");
+  assert(
+    ran.status === 0 && ran.stdout.trim() === `kosse ${expectedVersion}`,
+    "downloaded kosse runs",
+  );
   step("curl-downloaded archive: no quarantine attribute, extracted kosse runs");
 
   // Upgrade to a rebuilt archive: the configuration is untouched and still applies.
