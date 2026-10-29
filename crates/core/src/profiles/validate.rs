@@ -146,7 +146,7 @@ pub fn label(text: &str) -> Result<(), String> {
 }
 
 /// Bidi controls, zero-width characters, line separators and the BOM: they can disguise text.
-fn is_invisible_format(character: char) -> bool {
+pub(crate) fn is_invisible_format(character: char) -> bool {
     matches!(
         character,
         '\u{061C}' | '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}' | '\u{2060}'..='\u{2069}' | '\u{FEFF}'

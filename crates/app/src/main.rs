@@ -1,6 +1,7 @@
 //! `kosse` entry point: parses the command line, picks the mode (menu-bar app, `open`, `serve`,
-//! `list`, `config`, `doctor`, `startup`, the internal `window`), maps failures to exit codes (0
-//! success, 1 runtime failure, 2 usage error via clap).
+//! `list`, `config`, `profile`, `doctor`, `startup`, the internal `window`), maps failures to exit
+//! codes (0 success, 1 runtime failure, 2 usage error via clap; `profile` has its own, see
+//! [`profile`]).
 
 /// `eprintln!` without its panic: diagnostics to a closed stderr (`kosse … 2>&-`, or a
 /// pipe whose reader exited) are dropped instead of aborting the process.
@@ -23,11 +24,13 @@ mod guard;
 mod instance;
 mod launcher;
 mod list;
+mod markdown;
 mod menu;
 mod open;
 mod opener;
 mod preferences;
 mod prober;
+mod profile;
 mod route;
 mod running;
 mod scheduler;
@@ -86,6 +89,9 @@ fn main() -> ExitCode {
     if let Some(Command::Window(args)) = &cli.command {
         return window::run(args);
     }
+    if let Some(Command::Profile(command)) = &cli.command {
+        return profile::run(command);
+    }
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
@@ -104,7 +110,7 @@ fn run(cli: Cli) -> Result<(), AppError> {
         Some(Command::Config(command)) => Ok(config::run(&command)?),
         Some(Command::Doctor(args)) => Ok(doctor::run(&args, &runtime()?)?),
         Some(Command::Startup(command)) => Ok(startup::run(&command)?),
-        Some(Command::Window(_)) => Ok(()),
+        Some(Command::Window(_) | Command::Profile(_)) => Ok(()),
     }
 }
 

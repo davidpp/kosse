@@ -6,7 +6,8 @@
 //! state is touched. The root must be a project in the current snapshot or one that already has a
 //! central profile, so the dashboard cannot be used to plant profiles for arbitrary paths. The
 //! scanner picks the change up on the scan this triggers, and every view sees it in the next
-//! snapshot.
+//! snapshot. A request naming an `expectedRevision` is refused (`409 revisionConflict`) when
+//! another writer, such as an agent's `kosse profile set`, changed the profile first.
 
 use std::sync::Arc;
 
@@ -18,7 +19,7 @@ use axum::{
 };
 use kosse_core::{
     contract::{ApiError, ApiErrorCode, SaveProfileRequest, SavedProfile},
-    profiles::{CentralStore, StoreError, view::ProfileSource},
+    profiles::{CentralStore, StoreError, central, view::ProfileSource},
 };
 
 use crate::{api::RateLimit, scheduler::SchedulerHandle};
@@ -103,7 +104,11 @@ pub async fn save(
 
     let store = customize.store.clone();
     let root = request.root.clone();
-    let saved = tokio::task::spawn_blocking(move || store.save(&root, request.profile)).await;
+    let expected = request.expected_revision;
+    let saved = tokio::task::spawn_blocking(move || {
+        store.save(&root, request.profile, expected.as_deref())
+    })
+    .await;
     match saved {
         Ok(Ok(profile)) => {
             // The snapshot stream delivers the result; a busy scanner only delays it.
@@ -113,6 +118,7 @@ pub async fn save(
             });
             Json(SavedProfile {
                 root: request.root,
+                revision: central::revision(profile.as_ref()),
                 profile,
             })
             .into_response()
@@ -122,10 +128,15 @@ pub async fn save(
     }
 }
 
-/// `422 invalidProfile`, `409 configUnavailable` (an unusable or full file, left as it is) or
-/// `500 configWriteFailed`.
+/// `422 invalidProfile`, `409 revisionConflict`, `409 configUnavailable` (an unusable or full
+/// file, left as it is) or `500 configWriteFailed`.
 pub(crate) fn store_failure(failure: StoreError) -> Response {
     match failure {
+        failure @ StoreError::RevisionMismatch { .. } => error(
+            StatusCode::CONFLICT,
+            ApiErrorCode::RevisionConflict,
+            failure.to_string(),
+        ),
         StoreError::Rejected(problem) => error(
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiErrorCode::InvalidProfile,

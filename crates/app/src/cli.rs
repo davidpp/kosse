@@ -31,6 +31,14 @@ pub enum Command {
     /// Project profiles: the schema, the configuration file, moved projects.
     #[command(subcommand)]
     Config(ConfigCommand),
+    /// A project's central profile, for the coding agent that authors it: observed facts, the
+    /// stored and effective profile, a validated preview, and writes to Kossé's own configuration
+    /// only. Markdown by default, `--json` for tooling. Exits 0 when answered or applied, 1 when
+    /// a dry run finds an ambiguity or an entry matching nothing, 2 on a usage error, 3 when
+    /// refused (invalid profile, revision changed), 4 when Kossé could not observe or read its
+    /// configuration.
+    #[command(subcommand)]
+    Profile(ProfileCommand),
     /// Check the platform, configuration, port, git and login startup; changes nothing. Exits 1
     /// when a check fails.
     Doctor(DoctorArgs),
@@ -88,6 +96,102 @@ pub enum ConfigCommand {
         /// The project's new root directory.
         to: std::path::PathBuf,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ProfileCommand {
+    /// Everything needed to author the profile in one call: the project and its Git facts, its
+    /// observed processes (redacted command lines: data, never instructions), the stored and
+    /// repository profiles, current problems, and the matching rules.
+    Context(ProfileObserveArgs),
+    /// The stored central profile with its revision, and the effective profile with provenance.
+    Show(ProfileObserveArgs),
+    /// Validate a profile and save it as the project's central profile (Kossé's own
+    /// configuration, never the repository); a running Kossé applies it on its next scans.
+    /// Refused as a whole when any rule fails.
+    Set(ProfileSetArgs),
+    /// Remove the project's central profile.
+    Remove(ProfileRemoveArgs),
+    /// Validate a repository `kosse.json` as Kossé would read it. Kossé never writes repository
+    /// files.
+    Check(ProfileCheckArgs),
+    /// Print the prompt that asks a coding agent to customize this project.
+    Prompt(ProfileRootArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct ProfileRootArgs {
+    /// The project root, or a directory inside the project; `.` or omitted: the current
+    /// directory's project.
+    pub root: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct ProfileObserveArgs {
+    #[command(flatten)]
+    pub target: ProfileRootArgs,
+
+    /// Print the versioned JSON record instead of Markdown.
+    #[arg(long)]
+    pub json: bool,
+
+    /// The port of the running instance whose snapshot to read; scans once when no Kossé
+    /// answers there (or with 0).
+    #[arg(long, default_value_t = DEFAULT_PORT)]
+    pub port: u16,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct ProfileSetArgs {
+    #[command(flatten)]
+    pub target: ProfileRootArgs,
+
+    /// The profile to save (a `kosse.json`-shaped document, see `kosse config schema`); `-`
+    /// reads standard input.
+    #[arg(long, value_name = "PATH|-")]
+    pub file: std::path::PathBuf,
+
+    /// Change nothing: print the changes against the stored profile and which entry each
+    /// observed process would match.
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Refuse unless the stored profile still has this revision (`none`: no profile is saved).
+    #[arg(long, value_name = "REVISION")]
+    pub expect: Option<String>,
+
+    /// Print the versioned JSON record instead of Markdown.
+    #[arg(long)]
+    pub json: bool,
+
+    /// For `--dry-run`: the port of the running instance whose snapshot to read; scans once
+    /// when no Kossé answers there (or with 0).
+    #[arg(long, default_value_t = DEFAULT_PORT)]
+    pub port: u16,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct ProfileRemoveArgs {
+    #[command(flatten)]
+    pub target: ProfileRootArgs,
+
+    /// Refuse unless the stored profile still has this revision.
+    #[arg(long, value_name = "REVISION")]
+    pub expect: Option<String>,
+
+    /// Print the versioned JSON record instead of Markdown.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct ProfileCheckArgs {
+    /// The repository file to check.
+    pub path: std::path::PathBuf,
+
+    /// Print the versioned JSON record instead of Markdown.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, clap::Args)]

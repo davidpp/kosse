@@ -17,7 +17,7 @@ export type Health = { name: string, version: string, mode: InstanceMode, };
  */
 export type Session = { token: string, };
 
-export type ApiErrorCode = "hostNotAllowed" | "originNotAllowed" | "tokenRequired" | "unsupportedMediaType" | "payloadTooLarge" | "invalidPayload" | "rateLimited" | "staleIdentity" | "notProbeable" | "scannerBusy" | "scannerStopped" | "invalidProfile" | "unknownProject" | "configUnavailable" | "configWriteFailed" | "notResident";
+export type ApiErrorCode = "hostNotAllowed" | "originNotAllowed" | "tokenRequired" | "unsupportedMediaType" | "payloadTooLarge" | "invalidPayload" | "rateLimited" | "staleIdentity" | "notProbeable" | "scannerBusy" | "scannerStopped" | "invalidProfile" | "unknownProject" | "configUnavailable" | "revisionConflict" | "configWriteFailed" | "notResident";
 
 /**
  * The body of every API error response.
@@ -182,12 +182,23 @@ services: { [key in string]: ServiceProfile }, };
  * the dashboard does not know, and `$schema`, are kept from the profile being replaced: per
  * service ID, and per link by URL (a link whose URL changes loses them).
  */
-export type SaveProfileRequest = { root: string, profile: ProjectProfile | null, };
+export type SaveProfileRequest = { root: string, profile: ProjectProfile | null, 
+/**
+ * The `revision` the change was made from (`"none"`: no profile was saved). When another
+ * writer changed the profile since, the save is refused with `409 revisionConflict`.
+ * Without it the save applies whatever is stored.
+ */
+expectedRevision?: string, };
 
 /**
  * The central profile of `root` as stored; the next snapshot applies it.
  */
-export type SavedProfile = { root: string, profile: ProjectProfile | null, };
+export type SavedProfile = { root: string, profile: ProjectProfile | null, 
+/**
+ * The stored profile's revision, to send as `expectedRevision` with the next change;
+ * `"none"` when no profile is saved.
+ */
+revision: string, };
 
 /**
  * The dashboard's preferences, kept in Kossé's configuration file (never in a project).

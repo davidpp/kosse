@@ -223,6 +223,7 @@ function isSavedProfile(value: unknown): value is SavedProfile {
   return (
     isRecord(value) &&
     typeof value.root === "string" &&
+    typeof value.revision === "string" &&
     (value.profile === null || isRecord(value.profile))
   );
 }

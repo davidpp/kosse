@@ -77,6 +77,12 @@ pub struct ProbeRequest {
 pub struct SaveProfileRequest {
     pub root: String,
     pub profile: Option<crate::profiles::ProjectProfile>,
+    /// The `revision` the change was made from (`"none"`: no profile was saved). When another
+    /// writer changed the profile since, the save is refused with `409 revisionConflict`.
+    /// Without it the save applies whatever is stored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub expected_revision: Option<String>,
 }
 
 /// The central profile of `root` as stored; the next snapshot applies it.
@@ -85,6 +91,9 @@ pub struct SaveProfileRequest {
 pub struct SavedProfile {
     pub root: String,
     pub profile: Option<crate::profiles::ProjectProfile>,
+    /// The stored profile's revision, to send as `expectedRevision` with the next change;
+    /// `"none"` when no profile is saved.
+    pub revision: String,
 }
 
 /// The dashboard's preferences, kept in Kossé's configuration file (never in a project).
@@ -141,6 +150,9 @@ pub enum ApiErrorCode {
     /// The configuration file cannot be read, is invalid or is from a newer Kossé, so it is not
     /// overwritten; `message` names it. Fix or remove it.
     ConfigUnavailable,
+    /// The profile changed since the `expectedRevision` of the request (another window or an
+    /// agent saved it); `message` names the current revision. Reload and reapply the change.
+    RevisionConflict,
     /// Writing the configuration failed (permissions, disk); `message` says why. Nothing was
     /// changed.
     ConfigWriteFailed,
