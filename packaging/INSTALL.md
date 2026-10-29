@@ -51,6 +51,8 @@ the checksums, records the files it installed and can remove exactly those again
 - `kosse open` shows the dashboard without leaving anything running.
 - `kosse serve` serves the dashboard at `http://127.0.0.1:47831/` for any browser.
 - `kosse list` prints the listening ports once; `kosse doctor` checks the setup.
+- `kosse agent` prints the guide for coding agents. `SKILL.md` in this archive is the same guide
+  as an agent skill; `kosse agent skill --write ~/.claude/skills` installs it, if you want to.
 - `kosse startup enable` starts the menu-bar app at each login (`disable` to stop, `status`).
   It runs the `kosse` you enable it from, so use the installed one.
 

@@ -1,6 +1,6 @@
 //! `kosse` entry point: parses the command line, picks the mode (menu-bar app, `open`, `serve`,
-//! `list`, `url`, `port`, `wait`, `stop`, `force`, `config`, `profile`, `doctor`, `startup`, the
-//! internal `window`), maps failures to exit codes (0 success, 1 runtime failure, 2 usage error
+//! `list`, `url`, `port`, `wait`, `stop`, `force`, `config`, `profile`, `doctor`, `startup`,
+//! `agent`, the internal `window`), maps failures to exit codes (0 success, 1 runtime failure, 2 usage error
 //! via clap). The agent commands `list`, `url`, `port`, `wait`, `stop`, `force` and `profile`
 //! have their own codes (see `failure.rs`).
 
@@ -15,6 +15,7 @@ macro_rules! report {
 
 mod actions;
 mod activation;
+mod agent;
 mod api;
 mod assets;
 mod cli;
@@ -100,6 +101,7 @@ fn main() -> ExitCode {
         Some(Command::Profile(command)) => return profile::run(command),
         Some(Command::Stop(args)) => return stop::run(args, stop::Verb::Stop),
         Some(Command::Force(args)) => return stop::run(args, stop::Verb::Force),
+        Some(Command::Agent(args)) => return agent::run(args),
         _ => {}
     }
     match run(cli) {
@@ -127,7 +129,8 @@ fn run(cli: Cli) -> Result<(), AppError> {
             | Command::Stop(_)
             | Command::Force(_)
             | Command::Wait(_)
-            | Command::Profile(_),
+            | Command::Profile(_)
+            | Command::Agent(_),
         ) => Ok(()),
     }
 }

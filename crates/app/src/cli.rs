@@ -8,6 +8,8 @@ pub const DEFAULT_PORT: u16 = 47831;
 ///
 /// Without a command, runs the menu-bar app: the tray menu plus the dashboard server, opening the
 /// dashboard window. If the menu-bar app already runs on the port, brings its window forward.
+///
+/// Coding agents: `kosse agent` prints how to use Kossé instead of `lsof`, `ps` and `curl` loops.
 #[derive(Debug, Parser)]
 #[command(name = "kosse", version, about, args_conflicts_with_subcommands = true)]
 pub struct Cli {
@@ -71,6 +73,9 @@ pub enum Command {
     /// `--no-open`), stop doing so, or show whether it does. Off until enabled.
     #[command(subcommand)]
     Startup(StartupCommand),
+    /// The guide for coding agents: which command answers which question, output, exit codes,
+    /// the stop rules and profile authoring. Prints it; writes nothing.
+    Agent(AgentArgs),
     /// Internal: the dashboard window (a `WKWebView` on a running instance's loopback URL), started
     /// by the app and `kosse open`.
     #[command(hide = true)]
@@ -100,6 +105,33 @@ pub struct WindowArgs {
     /// The window title.
     #[arg(long, default_value = crate::launcher::TITLE)]
     pub title: String,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct AgentArgs {
+    #[command(subcommand)]
+    pub command: Option<AgentCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AgentCommand {
+    /// Print the same guide as an agent skill (`SKILL.md` with `name: kosse` frontmatter).
+    /// Installing it into an agent's configuration is your choice: Kossé writes it only with
+    /// `--write`.
+    Skill(SkillArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct SkillArgs {
+    /// Write `<DIR>/kosse/SKILL.md` instead of printing it (for example `~/.claude/skills`).
+    /// `<DIR>` must be an existing directory, and neither it, `kosse` nor `SKILL.md` may be a
+    /// symbolic link. A `SKILL.md` that differs from this version's is kept unless `--force`.
+    #[arg(long, value_name = "DIR")]
+    pub write: Option<std::path::PathBuf>,
+
+    /// With `--write`: replace a `SKILL.md` that differs (an older version's, or edited).
+    #[arg(long, requires = "write")]
+    pub force: bool,
 }
 
 #[derive(Debug, Subcommand)]

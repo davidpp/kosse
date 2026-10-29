@@ -87,6 +87,7 @@ If `~/.local/bin` is not on your `PATH` (it is not on a stock Mac): `echo 'expor
 | `kosse port <n>`                                          | `free` (as far as this user can see) or the owning process, project and service.                                                                                                                                                                                                                                                                                                                                                                               |
 | `kosse wait --port <n> \| <service>`                      | Waits until it listens, answers HTTP (`--http`) or is gone (`--gone`), up to `--timeout` (30 s); prints the last observation and exits 0 when met, 1 otherwise.                                                                                                                                                                                                                                                                                                |
 | `kosse stop <pid>.<start> --ports <p,…>`                  | Stops one process through the running instance (`kosse serve` or the menu-bar app), as the dashboard's Stop does: the identity and every port it listens on (from `kosse list`) are the confirmation. Given a service name, port or PID, or a stale identity or port set, it signals nothing and prints the exact command that would confirm what runs now. `kosse force` (same arguments) sends `SIGKILL` only within the offer a still-running stop printed. |
+| `kosse agent [skill]`                                     | The guide for coding agents (jobs to commands, output, exit codes, stop rules, profiles); `skill` prints it as a `SKILL.md`, and `skill --write <dir>` installs it as `<dir>/kosse/SKILL.md`. Nothing is written without `--write`.                                                                                                                                                                                                                            |
 | `kosse doctor [--json]`                                   | Checks platform, binary and `PATH`, configuration, who holds the port, `git`, login startup. Changes nothing.                                                                                                                                                                                                                                                                                                                                                  |
 | `kosse startup enable\|disable\|status`                   | Opt-in login startup: a per-user LaunchAgent running this `kosse --no-open` at each login (no `KeepAlive`, so Quit stays quit). Off until enabled.                                                                                                                                                                                                                                                                                                             |
 | `kosse config schema\|path\|move`                         | The `kosse.json` JSON Schema, the configuration file's location, and re-attaching a profile after moving a project.                                                                                                                                                                                                                                                                                                                                            |
@@ -95,6 +96,22 @@ If `~/.local/bin` is not on your `PATH` (it is not on a stock Mac): `echo 'expor
 **Tray menu:** projects with their branch; each service as `name :port` with Open (only if it answered HTTP), Inspect and Stop… (both open the dashboard window at that service; Stop… is the dashboard's own confirmation); Open Dashboard; Quit Kossé. Quit stops Kossé only, never the services it shows. The icon switches to its attention variant only when discovery fails or stalls.
 
 Agent commands (`list`, `url`, `port`, `wait`, `profile`, `stop`, `force`) exit 0 with an answer, 1 for a negative answer (for `stop`: still running, respawned or port taken), 2 on a usage error (including `--here` outside a project), 3 when refused and 4 when nothing could be observed; with `--json`, failures are a `CommandError` on stderr. Every flag and route is documented in [CONTRIBUTING.md](CONTRIBUTING.md#running-the-binary). Optional project names and links live in a central profile ("Customize this project" in the dashboard) or a read-only `kosse.json` in the repository ([schema](docs/kosse.schema.json), [format](blueprint/project-metadata.md)).
+
+## For agents
+
+Coding agents can answer "what runs here, on which port, is it up, stop what I started" with one `kosse` call instead of `lsof`, `ps` and `curl` loops. Point your agent at `kosse agent` (it prints a short guide), or install the guide as a skill yourself; Kossé never writes into an agent's configuration on its own:
+
+```sh
+kosse agent skill --write ~/.claude/skills   # writes ~/.claude/skills/kosse/SKILL.md
+```
+
+The release archive also ships it as `SKILL.md`. What an agent then runs:
+
+```sh
+kosse list --here                      # this worktree's services, ports, URLs and identities
+kosse wait --port 5173 --http          # instead of sleep + curl retries
+kosse stop web --here                  # signals nothing; prints the exact confirming command
+```
 
 ## Architecture
 

@@ -2,7 +2,8 @@
 //
 // Builds the macOS arm64 release archive in artifacts/, publishing nothing:
 //   kosse-<version>-aarch64-apple-darwin.tar.gz   kosse (embedded UI), LICENSE,
-//                                                  THIRD_PARTY_NOTICES.md, INSTALL.md, MANIFEST.json
+//                                                  THIRD_PARTY_NOTICES.md, INSTALL.md, SKILL.md,
+//                                                  MANIFEST.json
 //   kosse-<version>-aarch64-apple-darwin.tar.gz.sha256
 //   kosse.rb                                       Homebrew formula for that archive
 import {
@@ -107,14 +108,18 @@ await script(() => {
   writeFileSync(join(stage, "THIRD_PARTY_NOTICES.md"), notices);
   const install = readFileSync(join(repoRoot, "packaging", "INSTALL.md"), "utf8");
   writeFileSync(join(stage, "INSTALL.md"), install.replaceAll("{{version}}", version));
+  // The agent skill, printed by the shipped binary itself so the file and `kosse agent` agree.
+  writeFileSync(join(stage, "SKILL.md"), output(binary, ["agent", "skill"]));
 
   const commit = output("git", ["rev-parse", "HEAD"]).trim();
   const dirty = output("git", ["status", "--porcelain"]).trim() !== "";
-  const files = ["kosse", "LICENSE", "THIRD_PARTY_NOTICES.md", "INSTALL.md"].map((path) => ({
-    path,
-    bytes: statSync(join(stage, path)).size,
-    sha256: sha256(join(stage, path)),
-  }));
+  const files = ["kosse", "LICENSE", "THIRD_PARTY_NOTICES.md", "INSTALL.md", "SKILL.md"].map(
+    (path) => ({
+      path,
+      bytes: statSync(join(stage, path)).size,
+      sha256: sha256(join(stage, path)),
+    }),
+  );
   const manifest = {
     name: "kosse",
     version,
