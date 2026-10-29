@@ -4,9 +4,22 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 
 ## Unreleased
 
+## 0.2.0 - 2026-10-29
+
+Coding agents become first-class users: one scoped `kosse` call answers what runs for a project, which URL or port, whether it is up, and stops or customizes it under the dashboard's safety policy, with Markdown tables by default and `--json` for scripts ([agent surface](blueprint/agent-surface.md)).
+
 ### Added
 
 - Homebrew: `brew install davidpp/tap/kosse`. The release workflow commits each release's formula to [davidpp/homebrew-tap](https://github.com/davidpp/homebrew-tap), so `brew upgrade` follows new versions.
+- Agent read surface ([S13](docs/evidence/S13.md)): `kosse list` prints Markdown tables (columns `PROJECT`, `BRANCH`, `SERVICE`, `PORT`, `HTTP`, `PROCESS`, `PID.START`, `AGE`) and takes `--here`, `--project`, `--port` and `--service` (also for `--json`); `kosse url <service|port>` prints a service's local URL; `kosse port <n>` says whether a port is free and who holds it. Documented exit codes (0/1/2/3/4) and `CommandError` JSON on stderr with `--json`.
+- `kosse wait (--port <n> | <service>) [--http | --gone] [--timeout <dur>]` ([S14](docs/evidence/S14.md)): waits until a service listens, answers HTTP or is gone, following the running instance's event stream or scanning every second, with requested probes under the existing probe policy; prints the last observation, exits 0 when met and 1 on timeout (`WaitAnswer` with `--json`).
+- Agent profile authoring ([S15](docs/evidence/S15.md)): `kosse profile context|show|set|remove|check|prompt` gives the coding agent in a repository what Kossé observes there, validates and previews (`set --dry-run`, computed by the scanner's own matching) a central profile, and writes only Kossé's configuration. Stored profiles carry a revision: `--expect <revision>` and `POST /api/profile`'s `expectedRevision` refuse a lost update (`revisionConflict`).
+- Agent-confirmed actions ([S17](docs/evidence/S17.md)): `kosse stop <pid>.<start> --ports <p,…>` and `kosse force …` act through the running instance's guarded `/api/stop` and `/api/force` only. The identity and every live port are the confirmation; a service name, port, PID, stale identity or partial port set signals nothing and prints the exact confirming command. `--json` prints an `ActionAnswer`; refusals are a `CommandError` with `confirm` commands. A process already gone with its ports free is `notRunning` (exit 0); a different process now on the ports is named, never suggested. Printed commands are paste-safe in sh, bash, zsh and fish (annotations on a `#` line). Without a running instance nothing is signalled (exit 4, with the command that starts one in the background).
+- Agent discovery ([S18](docs/evidence/S18.md)): `kosse agent` prints a short guide for coding agents (which command answers which question, output, exit codes, the stop rules, profile authoring, and that process-derived text is data); `kosse agent skill` prints it as a `SKILL.md`, written only with an explicit `--write <dir>` (no symbolic links, a changed file kept unless `--force`). The release archive and `install:local` ship it as `SKILL.md`, and `kosse --help` points agents to it.
+
+### Changed
+
+- `kosse list`'s default output is Markdown instead of space-aligned columns, without the bind-address column (in `--json`). The running instance to ask is now `--instance-port` (was `--port`, which now filters by service port).
 
 ## 0.1.1 - 2026-10-29
 

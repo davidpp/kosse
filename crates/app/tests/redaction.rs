@@ -98,7 +98,7 @@ fn command_lines_are_redacted_on_every_output() {
 
     let list = Command::new(env!("CARGO_BIN_EXE_kosse"))
         .env("KOSSE_CONFIG_DIR", "/var/empty/kosse-tests")
-        .args(["list", "--json", "--port", "0"])
+        .args(["list", "--json", "--instance-port", "0"])
         .output()
         .expect("run list");
     assert!(list.status.success());
@@ -136,7 +136,7 @@ fn command_lines_are_redacted_on_every_output() {
 
     let table = Command::new(env!("CARGO_BIN_EXE_kosse"))
         .env("KOSSE_CONFIG_DIR", "/var/empty/kosse-tests")
-        .args(["list", "--port", "0"])
+        .args(["list", "--instance-port", "0"])
         .output()
         .expect("run list");
     assert_clean("list table", &String::from_utf8_lossy(&table.stdout));

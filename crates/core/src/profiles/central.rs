@@ -9,10 +9,13 @@
 //! - Writes are atomic (temporary file in the same directory, `fsync`, `rename`, directory
 //!   `fsync`) and serialized across processes by an advisory lock, so a dashboard save and a CLI
 //!   command do not lose each other's change. The directory is created `0700`, the file `0600`.
+//! - Each root's stored profile has a [`revision`]: a save may name the revision it expects and is
+//!   refused when another writer (the window, an agent's `kosse profile set`) changed it first.
 //! - The action token and other secrets never go here.
 
 use std::{
     collections::BTreeMap,
+    fmt::Write as _,
     fs::{self, DirBuilder, File, OpenOptions},
     io::{self, Write as _},
     os::unix::fs::{DirBuilderExt, OpenOptionsExt},
@@ -21,6 +24,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest as _, Sha256};
 
 use crate::{
     contract::Preferences,
@@ -37,6 +41,36 @@ pub const CONFIG_DIR_ENV: &str = "KOSSE_CONFIG_DIR";
 pub const CONFIG_FILE_NAME: &str = "config.json";
 const LOCK_FILE_NAME: &str = "config.lock";
 pub const CONFIG_VERSION: u32 = 1;
+/// The revision of a root without a central profile: expecting it means "only if none is saved".
+pub const NO_REVISION: &str = "none";
+
+/// The revision of a root's stored central profile: the first 16 hex digits of the SHA-256 of its
+/// compact JSON (keys in a fixed order, unknown fields included), or [`NO_REVISION`]. Any change
+/// to what is stored changes it; rewriting the same content does not.
+#[must_use]
+pub fn revision(profile: Option<&ProjectProfile>) -> String {
+    let Some(profile) = profile else {
+        return NO_REVISION.to_owned();
+    };
+    // Serializing a parsed profile (string keys, no non-finite numbers) cannot fail.
+    let bytes = serde_json::to_vec(profile).unwrap_or_default();
+    Sha256::digest(&bytes)
+        .iter()
+        .take(8)
+        .fold(String::with_capacity(16), |mut text, byte| {
+            let _ = write!(text, "{byte:02x}");
+            text
+        })
+}
+
+/// Profiles are keyed by canonical root; a root that no longer exists is kept as given so its
+/// profile can still be shown or removed.
+fn canonical_root(root: &str) -> String {
+    fs::canonicalize(root)
+        .ok()
+        .and_then(|path| path.to_str().map(str::to_owned))
+        .unwrap_or_else(|| root.to_owned())
+}
 
 /// The configuration file's contents.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -179,6 +213,10 @@ pub enum StoreError {
     TooLarge,
     #[error("{0}")]
     Conflict(String),
+    #[error(
+        "the profile changed since revision {expected} (it is now {current}); read it again and reapply your change"
+    )]
+    RevisionMismatch { expected: String, current: String },
     #[error("could not update {}: {source}", path.display())]
     Io { path: PathBuf, source: io::Error },
 }
@@ -222,35 +260,57 @@ impl CentralStore {
     }
 
     /// Sets (`Some`) or removes (`None`) the profile of `root`, keeping fields this build does
-    /// not know from the profile it replaces. Returns the profile as stored.
+    /// not know from the profile it replaces. With `expected`, refuses unless the stored profile
+    /// still has that [`revision`] (compared under the lock). Returns the profile as stored.
     pub fn save(
         &self,
         root: &str,
         profile: Option<ProjectProfile>,
+        expected: Option<&str>,
     ) -> Result<Option<ProjectProfile>, StoreError> {
         if !Path::new(root).is_absolute() {
             return Err(StoreError::Conflict(
                 "a project root is an absolute path".into(),
             ));
         }
-        // Profiles are matched by canonical root; a root that no longer exists is kept as given
-        // so its profile can still be removed.
-        let canonical = fs::canonicalize(root)
-            .ok()
-            .and_then(|path| path.to_str().map(str::to_owned));
-        let root = canonical.as_deref().unwrap_or(root);
+        let root = canonical_root(root);
         self.update(|config| {
+            let previous = config.projects.get(&root);
+            if let Some(expected) = expected {
+                let current = revision(previous);
+                if current != expected {
+                    return Err(StoreError::RevisionMismatch {
+                        expected: expected.to_owned(),
+                        current,
+                    });
+                }
+            }
             let Some(mut profile) = profile else {
-                config.projects.remove(root);
+                config.projects.remove(&root);
                 return Ok(None);
             };
             validate::profile(&profile).map_err(StoreError::Rejected)?;
-            if let Some(previous) = config.projects.get(root) {
+            if let Some(previous) = previous {
                 profile.keep_unknown_from(previous);
             }
-            config.projects.insert(root.to_owned(), profile.clone());
+            config.projects.insert(root.clone(), profile.clone());
             Ok(Some(profile))
         })
+    }
+
+    /// The canonical form of `root` and the profile stored for it, if any.
+    pub fn stored(&self, root: &str) -> Result<(String, Option<ProjectProfile>), StoreError> {
+        let root = canonical_root(root);
+        let profile = match self.load() {
+            Ok(config) => config.and_then(|(mut config, _)| config.projects.remove(&root)),
+            Err(problem) => {
+                return Err(StoreError::Unusable {
+                    path: self.file(),
+                    problem,
+                });
+            }
+        };
+        Ok((root, profile))
     }
 
     /// The saved preferences, or the defaults when there is no file yet. A file that cannot be
@@ -410,7 +470,9 @@ mod tests {
     #[test]
     fn saves_atomically_with_private_permissions() {
         let (_dir, store) = store();
-        store.save("/work/app", Some(profile("App"))).expect("save");
+        store
+            .save("/work/app", Some(profile("App")), None)
+            .expect("save");
         let mode = |path: &Path| fs::metadata(path).expect("stat").permissions().mode() & 0o777;
         assert_eq!(mode(&store.dir), 0o700);
         assert_eq!(mode(&store.file()), 0o600);
@@ -424,7 +486,7 @@ mod tests {
             .collect();
         assert!(leftovers.is_empty(), "{leftovers:?}");
 
-        store.save("/work/app", None).expect("remove");
+        store.save("/work/app", None, None).expect("remove");
         let (config, _) = store.load().expect("load").expect("exists");
         assert!(config.projects.is_empty());
     }
@@ -435,7 +497,9 @@ mod tests {
         fs::create_dir_all(&store.dir).expect("dir");
         let original = r#"{"version":1,"preferences":{"theme":"dark"},"projects":{"/work/app":{"$schema":"./kosse.schema.json","version":1,"name":"Old","later":true}}}"#;
         fs::write(store.file(), original).expect("write");
-        store.save("/work/app", Some(profile("New"))).expect("save");
+        store
+            .save("/work/app", Some(profile("New")), None)
+            .expect("save");
         let written: Value =
             serde_json::from_slice(&fs::read(store.file()).expect("read")).expect("json");
         assert_eq!(written["preferences"]["theme"], "dark");
@@ -456,7 +520,9 @@ mod tests {
         );
         assert!(!store.file().exists(), "reading creates nothing");
 
-        store.save("/work/app", Some(profile("App"))).expect("save");
+        store
+            .save("/work/app", Some(profile("App")), None)
+            .expect("save");
         let written: Value =
             serde_json::from_slice(&fs::read(store.file()).expect("read")).expect("json");
         assert!(
@@ -517,7 +583,7 @@ mod tests {
             let (_dir, store) = store();
             fs::create_dir_all(&store.dir).expect("dir");
             fs::write(store.file(), contents).expect("write");
-            let refused = store.save("/work/app", Some(profile("App")));
+            let refused = store.save("/work/app", Some(profile("App")), None);
             match refused {
                 Err(StoreError::Unusable { problem, .. }) => assert_eq!(
                     matches!(problem, ProfileProblem::NewerVersion { .. }),
@@ -543,7 +609,9 @@ mod tests {
         let target = dotfiles.join("kosse.json");
         fs::write(&target, r#"{"version":1}"#).expect("write");
         std::os::unix::fs::symlink(&target, store.file()).expect("link");
-        store.save("/work/app", Some(profile("App"))).expect("save");
+        store
+            .save("/work/app", Some(profile("App")), None)
+            .expect("save");
         assert!(
             fs::symlink_metadata(store.file())
                 .expect("stat")
@@ -556,7 +624,7 @@ mod tests {
 
         fs::remove_file(&target).expect("dangle");
         assert!(matches!(
-            store.save("/work/app", None),
+            store.save("/work/app", None, None),
             Err(StoreError::Io { .. })
         ));
         assert!(!target.exists(), "a dangling link is not replaced");
@@ -570,7 +638,7 @@ mod tests {
         let alias = dir.path().join("alias");
         std::os::unix::fs::symlink(&real, &alias).expect("link");
         store
-            .save(alias.to_str().expect("utf-8"), Some(profile("App")))
+            .save(alias.to_str().expect("utf-8"), Some(profile("App")), None)
             .expect("save");
         let (config, _) = store.load().expect("load").expect("exists");
         let canonical = real.canonicalize().expect("canonical");
@@ -593,7 +661,7 @@ mod tests {
             },
         );
         assert!(matches!(
-            store.save("/work/app", Some(bad)),
+            store.save("/work/app", Some(bad), None),
             Err(StoreError::Rejected(_))
         ));
         assert!(!store.file().exists());
@@ -604,7 +672,9 @@ mod tests {
         let (dir, store) = store();
         let moved = dir.path().join("moved");
         fs::create_dir(&moved).expect("dir");
-        store.save("/old/app", Some(profile("App"))).expect("save");
+        store
+            .save("/old/app", Some(profile("App")), None)
+            .expect("save");
         let new_root = store.reassociate("/old/app", &moved).expect("move");
         assert_eq!(
             new_root,
@@ -619,7 +689,7 @@ mod tests {
         assert_eq!(config.projects[&new_root].name.as_deref(), Some("App"));
 
         store
-            .save("/old/app", Some(profile("Other")))
+            .save("/old/app", Some(profile("Other")), None)
             .expect("save");
         assert!(matches!(
             store.reassociate("/old/app", &moved),

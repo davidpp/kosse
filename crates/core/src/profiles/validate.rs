@@ -50,71 +50,92 @@ fn refuse(at: impl Into<String>, problem: impl Into<String>) -> ProfileError {
 
 /// Checks every rule; the first violation is reported.
 pub fn profile(profile: &ProjectProfile) -> Result<(), ProfileError> {
+    problems(profile).into_iter().next().map_or(Ok(()), Err)
+}
+
+/// Every rule `profile` breaks, in document order; empty when it is valid. Any one refuses the
+/// whole profile.
+#[must_use]
+pub fn problems(profile: &ProjectProfile) -> Vec<ProfileError> {
+    let mut found = Vec::new();
+    let mut check = |at: &str, result: Result<(), String>| {
+        if let Err(problem) = result {
+            found.push(refuse(at, problem));
+        }
+    };
     if profile.version != PROFILE_VERSION {
-        return Err(refuse(
+        check(
             "version",
-            format!("must be {PROFILE_VERSION}, not {}", profile.version),
-        ));
+            Err(format!(
+                "must be {PROFILE_VERSION}, not {}",
+                profile.version
+            )),
+        );
     }
-    if let Some(schema) = &profile.schema
-        && schema.len() > MAX_URL_BYTES
+    if profile
+        .schema
+        .as_ref()
+        .is_some_and(|schema| schema.len() > MAX_URL_BYTES)
     {
-        return Err(refuse("$schema", "too long"));
+        check("$schema", Err("too long".into()));
     }
     if let Some(name) = &profile.name {
-        label(name).map_err(|problem| refuse("name", problem))?;
+        check("name", label(name));
     }
     if profile.services.len() > MAX_SERVICES {
-        return Err(refuse(
-            "services",
-            format!("at most {MAX_SERVICES} services"),
-        ));
+        check("services", Err(format!("at most {MAX_SERVICES} services")));
     }
     for (id, service) in &profile.services {
         let at = format!("services.{id}");
-        service_id(id).map_err(|problem| refuse(&at, problem))?;
-        service_profile(service, &at)?;
+        check(&at, service_id(id));
+        service_profile(service, &at, &mut check);
     }
-    Ok(())
+    found
 }
 
-fn service_profile(service: &ServiceProfile, at: &str) -> Result<(), ProfileError> {
+fn service_profile(
+    service: &ServiceProfile,
+    at: &str,
+    check: &mut impl FnMut(&str, Result<(), String>),
+) {
     if let Some(name) = &service.name {
-        label(name).map_err(|problem| refuse(format!("{at}.name"), problem))?;
+        check(&format!("{at}.name"), label(name));
     }
     if let Some(matcher) = &service.matcher {
-        service_match(matcher, &format!("{at}.match"))?;
+        service_match(matcher, &format!("{at}.match"), check);
     }
     if let Some(path) = &service.probe_path {
-        probe_path(path).map_err(|problem| refuse(format!("{at}.probePath"), problem))?;
+        check(&format!("{at}.probePath"), probe_path(path));
     }
     if let Some(links) = &service.links {
         if links.len() > MAX_LINKS {
-            return Err(refuse(
-                format!("{at}.links"),
-                format!("at most {MAX_LINKS} links"),
-            ));
+            check(
+                &format!("{at}.links"),
+                Err(format!("at most {MAX_LINKS} links")),
+            );
         }
         for (index, link) in links.iter().enumerate() {
             let at = format!("{at}.links[{index}]");
-            label(&link.label).map_err(|problem| refuse(format!("{at}.label"), problem))?;
-            link_url(&link.url).map_err(|problem| refuse(format!("{at}.url"), problem))?;
+            check(&format!("{at}.label"), label(&link.label));
+            check(&format!("{at}.url"), link_url(&link.url).map(|_| ()));
         }
     }
-    Ok(())
 }
 
-fn service_match(matcher: &ServiceMatch, at: &str) -> Result<(), ProfileError> {
+fn service_match(
+    matcher: &ServiceMatch,
+    at: &str,
+    check: &mut impl FnMut(&str, Result<(), String>),
+) {
     if matcher.cwd.is_none() && matcher.port.is_none() {
-        return Err(refuse(at, "needs `cwd`, `port` or both"));
+        check(at, Err("needs `cwd`, `port` or both".into()));
     }
     if matcher.port == Some(0) {
-        return Err(refuse(format!("{at}.port"), "must be 1–65535"));
+        check(&format!("{at}.port"), Err("must be 1–65535".into()));
     }
     if let Some(cwd) = &matcher.cwd {
-        relative_dir(cwd).map_err(|problem| refuse(format!("{at}.cwd"), problem))?;
+        check(&format!("{at}.cwd"), relative_dir(cwd).map(|_| ()));
     }
-    Ok(())
 }
 
 fn service_id(id: &str) -> Result<(), String> {
@@ -146,7 +167,7 @@ pub fn label(text: &str) -> Result<(), String> {
 }
 
 /// Bidi controls, zero-width characters, line separators and the BOM: they can disguise text.
-fn is_invisible_format(character: char) -> bool {
+pub(crate) fn is_invisible_format(character: char) -> bool {
     matches!(
         character,
         '\u{061C}' | '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}' | '\u{2060}'..='\u{2069}' | '\u{FEFF}'

@@ -35,7 +35,7 @@ use kosse_fixtures::{
     repo::{Sandbox, git, init_repo},
 };
 use serde_json::{Value, json};
-use support::{RawRequest, Server, eventually, sent_by};
+use support::{MarkdownTable, RawRequest, Server, eventually, markdown_tables, sent_by};
 
 const V4: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 /// A scan (3 s cadence), the file check interval and slack.
@@ -50,7 +50,7 @@ fn kosse(config: &Path, args: &[&str]) -> Output {
 }
 
 fn list_json(config: &Path) -> Observation {
-    let output = kosse(config, &["list", "--json", "--port", "0"]);
+    let output = kosse(config, &["list", "--json", "--instance-port", "0"]);
     assert!(
         output.status.success(),
         "{}",
@@ -61,7 +61,7 @@ fn list_json(config: &Path) -> Observation {
 }
 
 fn list_table(config: &Path) -> String {
-    let output = kosse(config, &["list", "--port", "0"]);
+    let output = kosse(config, &["list", "--instance-port", "0"]);
     assert!(output.status.success());
     String::from_utf8(output.stdout).expect("UTF-8")
 }
@@ -106,6 +106,12 @@ fn matched(id: &str) -> Option<ProfileMatch> {
     })
 }
 
+fn dir_name(path: &Path) -> &str {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .expect("UTF-8 directory name")
+}
+
 fn text(path: &Path) -> String {
     path.to_str().expect("UTF-8 path").to_owned()
 }
@@ -116,12 +122,34 @@ fn write_central(config: &Path, projects: &Value) {
     fs::write(config.join("config.json"), document.to_string()).expect("write config");
 }
 
-fn row_of<'a>(table: &'a str, fixture: &Fixture) -> &'a str {
-    let pid = fixture.pid().to_string();
-    table
-        .lines()
-        .find(|line| line.split_whitespace().next() == Some(pid.as_str()))
-        .unwrap_or_else(|| panic!("no row for {pid} in\n{table}"))
+/// The `SERVICE` cell of the fixture's row in `kosse list`'s service table.
+fn service_cell(table: &str, fixture: &Fixture) -> String {
+    let services = markdown_tables(table)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("no table in\n{table}"));
+    let identity = format!("{}.{}", fixture.pid(), fixture.record().started_at_secs);
+    let rows = services.rows_where("PID.START", &identity);
+    let [row] = rows.as_slice() else {
+        panic!("not one row for {identity} in\n{table}");
+    };
+    services.cell(row, "SERVICE").to_owned()
+}
+
+/// The table under `## Configured, not observed`.
+fn unobserved_table(table: &str) -> MarkdownTable {
+    let section = table
+        .split("\n## Configured, not observed\n")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no unobserved section in\n{table}"));
+    let mut tables = markdown_tables(section);
+    assert_eq!(tables.len(), 1, "{section}");
+    let unobserved = tables.remove(0);
+    assert_eq!(
+        unobserved.headers,
+        ["PROJECT", "SERVICE", "SOURCE", "MATCH"]
+    );
+    unobserved
 }
 
 /// Every file under `dir` except `.git`, with size and modification time.
@@ -233,21 +261,20 @@ fn central_profile_overrides_the_repository_file_with_provenance() {
     assert!(api.matched.is_empty(), "configured, not observed");
 
     let table = list_table(&config);
-    assert!(
-        row_of(&table, &web).contains("Central Web (web) [central]"),
-        "{table}"
-    );
-    let unobserved = table
-        .split("CONFIGURED, NOT OBSERVED")
-        .nth(1)
-        .unwrap_or_else(|| panic!("no unobserved section in\n{table}"));
-    let api_row = unobserved
-        .lines()
-        .find(|line| line.contains("API (api)"))
-        .unwrap_or_else(|| panic!("no api row in\n{table}"));
-    assert!(
-        api_row.contains("repository") && api_row.contains("cwd apps/api"),
-        "{api_row}"
+    assert_eq!(service_cell(&table, &web), "Central Web (web) [central]");
+    let unobserved = unobserved_table(&table);
+    let api_rows = unobserved.rows_where("SERVICE", "API (api) [repository]");
+    let [api_row] = api_rows.as_slice() else {
+        panic!("not one api row in\n{table}");
+    };
+    assert_eq!(
+        [
+            unobserved.cell(api_row, "PROJECT"),
+            unobserved.cell(api_row, "SOURCE"),
+            unobserved.cell(api_row, "MATCH")
+        ],
+        // The project's directory name, as in the service table; `--json` has the root.
+        [dir_name(&repo), "repository", "cwd apps/api"]
     );
 
     assert_eq!(
@@ -333,10 +360,7 @@ fn matching_never_leaves_the_project() {
         })
     );
     let table = list_table(&config);
-    assert!(
-        row_of(&table, &in_both).contains("ambiguous: one, two"),
-        "{table}"
-    );
+    assert_eq!(service_cell(&table, &in_both), "ambiguous: one, two");
 }
 
 /// A name, how to write the file, and the problem expected.
@@ -945,8 +969,12 @@ fn moved_projects_need_explicit_reassociation() {
         "configured, not observed"
     );
     let table = list_table(&config);
-    assert!(
-        table.contains(&format!("{} (project not observed)", text(&old))),
+    let stale_project = format!("{} (project not observed)", dir_name(&old));
+    assert_eq!(
+        unobserved_table(&table)
+            .rows_where("PROJECT", &stale_project)
+            .len(),
+        1,
         "{table}"
     );
 

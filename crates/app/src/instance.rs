@@ -36,7 +36,7 @@ use crate::{guard::TOKEN_HEADER, route::Route};
 
 /// Connect, request and response together, per request. A local instance answers in
 /// milliseconds; a busy one's first snapshot can take a scan.
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(6);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(6);
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 /// Snapshots of thousands of listeners stay well below this.
 const BODY_LIMIT: usize = 32 * 1024 * 1024;
@@ -63,9 +63,10 @@ pub struct Instance {
 }
 
 impl Instance {
-    /// The snapshot, if this build can read it as its own (same schema version).
-    pub fn compatible_snapshot(self) -> Option<Snapshot> {
+    /// Takes the snapshot, if this build can read it as its own (same schema version).
+    pub fn compatible_snapshot(&mut self) -> Option<Snapshot> {
         self.snapshot
+            .take()
             .filter(|snapshot| snapshot.schema_version == SNAPSHOT_SCHEMA_VERSION)
     }
 }
@@ -112,40 +113,65 @@ pub async fn find(port: u16) -> Found {
     }
 }
 
-/// Asks a resident instance to show its window at `route` (session token, then a same-origin
-/// `POST /api/window`, as the dashboard would send it).
+/// Asks a resident instance to show its window at `route` (a same-origin `POST /api/window`, as
+/// the dashboard would send it).
 pub async fn show_window(instance: &Instance, route: Route) -> Result<(), InstanceError> {
     let failed = |reason: String| InstanceError::Window {
         url: instance.url.clone(),
         reason,
     };
-    let (status, body) = request(instance.addr, Method::GET, "/api/session", None)
-        .await
-        .ok_or_else(|| failed("no session".to_owned()))?;
-    if status != StatusCode::OK {
-        return Err(failed(format!("session answered {status}")));
-    }
-    let session: Session =
-        serde_json::from_slice(&body).map_err(|error| failed(error.to_string()))?;
     let body = serde_json::to_vec(&WindowRequest {
         route: route.into(),
     })
     .map_err(|error| failed(error.to_string()))?;
-    match request(
-        instance.addr,
-        Method::POST,
-        "/api/window",
-        Some((&session.token, body)),
-    )
-    .await
-    {
-        Some((StatusCode::NO_CONTENT, _)) => Ok(()),
-        Some((status, body)) => Err(failed(format!(
+    match post(instance.addr, "/api/window", body, REQUEST_TIMEOUT).await {
+        Ok((StatusCode::NO_CONTENT, _)) => Ok(()),
+        Ok((status, body)) => Err(failed(format!(
             "{status} {}",
             String::from_utf8_lossy(&body)
         ))),
-        None => Err(failed("no answer".to_owned())),
+        Err(error) => Err(failed(error.to_string())),
     }
+}
+
+/// Why [`post`] has no answer.
+#[derive(Debug, thiserror::Error)]
+pub enum PostError {
+    /// The session token could not be read, so nothing was posted.
+    #[error("no session token: {0}")]
+    Session(String),
+    /// The request may have reached the instance, but no answer came back within the timeout.
+    #[error("no answer")]
+    NoAnswer,
+}
+
+/// A same-origin JSON `POST` of `body` to `path` on the verified instance at `addr`, as the
+/// dashboard sends it: the session token from `GET /api/session` first, then the request with
+/// the instance's exact `Host` and `Origin`, `Content-Type: application/json` and the token.
+/// `timeout` bounds the `POST`.
+pub async fn post(
+    addr: SocketAddr,
+    path: &str,
+    body: Vec<u8>,
+    timeout: Duration,
+) -> Result<(StatusCode, Bytes), PostError> {
+    let (status, session) = request(addr, Method::GET, "/api/session", None, REQUEST_TIMEOUT)
+        .await
+        .ok_or_else(|| PostError::Session("no answer".to_owned()))?;
+    if status != StatusCode::OK {
+        return Err(PostError::Session(format!("answered {status}")));
+    }
+    let session: Session =
+        serde_json::from_slice(&session).map_err(|error| PostError::Session(error.to_string()))?;
+    request(
+        addr,
+        Method::POST,
+        path,
+        Some((&session.token, body)),
+        timeout,
+    )
+    .await
+    .ok_or(PostError::NoAnswer)
 }
 
 async fn accepts(addr: SocketAddr) -> bool {
@@ -187,7 +213,7 @@ fn owned_by(owners: &[Option<u32>], own: Option<u32>) -> bool {
 }
 
 async fn verify(addr: SocketAddr) -> Option<Instance> {
-    let (status, body) = request(addr, Method::GET, "/api/health", None).await?;
+    let (status, body) = request(addr, Method::GET, "/api/health", None, REQUEST_TIMEOUT).await?;
     let health: Health = (status == StatusCode::OK)
         .then(|| serde_json::from_slice(&body).ok())
         .flatten()?;
@@ -196,7 +222,7 @@ async fn verify(addr: SocketAddr) -> Option<Instance> {
     }
     // Any Kossé names its instance; a newer schema still identifies one, so this only requires
     // the field, and `compatible_snapshot` decides whether `list` can use the rest.
-    let (status, body) = request(addr, Method::GET, "/api/snapshot", None).await?;
+    let (status, body) = request(addr, Method::GET, "/api/snapshot", None, REQUEST_TIMEOUT).await?;
     if status != StatusCode::OK {
         return None;
     }
@@ -214,15 +240,16 @@ async fn verify(addr: SocketAddr) -> Option<Instance> {
     })
 }
 
-/// One bounded request with the instance's own `Host`; a `POST` carries the token and the
-/// same-origin `Origin` the guard requires. The status and a body within [`BODY_LIMIT`].
+/// One request bounded by `timeout`, with the instance's own `Host`; a `POST` carries the token
+/// and the same-origin `Origin` the guard requires. The status and a body within [`BODY_LIMIT`].
 async fn request(
     addr: SocketAddr,
     method: Method,
     path: &str,
     post: Option<(&str, Vec<u8>)>,
+    timeout: Duration,
 ) -> Option<(StatusCode, Bytes)> {
-    tokio::time::timeout(REQUEST_TIMEOUT, async {
+    tokio::time::timeout(timeout, async {
         let stream = TcpStream::connect(addr).await.ok()?;
         let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
             .await

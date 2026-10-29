@@ -85,6 +85,7 @@ Required executable command contract (implement, test, then document exact synta
 - `kosse tui` (next phase): on-demand terminal client; attaches to a verified running instance or starts a private server for its lifetime.
 - `kosse serve --no-open --port <n>`: foreground headless.
 - `kosse list --json`: daemon snapshot when compatible instance exists; one-shot discovery otherwise.
+- Agent-facing commands (`list` filters, `url`, `port`, `wait`, `profile …`, `stop`/`force`, `agent`), their Markdown and JSON output and exit codes: [agent surface](agent-surface.md#command-contract-proposed-implement-test-then-document-exact-syntax).
 - `kosse doctor`: dependency/platform/config/instance diagnostics, non-destructive.
 - `kosse startup enable|disable|status`: opt-in user login management; evaluate service-manager/auto-launch instead of bespoke cross-platform templates.
 - `--version`, `--help`; clear exit codes; shutdown cleans app resources, not observed services.

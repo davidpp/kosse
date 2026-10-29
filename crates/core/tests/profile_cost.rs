@@ -56,7 +56,7 @@ fn profiles_add_little_to_a_thirty_listener_scan() {
             serde_json::from_value(json!({ "version": 1, "name": format!("Repo {repository}") }))
                 .expect("profile");
         store
-            .save(root.to_str().expect("UTF-8"), Some(central))
+            .save(root.to_str().expect("UTF-8"), Some(central), None)
             .expect("save");
         for package in 0..PACKAGES {
             let dir = tree

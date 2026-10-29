@@ -493,7 +493,7 @@ fn a_second_launch_refocuses_the_menu_bar_app_without_a_second_window_or_scanner
     // `list` reads that instance's snapshot instead of scanning.
     let listed = Command::new(env!("CARGO_BIN_EXE_kosse"))
         .env("KOSSE_CONFIG_DIR", NO_CONFIG)
-        .args(["list", "--json", "--port", &port])
+        .args(["list", "--json", "--instance-port", &port])
         .output()
         .expect("run list");
     assert!(listed.status.success());
@@ -710,7 +710,7 @@ fn an_unrelated_port_occupant_is_never_trusted() {
         }
         let listed = Command::new(env!("CARGO_BIN_EXE_kosse"))
             .env("KOSSE_CONFIG_DIR", NO_CONFIG)
-            .args(["list", "--json", "--port", &port])
+            .args(["list", "--json", "--instance-port", &port])
             .output()
             .expect("run list");
         assert!(listed.status.success());

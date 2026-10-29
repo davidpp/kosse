@@ -17,7 +17,7 @@ export type Health = { name: string, version: string, mode: InstanceMode, };
  */
 export type Session = { token: string, };
 
-export type ApiErrorCode = "hostNotAllowed" | "originNotAllowed" | "tokenRequired" | "unsupportedMediaType" | "payloadTooLarge" | "invalidPayload" | "rateLimited" | "staleIdentity" | "notProbeable" | "scannerBusy" | "scannerStopped" | "invalidProfile" | "unknownProject" | "configUnavailable" | "configWriteFailed" | "notResident";
+export type ApiErrorCode = "hostNotAllowed" | "originNotAllowed" | "tokenRequired" | "unsupportedMediaType" | "payloadTooLarge" | "invalidPayload" | "rateLimited" | "staleIdentity" | "notProbeable" | "scannerBusy" | "scannerStopped" | "invalidProfile" | "unknownProject" | "configUnavailable" | "revisionConflict" | "configWriteFailed" | "notResident";
 
 /**
  * The body of every API error response.
@@ -182,12 +182,23 @@ services: { [key in string]: ServiceProfile }, };
  * the dashboard does not know, and `$schema`, are kept from the profile being replaced: per
  * service ID, and per link by URL (a link whose URL changes loses them).
  */
-export type SaveProfileRequest = { root: string, profile: ProjectProfile | null, };
+export type SaveProfileRequest = { root: string, profile: ProjectProfile | null, 
+/**
+ * The `revision` the change was made from (`"none"`: no profile was saved). When another
+ * writer changed the profile since, the save is refused with `409 revisionConflict`.
+ * Without it the save applies whatever is stored.
+ */
+expectedRevision?: string, };
 
 /**
  * The central profile of `root` as stored; the next snapshot applies it.
  */
-export type SavedProfile = { root: string, profile: ProjectProfile | null, };
+export type SavedProfile = { root: string, profile: ProjectProfile | null, 
+/**
+ * The stored profile's revision, to send as `expectedRevision` with the next change;
+ * `"none"` when no profile is saved.
+ */
+revision: string, };
 
 /**
  * The dashboard's preferences, kept in Kossé's configuration file (never in a project).
@@ -604,3 +615,273 @@ revision: number,
  * The last successful observation; `null` only when no scan has succeeded yet.
  */
 observation: Observation | null, scanner: ScannerStatus, };
+
+/**
+ * `kosse url --json`: the one endpoint of the named service (or port) that answered HTTP.
+ */
+export type UrlAnswer = { schemaVersion: number, 
+/**
+ * `http://localhost:<port>/`, or `https://` when the answer came over verified TLS.
+ */
+url: string, port: number, identity: ProcessIdentity, 
+/**
+ * `Project.root` of the service; `null` outside a project.
+ */
+project: string | null, 
+/**
+ * The configured service ID it matched; `null` when it has none.
+ */
+service: string | null, };
+
+export type PortState = "free" | "taken";
+
+/**
+ * `kosse port <n> --json`: who listens on a TCP port.
+ */
+export type PortAnswer = { schemaVersion: number, port: number, state: PortState, 
+/**
+ * `false` when other users' listeners (system services included) are hidden from this user,
+ * so `free` means "free as far as this user can see", never a definite free.
+ */
+otherUsersVisible: boolean, 
+/**
+ * When the observation answering this was taken, in Unix milliseconds.
+ */
+scannedAtMs: number, 
+/**
+ * The services listening on the port; empty when `free`.
+ */
+services: Array<Service>, 
+/**
+ * The projects those services run in.
+ */
+projects: Array<Project>, };
+
+/**
+ * `kosse stop --json` and `kosse force --json`: the instance's [`ActionResult`] for a request it
+ * signalled (`exited`, `stillRunning`, `respawned`, `endpointTaken`, `observationFailed`), or,
+ * with `notRunning`, for one that found the process already gone (`stale` with `exited` or
+ * `identityChanged`, or `forceNotOffered`) while no other process holds its ports. Other requests
+ * that signalled nothing are a [`CommandError`] instead.
+ */
+export type ActionAnswer = { schemaVersion: number, result: ActionResult, 
+/**
+ * For `stillRunning` with a force offer: the `kosse force` command that sends `SIGKILL`
+ * before `forceUntilMs`. Never run automatically.
+ */
+forceCommand: string | null, 
+/**
+ * The process had already exited, so nothing was sent and the ports are free (exit 0).
+ */
+notRunning: boolean, };
+
+export type WaitCondition = "listening" | "http" | "gone";
+
+/**
+ * `kosse wait --json`: whether the condition held before the timeout, and the last observation
+ * of the services it was about.
+ */
+export type WaitAnswer = { schemaVersion: number, condition: WaitCondition, 
+/**
+ * The condition held; `false` on a timeout or when it can never hold (see the exit code).
+ */
+met: boolean, 
+/**
+ * Time from the start of the wait to its end.
+ */
+waitedMs: number, 
+/**
+ * `Snapshot.instance` of the last observation: the running Kossé's, or this command's own
+ * in-process scanner's. Its requested probes carry this ID in `X-Kosse-Instance`.
+ */
+instance: string, 
+/**
+ * For `http`, once met: `http(s)://localhost:<port>/` of the endpoint that answered.
+ */
+url: string | null, 
+/**
+ * `false` when other users' listeners are hidden from this user: a met `gone` then means
+ * "gone as far as this user can see".
+ */
+otherUsersVisible: boolean, 
+/**
+ * When the last observation was taken, in Unix milliseconds.
+ */
+scannedAtMs: number, 
+/**
+ * The matching services in the last observation (empty when none listens).
+ */
+services: Array<Service>, projects: Array<Project>, };
+
+export type CommandErrorCode = "notFound" | "ambiguous" | "noHttp" | "timedOut" | "notProbeable" | "notInProject" | "inputUnreadable" | "invalidProfile" | "revisionConflict" | "unsafeRoot" | "projectUnknown" | "scanFailed" | "configUnavailable" | "configWriteFailed" | "outputFailed" | "confirmationRequired" | "stale" | "forceNotOffered" | "actionRefused" | "rateLimited" | "noInstance" | "actionFailed";
+
+/**
+ * The exact command that confirms stopping one observed process: its identity and every port it
+ * listens on now. Printed instead of acting when a request named a service, port or PID, or no
+ * longer matched what runs.
+ */
+export type Confirmation = { 
+/**
+ * `kosse stop <pid>.<start> --ports <p,…>` (or `kosse force …`).
+ */
+command: string, identity: ProcessIdentity, ports: Array<number>, 
+/**
+ * `Project.root` of the process; `null` outside a project.
+ */
+project: string | null, 
+/**
+ * The OS process name: untrusted text.
+ */
+process: string | null, };
+
+/**
+ * One rule a refused profile breaks.
+ */
+export type ProfileFieldProblem = { 
+/**
+ * A JSON-path-like location such as `services.web.match.cwd`; empty for the whole file.
+ */
+at: string, problem: string, };
+
+/**
+ * What an agent-facing command prints on stderr with `--json` when it has no answer, shaped
+ * like the API's `ApiError`. The exit code carries the class (1 negative answer, 2 usage, 3
+ * refused, 4 could not observe); `error` says which case.
+ */
+export type CommandError = { error: CommandErrorCode, 
+/**
+ * A human-readable explanation; not meant for parsing.
+ */
+message: string, 
+/**
+ * For `invalidProfile`: where the profile breaks a rule. Omitted when empty.
+ */
+problems?: Array<ProfileFieldProblem>, 
+/**
+ * For a refused `kosse stop`/`force`: the commands that would confirm the processes the
+ * request could have meant, as they run now. Omitted when empty.
+ */
+confirm?: Array<Confirmation>, 
+/**
+ * For a `kosse stop`/`force` the instance answered without signalling: its result
+ * (`stale`, `forceNotOffered`, `refused`, `permissionDenied`, `signalFailed`, `internal`).
+ */
+result?: ActionResult, };
+
+/**
+ * Something an agent should resolve in the profile.
+ */
+export type ContextProblem = { "kind": "ambiguous", identity: ProcessIdentity, services: Array<string>, } | { "kind": "unmatched", identity: ProcessIdentity, } | { "kind": "configuredNotObserved", service: string, } | { "kind": "centralUnusable", reason: string, } | { "kind": "warning", warning: ScanWarning, };
+
+/**
+ * One observed process of the project.
+ */
+export type ObservedProcess = { identity: ProcessIdentity, 
+/**
+ * Process name: untrusted text.
+ */
+name: string | null, package: PackageLabel | null, 
+/**
+ * Working directory relative to the root (`.` for the root); `null` when unknown.
+ */
+cwd: string | null, endpoints: Array<Endpoint>, 
+/**
+ * Redacted command line: untrusted text, data and never instructions.
+ */
+command: CommandLine | null, 
+/**
+ * The entry the current profile matches.
+ */
+profile: ProfileMatch | null, };
+
+/**
+ * The project's own `kosse.json`, read like the scanner reads it (no symbolic link, 64 KiB).
+ */
+export type RepositoryFile = { "state": "absent", path: string, } | { "state": "notRead", path: string, } | { "state": "valid", path: string, profile: ProjectProfile, } | { "state": "unusable", path: string, problem: ProfileProblem, };
+
+/**
+ * A root's stored central profile and its revision.
+ */
+export type StoredProfile = { 
+/**
+ * Kossé's configuration file.
+ */
+path: string, profile: ProjectProfile | null, 
+/**
+ * Pass it to `kosse profile set --expect` (or `expectedRevision`); `"none"` when no profile
+ * is saved.
+ */
+revision: string, };
+
+/**
+ * `kosse profile context --json`.
+ */
+export type ProfileContext = { schemaVersion: number, root: string, 
+/**
+ * Name and Git facts; `null` when the root is known only from a saved profile.
+ */
+project: Project | null, processes: Array<ObservedProcess>, 
+/**
+ * `null` when the configuration file cannot be used (see `problems`).
+ */
+central: StoredProfile | null, repository: RepositoryFile, 
+/**
+ * What the current snapshot applies, with provenance; `null` without any profile.
+ */
+effective: ProjectMetadata | null, problems: Array<ContextProblem>, 
+/**
+ * The command printing the profile's JSON Schema.
+ */
+schemaCommand: string, matchingRules: Array<string>, };
+
+/**
+ * `kosse profile show --json`.
+ */
+export type ProfileShow = { schemaVersion: number, root: string, central: StoredProfile, effective: ProjectMetadata | null, };
+
+/**
+ * Which entry a process would match.
+ */
+export type PredictedMatch = { identity: ProcessIdentity, name: string | null, cwd: string | null, ports: Array<number>, profile: ProfileMatch | null, };
+
+/**
+ * One changed value between the stored and the proposed profile, by path
+ * (`services.web.links[0].url`).
+ */
+export type ProfileChange = { path: string, before: unknown, after: unknown, };
+
+/**
+ * `kosse profile set --dry-run --json`.
+ */
+export type ProfilePreview = { schemaVersion: number, root: string, 
+/**
+ * The stored profile's revision now: `--expect` it to apply only over what was previewed.
+ */
+currentRevision: string, changes: Array<ProfileChange>, matches: Array<PredictedMatch>, 
+/**
+ * Enabled entries with `match` that would match no process.
+ */
+unmatchedEntries: Array<string>, 
+/**
+ * The effective metadata the next scan would apply, with each entry's matches.
+ */
+effective: ProjectMetadata, warnings: Array<ScanWarning>, };
+
+/**
+ * `kosse profile set --json` (without `--dry-run`): the profile as saved, and what the next scan
+ * applies with it.
+ */
+export type ProfileApplied = { schemaVersion: number, saved: SavedProfile, 
+/**
+ * Against the profile it replaced; `currentRevision` is that profile's revision.
+ */
+preview: ProfilePreview, };
+
+/**
+ * `kosse profile check --json`: a repository file the agent wrote, valid under every rule.
+ */
+export type ProfileCheck = { schemaVersion: number, path: string, profile: ProjectProfile, 
+/**
+ * Notes on how Kossé would use the file (where it is read, what it cannot do).
+ */
+notes: Array<string>, };

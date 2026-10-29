@@ -2,7 +2,7 @@
 //
 // Uses the archive in artifacts/ (release:local builds it first), a temporary prefix, HOME and
 // KOSSE_CONFIG_DIR, and a PATH without Bun or Node. Installs it with install:local, runs the
-// installed `kosse` (--version, doctor, startup status, serve, the menu-bar app), discovers an
+// installed `kosse` (--version, agent, doctor, startup status, serve, the menu-bar app), discovers an
 // owned fixture, stops it through the API, quits, downloads the archive over HTTP with curl
 // (no quarantine attribute), upgrades to a rebuilt archive keeping the configuration, and
 // uninstalls, leaving nothing it installed.
@@ -93,6 +93,27 @@ async function main(): Promise<void> {
   assert(checked.trim().endsWith(": OK"), "the archive matches its .sha256");
   step("archive checksum verified with shasum -c");
 
+  const top = basename(first).replace(/\.tar\.gz$/, "");
+  const entries = output("/usr/bin/tar", ["-tzf", first]).split("\n").filter(Boolean).toSorted();
+  assert(
+    JSON.stringify(entries) ===
+      JSON.stringify(
+        [
+          "",
+          "INSTALL.md",
+          "LICENSE",
+          "MANIFEST.json",
+          "SKILL.md",
+          "THIRD_PARTY_NOTICES.md",
+          "kosse",
+        ]
+          .map((name) => `${top}/${name}`)
+          .toSorted(),
+      ),
+    `archive entries: ${entries.join(", ")}`,
+  );
+  step("archive holds kosse, LICENSE, notices, INSTALL.md, SKILL.md and MANIFEST.json");
+
   // A modified archive is refused before anything is installed.
   const tampered = join(root, "tampered", basename(built));
   mkdirSync(join(root, "tampered"));
@@ -112,6 +133,7 @@ async function main(): Promise<void> {
         "share/doc/kosse/INSTALL.md",
         "share/doc/kosse/LICENSE",
         "share/doc/kosse/MANIFEST.json",
+        "share/doc/kosse/SKILL.md",
         "share/doc/kosse/THIRD_PARTY_NOTICES.md",
         recordPath,
       ]),
@@ -131,6 +153,18 @@ async function main(): Promise<void> {
     version.stdout,
   );
   step(`installed kosse --version without Bun or Node on PATH: ${version.stdout.trim()}`);
+
+  // The agent guide ships twice from one text: printed by the binary and as the archive's skill.
+  const guide = kosse(["agent"]);
+  const skill = kosse(["agent", "skill"]);
+  const shipped = readFileSync(join(prefix, "share", "doc", "kosse", "SKILL.md"), "utf8");
+  assert(guide.status === 0 && guide.stdout.startsWith("# Kossé for coding agents"), guide.stdout);
+  assert(
+    skill.status === 0 && skill.stdout === shipped,
+    "kosse agent skill prints the shipped file",
+  );
+  assert(shipped.startsWith("---\nname: kosse\n") && shipped.endsWith(guide.stdout), shipped);
+  step("installed kosse agent prints the guide; the archive's SKILL.md is kosse agent skill");
 
   const free = await freePort();
   const doctor = kosse(["doctor", "--json", "--port", String(free)]);
@@ -316,7 +350,7 @@ async function main(): Promise<void> {
   assert(after.artifactSha256 === sha256(second), "the record names the rebuilt archive");
   assert(before.artifactSha256 !== after.artifactSha256, "a different archive was installed");
   assert(sha256(configFile) === configDigest, "the configuration file is byte-identical");
-  const listed: Snapshot = JSON.parse(kosse(["list", "--json", "--port", "0"]).stdout);
+  const listed: Snapshot = JSON.parse(kosse(["list", "--json", "--instance-port", "0"]).stdout);
   assert(
     listed.observation?.profiles.some(
       (profile) => profile.root === service.found.project && profile.name === "Packaged shop",

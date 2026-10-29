@@ -15,6 +15,14 @@ This is the dependency/specification index, not a second status tracker. Live st
 | S08 | Add native macOS tray lifecycle, on-demand `kosse open` and single-instance behavior | S07 |
 | S09 | Implement local packaging, install/uninstall and opt-in login startup | S08 |
 | S10 | Run installed-entrypoint acceptance audit and complete operator docs | S09 |
+| S13 | Agent read surface: scoped `list` with Markdown-table default, `url`, `port`, exit codes and error output | S12 |
+| S14 | `kosse wait` for listening / HTTP / gone with timeout | S13 |
+| S15 | Agent profile authoring (`profile context/show/set/remove/check/prompt`), revision precondition | S12 |
+| S16 | Prompt-first Customize window | S15 |
+| S17 | Agent-confirmed `stop`/`force` CLI over the guarded API | S13 |
+| S18 | Discovery: `kosse agent`, skill file, help pointer | S13–S17 |
+| S19 | Agent acceptance evaluation vs a `ps`/`lsof` baseline | S18 |
+| S20 | (someday) Exploratory "started by" ancestry attribution | S13 |
 
 ## Dependency graph
 
@@ -154,6 +162,10 @@ Deferred by owner direction (2026-10-28): v1 ships the Rust binary with the dash
 
 Real-terminal tests (OpenTUI's test renderer or a PTY harness against the real binary and owned fixtures, scoped with `--probe-only`/`--act-only`) cover discover, filter, inspect, open, stop → still running → force, respawn reporting, customize persistence and server disconnect/reconnect. `kosse tui` with no running instance starts and fully cleans up its private server. Screenshots (fixture data) for the README. Docs and commands updated; check/CI include its lint, types and tests.
 
+
+### S13–S20 (agent surface)
+
+Scope, command contract, exit codes and acceptance for each are in [agent surface](agent-surface.md#slices).
 
 ## Exit rule
 

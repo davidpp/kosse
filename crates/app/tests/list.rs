@@ -6,6 +6,8 @@
     reason = "test helpers fail the test by panicking"
 )]
 
+mod support;
+
 use std::{
     collections::BTreeSet,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
@@ -20,6 +22,7 @@ use kosse_fixtures::{
     Fixture, FixtureSpec, lsof,
     repo::{Sandbox, git, init_repo},
 };
+use support::{MarkdownTable, markdown_tables};
 
 const V4: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const V6: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
@@ -75,7 +78,7 @@ fn list_json_matches_fixture_manifest_and_lsof() {
     ]
     .map(|fixture| fixture.expect("spawn fixture"));
 
-    let output = kosse(&["list", "--json", "--port", "0"]);
+    let output = kosse(&["list", "--json", "--instance-port", "0"]);
     let published: Snapshot =
         serde_json::from_slice(&output.stdout).expect("JSON snapshot contract");
     assert_eq!(published.schema_version, SNAPSHOT_SCHEMA_VERSION);
@@ -143,50 +146,61 @@ fn list_json_matches_fixture_manifest_and_lsof() {
     );
 }
 
+/// The documented columns of `kosse list`'s service table (README, CONTRIBUTING).
+const COLUMNS: [&str; 8] = [
+    "PROJECT",
+    "BRANCH",
+    "SERVICE",
+    "PORT",
+    "HTTP",
+    "PROCESS",
+    "PID.START",
+    "AGE",
+];
+
+/// The service table of `kosse list` output (the first table), with the documented columns.
+fn service_table(stdout: &[u8]) -> MarkdownTable {
+    let text = String::from_utf8(stdout.to_vec()).expect("UTF-8 table");
+    let table = markdown_tables(&text)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("no table in\n{text}"));
+    assert_eq!(table.headers, COLUMNS, "{text}");
+    table
+}
+
+fn identity_cell(fixture: &Fixture) -> String {
+    format!("{}.{}", fixture.pid(), fixture.record().started_at_secs)
+}
+
 #[test]
-fn list_table_shows_each_fixture_port_once_with_its_addresses() {
+fn list_table_shows_each_fixture_port_once() {
     let fixture =
         Fixture::spawn(&FixtureSpec::new().listen(&[V4, V6]).listen(&[V6])).expect("spawn fixture");
-    let output = kosse(&["list", "--port", "0"]);
-    let table = String::from_utf8(output.stdout).expect("UTF-8 table");
-    let pid = fixture.pid().to_string();
-
-    let rows: Vec<Vec<&str>> = table
-        .lines()
-        .map(|line| line.split_whitespace().collect::<Vec<_>>())
-        .filter(|columns| columns.first() == Some(&pid.as_str()))
+    let output = kosse(&["list", "--instance-port", "0"]);
+    let table = service_table(&output.stdout);
+    let rows = table.rows_where("PID.START", &identity_cell(&fixture));
+    let ports: Vec<u16> = rows
+        .iter()
+        .map(|row| table.cell(row, "PORT").parse().expect("port"))
         .collect();
-    let endpoints = &fixture.record().endpoints;
-    let shared_port = endpoints[0].port().to_string();
-    let v6_port = endpoints[2].port().to_string();
-    // The fixture's own temporary cwd is in no project (nor configured service).
-    let mut expected = vec![
-        vec![
-            pid.as_str(),
-            "kosse-fixture",
-            shared_port.as_str(),
-            "-",
-            "-",
-            "-",
-            "127.0.0.1,",
-            "::1",
-        ],
-        vec![
-            pid.as_str(),
-            "kosse-fixture",
-            v6_port.as_str(),
-            "-",
-            "-",
-            "-",
-            "::1",
-        ],
-    ];
-    // Rows are ordered by port; ephemeral ports need not ascend in spawn order.
-    expected.sort_by_key(|row| row[2].parse::<u16>().expect("port"));
-    assert_eq!(
-        rows, expected,
-        "one row per port, both addresses on the shared one"
-    );
+    let mut expected: Vec<u16> = lsof::tcp_listeners(&[fixture.pid()])
+        .expect("lsof")
+        .into_iter()
+        .map(|(_, _, port)| port)
+        .collect();
+    expected.sort_unstable();
+    expected.dedup();
+    assert_eq!(ports, expected, "one row per port, not per socket (lsof)");
+    for row in rows {
+        // The fixture's own temporary cwd is in no project (nor configured service), and a
+        // one-shot scan does not probe.
+        assert_eq!(table.cell(row, "PROJECT"), "-");
+        assert_eq!(table.cell(row, "BRANCH"), "-");
+        assert_eq!(table.cell(row, "SERVICE"), "-");
+        assert_eq!(table.cell(row, "PROCESS"), "kosse-fixture");
+        assert_ne!(table.cell(row, "AGE"), "-");
+    }
 }
 
 fn project_of<'a>(observation: &'a Observation, fixture: &Fixture) -> &'a Project {
@@ -239,7 +253,7 @@ fn list_json_attributes_projects_worktrees_and_packages() {
     };
     let (in_web, in_linked, in_second) = (spawn(&web), spawn(&linked), spawn(&second));
 
-    let output = kosse(&["list", "--json", "--port", "0"]);
+    let output = kosse(&["list", "--json", "--instance-port", "0"]);
     let snapshot: Snapshot = serde_json::from_slice(&output.stdout).expect("JSON");
     let observation = snapshot.observation.expect("an observation");
 
@@ -272,13 +286,15 @@ fn list_json_attributes_projects_worktrees_and_packages() {
     assert_eq!(package.path, "packages/web");
 
     // The table shows the same attribution.
-    let table = String::from_utf8(kosse(&["list", "--port", "0"]).stdout).expect("UTF-8");
-    let row = table
-        .lines()
-        .find(|line| line.split_whitespace().next() == Some(&in_web.pid().to_string()))
-        .expect("web fixture row");
-    let columns: Vec<&str> = row.split_whitespace().collect();
-    assert_eq!(columns[3..5], ["app/packages/web", "main"], "{row}");
+    let table = service_table(&kosse(&["list", "--instance-port", "0"]).stdout);
+    let rows = table.rows_where("PID.START", &identity_cell(&in_web));
+    let [row] = rows.as_slice() else {
+        panic!("one row for the web fixture: {rows:?}");
+    };
+    assert_eq!(
+        [table.cell(row, "PROJECT"), table.cell(row, "BRANCH")],
+        ["app/packages/web", "main"]
+    );
 }
 
 #[test]
@@ -294,8 +310,8 @@ fn list_rejects_unknown_flags_as_usage_errors() {
 #[test]
 fn closed_stdout_and_stderr_do_not_crash_list() {
     for args in [
-        &["list", "--port", "0"][..],
-        &["list", "--json", "--port", "0"][..],
+        &["list", "--instance-port", "0"][..],
+        &["list", "--json", "--instance-port", "0"][..],
     ] {
         // Both read ends are closed before kosse starts, so every write fails with EPIPE.
         let (stdout_reader, stdout_writer) = std::io::pipe().expect("stdout pipe");
@@ -310,4 +326,324 @@ fn closed_stdout_and_stderr_do_not_crash_list() {
             .expect("run kosse");
         assert_eq!(status.code(), Some(0), "kosse {args:?}: {status}");
     }
+}
+
+fn kosse_at(dir: &std::path::Path, config: &str, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_kosse"))
+        .env("KOSSE_CONFIG_DIR", config)
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .expect("run kosse")
+}
+
+fn pids_of(output: &Output) -> BTreeSet<u32> {
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let snapshot: Snapshot = serde_json::from_slice(&output.stdout).expect("JSON snapshot");
+    let observation = snapshot.observation.expect("an observation");
+    for service in &observation.services {
+        let root = service.project.as_deref().expect("a project");
+        assert!(
+            observation
+                .projects
+                .iter()
+                .any(|project| project.root == root),
+            "the filtered snapshot still lists the project of every service"
+        );
+    }
+    observation
+        .services
+        .iter()
+        .map(|service| service.process.identity.pid)
+        .collect()
+}
+
+/// An agent asks "what runs for this worktree?": `--here` resolves the caller's directory as
+/// attribution does, so two worktrees of one repository stay separate, a package directory
+/// belongs to its worktree, and a directory outside any project is refused, never "everything".
+#[test]
+fn list_here_lists_only_the_callers_worktree() {
+    let tree = Sandbox::new().expect("sandbox");
+    let main = tree.dir("shop").expect("dir");
+    init_repo(&main).expect("repo");
+    tree.file("shop/apps/web/package.json", "{}").expect("file");
+    let web = tree.dir("shop/apps/web").expect("dir");
+    let linked = tree.root().join("shop-feature");
+    git(
+        &main,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            &path_text(&linked),
+        ],
+    )
+    .expect("worktree add");
+    let linked = linked.canonicalize().expect("canonical");
+    let outside = tree.dir("scratch").expect("dir");
+    let spawn = |dir: &std::path::Path| {
+        Fixture::spawn(&FixtureSpec::new().listen(&[V4]).cwd(dir)).expect("spawn fixture")
+    };
+    let (in_web, in_linked) = (spawn(&web), spawn(&linked));
+    let config = "/var/empty/kosse-tests";
+    let here = ["list", "--here", "--json", "--instance-port", "0"];
+
+    assert_eq!(
+        pids_of(&kosse_at(&linked, config, &here)),
+        BTreeSet::from([in_linked.pid()]),
+        "the linked worktree alone"
+    );
+    assert_eq!(
+        pids_of(&kosse_at(&web, config, &here)),
+        BTreeSet::from([in_web.pid()]),
+        "from a package directory: its worktree, not the linked one"
+    );
+    let by_root = [
+        "list",
+        "--project",
+        &path_text(&main),
+        "--json",
+        "--instance-port",
+        "0",
+    ];
+    assert_eq!(
+        pids_of(&kosse_at(&outside, config, &by_root)),
+        BTreeSet::from([in_web.pid()]),
+        "--project names the same project from anywhere"
+    );
+
+    // The table answers the same question.
+    let table = service_table(
+        &kosse_at(&linked, config, &["list", "--here", "--instance-port", "0"]).stdout,
+    );
+    let identities: Vec<&str> = table
+        .rows
+        .iter()
+        .map(|row| table.cell(row, "PID.START"))
+        .collect();
+    assert_eq!(identities, [identity_cell(&in_linked)]);
+    assert_eq!(table.cell(&table.rows[0], "BRANCH"), "feature");
+
+    // Outside a project: a usage error (2), with a typed error under --json and nothing on
+    // stdout.
+    let refused = kosse_at(&outside, config, &here);
+    assert_eq!(refused.status.code(), Some(2));
+    assert_eq!(refused.stdout, b"", "stdout carries only answers");
+    let error: kosse_core::agent::CommandError =
+        serde_json::from_slice(&refused.stderr).expect("CommandError JSON on stderr");
+    assert_eq!(
+        error.error,
+        kosse_core::agent::CommandErrorCode::NotInProject
+    );
+    let plain = kosse_at(&outside, config, &here[..2]);
+    assert_eq!(plain.status.code(), Some(2));
+    let stderr = String::from_utf8(plain.stderr).expect("UTF-8");
+    assert_eq!(stderr.lines().count(), 1, "one plain line: {stderr}");
+    assert!(stderr.starts_with("kosse: "), "{stderr}");
+}
+
+/// `--port` and `--service` narrow `--json` to a snapshot of only the matching services, and the
+/// port's owner is the one `lsof` sees.
+#[test]
+fn list_filters_by_port_and_configured_service() {
+    let tree = Sandbox::new().expect("sandbox");
+    let repo = tree.dir("shop").expect("dir");
+    init_repo(&repo).expect("repo");
+    let config = tree.root().join("config");
+    std::fs::create_dir_all(&config).expect("config dir");
+    let (one, two) = (
+        Fixture::spawn(&FixtureSpec::new().listen(&[V4]).cwd(&repo)).expect("fixture"),
+        Fixture::spawn(&FixtureSpec::new().listen(&[V4]).cwd(&repo)).expect("fixture"),
+    );
+    let port_of = |fixture: &Fixture| fixture.record().endpoints[0].port();
+    let profile = serde_json::json!({
+        "version": 1,
+        "projects": { path_text(&repo): { "version": 1, "services": {
+            "web": { "name": "Storefront", "match": { "port": port_of(&two) } }
+        } } }
+    });
+    std::fs::write(config.join("config.json"), profile.to_string()).expect("write config");
+    let config = path_text(&config);
+    let run = |args: &[&str]| {
+        let mut all = vec!["list", "--json", "--instance-port", "0"];
+        all.extend_from_slice(args);
+        kosse_at(tree.root(), &config, &all)
+    };
+
+    let port = port_of(&one).to_string();
+    assert_eq!(
+        pids_of(&run(&["--port", &port])),
+        BTreeSet::from([one.pid()])
+    );
+    let lsof_owners: BTreeSet<u32> = lsof::tcp_listeners(&[one.pid(), two.pid()])
+        .expect("lsof")
+        .into_iter()
+        .filter(|&(_, _, listening)| listening == port_of(&one))
+        .map(|(pid, _, _)| pid)
+        .collect();
+    assert_eq!(lsof_owners, BTreeSet::from([one.pid()]));
+
+    // Scoped to this project: other suites' repositories may configure a `web` too.
+    let project = path_text(&repo);
+    for name in ["web", "Storefront"] {
+        assert_eq!(
+            pids_of(&run(&["--service", name, "--project", &project])),
+            BTreeSet::from([two.pid()]),
+            "by configured ID or name: {name}"
+        );
+    }
+    assert_eq!(
+        pids_of(&run(&["--service", "api", "--project", &project])),
+        BTreeSet::new()
+    );
+}
+
+/// Process-, Git- and profile-derived text lands in table cells, so a name holding `|`,
+/// backticks, brackets, angle brackets or a newline must not add a column or row, open a code
+/// span, render a link, image or HTML, or end the table.
+#[test]
+fn hostile_names_cannot_break_the_markdown_table() {
+    let tree = Sandbox::new().expect("sandbox");
+    // Git's own output is line-based, so a newline in a worktree path makes the project unknown
+    // (attribution's honest answer), and profiles refuse control characters in names: the
+    // newline comes from the process name.
+    let repo = tree.dir("shop | `x` | <b>row</b> |").expect("dir");
+    init_repo(&repo).expect("repo");
+    git(&repo, &["checkout", "-q", "-b", "fix|`rm`<b>"]).expect("branch");
+    let config = tree.root().join("config");
+    std::fs::create_dir_all(&config).expect("config dir");
+    let fixture = Fixture::spawn(
+        &FixtureSpec::new()
+            .listen(&[V4])
+            .cwd(&repo)
+            .executable_name("srv|`x`\n<b>[y]")
+            .args(&["a | b", "`rm -rf`", "line\n| injected |"]),
+    )
+    .expect("fixture");
+    let profile = serde_json::json!({
+        "version": 1,
+        "projects": { path_text(&repo): { "version": 1, "services": {
+            "web": { "name": "Web | `x` [a](http://e)", "match": { "port": fixture.record().endpoints[0].port() } },
+            "api": { "name": "API | `y` <img src=x>" }
+        } } }
+    });
+    std::fs::write(config.join("config.json"), profile.to_string()).expect("write config");
+
+    let output = kosse_at(
+        tree.root(),
+        &path_text(&config),
+        &[
+            "list",
+            "--project",
+            &path_text(&repo),
+            "--instance-port",
+            "0",
+        ],
+    );
+    // Profile warnings are machine-wide; only one about this project's profile would matter.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success()
+            && !stderr
+                .lines()
+                .any(|line| line.contains("profile") && line.contains(&path_text(&repo))),
+        "the profile applies: {stderr}"
+    );
+    // `markdown_tables` fails on a broken row, a stray code span, an unescaped `[`, `]`, `<` or
+    // `>`, or a table cut short.
+    let text = String::from_utf8(output.stdout.clone()).expect("UTF-8");
+    let tables = markdown_tables(&text);
+    assert_eq!(
+        tables.len(),
+        2,
+        "services and configured-not-observed:\n{text}"
+    );
+    let table = service_table(&output.stdout);
+    let [row] = table.rows.as_slice() else {
+        panic!("one row for the one port:\n{text}");
+    };
+    // Control characters are escaped (`\u{a}`), never passed through.
+    let escaped = |raw: &str| raw.replace('\n', "\\u{a}");
+    let project = repo
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("name");
+    assert_eq!(table.cell(row, "PROJECT"), escaped(project));
+    assert_eq!(table.cell(row, "BRANCH"), "fix|`rm`<b>");
+    assert_eq!(
+        table.cell(row, "SERVICE"),
+        "Web | `x` [a](http://e) (web) [central]"
+    );
+    assert_eq!(table.cell(row, "PROCESS"), escaped("srv|`x`\n<b>[y]"));
+    assert_eq!(table.cell(row, "PID.START"), identity_cell(&fixture));
+    let unobserved = &tables[1];
+    assert_eq!(
+        unobserved.cell(&unobserved.rows[0], "PROJECT"),
+        escaped(project)
+    );
+    assert_eq!(
+        unobserved.cell(&unobserved.rows[0], "SERVICE"),
+        "API | `y` <img src=x> (api) [central]"
+    );
+}
+
+/// Exit codes distinguish a usage error (2, like a directory outside any project above) from not
+/// being able to observe at all (4): here an unusable configuration directory.
+#[test]
+fn list_exit_codes_tell_usage_from_unobservable() {
+    let conflicting = Command::new(env!("CARGO_BIN_EXE_kosse"))
+        .env("KOSSE_CONFIG_DIR", "/var/empty/kosse-tests")
+        .args(["list", "--here", "--project", "/", "--instance-port", "0"])
+        .output()
+        .expect("run kosse");
+    assert_eq!(conflicting.status.code(), Some(2));
+    let relative = Command::new(env!("CARGO_BIN_EXE_kosse"))
+        .env("KOSSE_CONFIG_DIR", "relative/config")
+        .args(["list", "--json", "--instance-port", "0"])
+        .output()
+        .expect("run kosse");
+    assert_eq!(relative.status.code(), Some(4));
+    assert_eq!(relative.stdout, b"", "stdout carries only answers");
+    let error: kosse_core::agent::CommandError =
+        serde_json::from_slice(&relative.stderr).expect("CommandError JSON on stderr");
+    assert_eq!(
+        error.error,
+        kosse_core::agent::CommandErrorCode::ConfigUnavailable
+    );
+}
+
+/// A one-shot scan never probes, so a probe candidate's `HTTP` cell does not read `pending` as if
+/// a probe were coming; the JSON keeps the contract's `pending` state.
+#[test]
+fn one_shot_tables_do_not_promise_a_probe() {
+    let tree = Sandbox::new().expect("sandbox");
+    let dir = tree.dir("app").expect("dir");
+    tree.file("app/package.json", "{}").expect("manifest");
+    let fixture = Fixture::spawn(&FixtureSpec::new().listen(&[V4]).cwd(&dir)).expect("fixture");
+    let scoped = [
+        "list",
+        "--project",
+        &path_text(&dir),
+        "--instance-port",
+        "0",
+    ];
+    let table = service_table(&kosse_at(tree.root(), "/var/empty/kosse-tests", &scoped).stdout);
+    let rows = table.rows_where("PID.START", &identity_cell(&fixture));
+    assert_eq!(table.cell(rows[0], "HTTP"), "not probed (no instance)");
+
+    let mut json = scoped.to_vec();
+    json.push("--json");
+    let output = kosse_at(tree.root(), "/var/empty/kosse-tests", &json);
+    let snapshot: Snapshot = serde_json::from_slice(&output.stdout).expect("snapshot");
+    let observation = snapshot.observation.expect("observation");
+    assert_eq!(
+        fixture_service(&observation, &fixture).endpoints[0].http,
+        kosse_core::model::HttpProbe::Pending
+    );
 }

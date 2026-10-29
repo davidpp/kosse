@@ -102,11 +102,13 @@ function install(
 
   const plan: { from: string; to: string; mode: number }[] = [
     { from: "kosse", to: "bin/kosse", mode: 0o755 },
-    ...["LICENSE", "THIRD_PARTY_NOTICES.md", "INSTALL.md", "MANIFEST.json"].map((name) => ({
-      from: name,
-      to: `share/doc/kosse/${name}`,
-      mode: 0o644,
-    })),
+    ...["LICENSE", "THIRD_PARTY_NOTICES.md", "INSTALL.md", "SKILL.md", "MANIFEST.json"].map(
+      (name) => ({
+        from: name,
+        to: `share/doc/kosse/${name}`,
+        mode: 0o644,
+      }),
+    ),
   ];
   const previous = readRecord(prefix);
   const recorded = new Map(previous?.files.map((file) => [file.path, file.sha256]));
