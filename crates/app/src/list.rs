@@ -6,26 +6,28 @@
 //! - `BRANCH`: branch, `detached@<commit>`, `?` when Git did not say, `-` outside Git;
 //! - `SERVICE`: the configured service, `Name (id) [source]`, or `ambiguous: a, b`;
 //! - `PORT`;
-//! - `HTTP`: `<status> <url>` when it answered HTTP, otherwise the probe state;
+//! - `HTTP`: `<status> <url>` when it answered HTTP, otherwise the probe state (`not probed (no
+//!   instance)` for a candidate of a one-shot scan, which never probes);
 //! - `PROCESS`: the OS process name;
 //! - `PID.START`: the process identity (PID and start time in Unix seconds), as actions take it;
 //! - `AGE`: time since the process started.
 //!
 //! A `## Configured, not observed` table follows when configured services match no process
-//! (`PROJECT` root, `SERVICE`, `SOURCE`, `MATCH`). Unknown cells print as `-`; warnings go to
+//! (`PROJECT` directory name, `SERVICE`, `SOURCE`, `MATCH`). Unknown cells print as `-`; warnings go to
 //! stderr. Command lines appear only in `--json`, redacted.
 
 use std::{
     collections::HashMap,
     fmt::Write as _,
     io::{self, Write},
+    path::Path,
     process::ExitCode,
 };
 
 use kosse_core::{
     model::{
         Endpoint, GitHead, HttpProbe, Observation, ProbeResult, ProbeSkip, Project, Service,
-        TlsFailure,
+        Snapshot, TlsFailure,
     },
     profiles::view::{ConfiguredService, ProfileMatch, ProjectMetadata},
 };
@@ -50,6 +52,9 @@ pub const COLUMNS: [&str; 8] = [
     "AGE",
 ];
 
+/// The `HTTP` cell of a probe candidate in an observation no prober follows (a one-shot scan).
+pub const NOT_PROBED: &str = "not probed (no instance)";
+
 pub fn run(args: &ListArgs) -> ExitCode {
     failure::exit(list(args), args.json)
 }
@@ -72,7 +77,7 @@ fn list(args: &ListArgs) -> Result<(), Failure> {
         return Ok(());
     };
     failure::written(
-        services_table(observation, args.port)
+        services_table(observation, args.port, probes_run(&snapshot))
             .write(&mut stdout)
             .and_then(|()| write_unobserved(&mut stdout, &observation.profiles)),
     )?;
@@ -88,8 +93,15 @@ pub fn write_json(out: &mut impl Write, value: &impl serde::Serialize) -> io::Re
     out.write_all(b"\n")
 }
 
-/// One row per port of each service (only `port` when given).
-pub fn services_table(observation: &Observation, port: Option<u16>) -> Table<8> {
+/// Whether HTTP probes run for this snapshot: a running instance's do, a one-shot scan's never.
+pub fn probes_run(snapshot: &Snapshot) -> bool {
+    snapshot.scanner.interval_ms.is_some()
+}
+
+/// One row per port of each service (only `port` when given). `probes_run` is false for an
+/// observation no prober follows, so a candidate reads `not probed (no instance)` rather than
+/// `pending`.
+pub fn services_table(observation: &Observation, port: Option<u16>, probes_run: bool) -> Table<8> {
     let projects: HashMap<&str, &Project> = observation
         .projects
         .iter()
@@ -125,7 +137,7 @@ pub fn services_table(observation: &Observation, port: Option<u16>) -> Table<8> 
                 &branch,
                 &configured,
                 &endpoint.port.to_string(),
-                &http_state(endpoint),
+                &http_state(endpoint, probes_run),
                 process,
                 &identity,
                 &age,
@@ -146,8 +158,9 @@ pub fn reachable_url(endpoint: &Endpoint) -> Option<String> {
     }
 }
 
-/// `200 http://localhost:3000/`, or what stands in the way: `pending`, `skipped: …`, `timed out`.
-pub fn http_state(endpoint: &Endpoint) -> String {
+/// `200 http://localhost:3000/`, or what stands in the way: `pending` (`not probed (no instance)`
+/// when no prober runs), `skipped: …`, `timed out`.
+pub fn http_state(endpoint: &Endpoint, probes_run: bool) -> String {
     let result = match &endpoint.http {
         HttpProbe::Skipped { reason } => {
             return format!(
@@ -161,7 +174,8 @@ pub fn http_state(endpoint: &Endpoint) -> String {
                 }
             );
         }
-        HttpProbe::Pending => return "pending".to_owned(),
+        HttpProbe::Pending if probes_run => return "pending".to_owned(),
+        HttpProbe::Pending => return NOT_PROBED.to_owned(),
         HttpProbe::Probed { result, .. } => result,
     };
     match result {
@@ -241,10 +255,15 @@ fn write_unobserved(out: &mut impl Write, profiles: &[ProjectMetadata]) -> io::R
             .iter()
             .filter(|entry| !entry.disabled && entry.matched.is_empty())
             .collect();
+        // The directory name, as the service table shows it; `--json` has the root.
+        let name = Path::new(&metadata.root).file_name().map_or_else(
+            || metadata.root.clone(),
+            |name| name.to_string_lossy().into_owned(),
+        );
         let project = if metadata.observed {
-            metadata.root.clone()
+            name
         } else {
-            format!("{} (project not observed)", metadata.root)
+            format!("{name} (project not observed)")
         };
         if pending.is_empty() && !metadata.observed {
             let sources: Vec<String> = metadata.sources.iter().map(ToString::to_string).collect();

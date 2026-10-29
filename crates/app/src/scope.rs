@@ -22,7 +22,7 @@ use kosse_core::{
     model::{Project, ScanWarning, Service, Snapshot},
     profiles::{
         CentralStore, Profiles,
-        view::{ConfiguredService, ProfileMatch, ProjectMetadata},
+        view::{ConfiguredService, ProfileMatch, ProfileSource, ProjectMetadata},
     },
     scan::Scanner,
     snapshot::{AttemptTimer, SnapshotTracker},
@@ -190,9 +190,15 @@ impl Filter {
             .iter()
             .map(|service| service.process.identity.pid)
             .collect();
+        // Under a project filter with a port, a process on that port whose project is unknown
+        // might be in scope; without a port, every unknown-project process would be listed.
         let unknown_in_scope: HashSet<u32> = dropped
             .iter()
-            .filter(|service| service.project.is_none() && self.keeps_port(service))
+            .filter(|service| {
+                service.project.is_none()
+                    && (self.root.is_none() || self.port.is_some())
+                    && self.keeps_port(service)
+            })
             .map(|service| service.process.identity.pid)
             .collect();
         let used_roots: HashSet<&str> = kept
@@ -222,10 +228,19 @@ impl Filter {
             | ScanWarning::AttributionUnavailable { pid, .. } => {
                 kept_pids.contains(pid) || unknown_in_scope.contains(pid)
             }
-            ScanWarning::ProfileMatchOutsideProject { root, .. } => scope_roots.contains(root),
-            ScanWarning::OtherUsersNotVisible
-            | ScanWarning::ProfileUnusable { .. }
-            | ScanWarning::ProfileRootNotCanonical { .. } => true,
+            ScanWarning::ProfileMatchOutsideProject { root, .. }
+            | ScanWarning::ProfileRootNotCanonical { root, .. } => {
+                self.root.is_none() || scope_roots.contains(root)
+            }
+            // A repository file sits in its project; the central file concerns every project.
+            ScanWarning::ProfileUnusable { source, path, .. } => {
+                *source == ProfileSource::Central
+                    || self.root.is_none()
+                    || scope_roots
+                        .iter()
+                        .any(|root| Path::new(path).starts_with(root))
+            }
+            ScanWarning::OtherUsersNotVisible => true,
         });
         observation.services = kept;
     }
@@ -281,6 +296,103 @@ pub fn is_configured_as(service: &Service, profiles: &[ProjectMetadata], name: &
         .filter(|metadata| service.project.as_deref() == Some(metadata.root.as_str()))
         .flat_map(|metadata| &metadata.services)
         .any(|entry| ids.contains(&entry.id) && names(entry, name))
+}
+
+/// Fails with `notFound` (exit 1) when no profile in scope configures a service `name` (by ID or
+/// name), so `url` and `wait` answer at once instead of waiting for something that can never
+/// match. Lists the configured IDs in scope, or the observed ports when nothing is configured.
+pub fn require_configured(
+    snapshot: &Snapshot,
+    root: Option<&str>,
+    name: &str,
+) -> Result<(), Failure> {
+    let Some(observation) = snapshot.observation.as_ref() else {
+        return Ok(());
+    };
+    let in_scope = |project: Option<&str>| root.is_none_or(|root| project == Some(root));
+    let entries: Vec<&ConfiguredService> = observation
+        .profiles
+        .iter()
+        .filter(|metadata| in_scope(Some(&metadata.root)))
+        .flat_map(|metadata| &metadata.services)
+        .collect();
+    if entries.iter().any(|entry| names(entry, name)) {
+        return Ok(());
+    }
+    let scope = root.map_or_else(String::new, |root| format!(" in {root}"));
+    let known = if entries.is_empty() {
+        let mut ports: Vec<u16> = observation
+            .services
+            .iter()
+            .filter(|service| in_scope(service.project.as_deref()))
+            .flat_map(|service| service.endpoints.iter().map(|endpoint| endpoint.port))
+            .collect();
+        ports.sort_unstable();
+        ports.dedup();
+        let ports: Vec<String> = ports.iter().map(ToString::to_string).collect();
+        if ports.is_empty() {
+            "no services are configured and nothing listens".to_owned()
+        } else {
+            format!(
+                "no services are configured; observed ports: {} (use the port)",
+                ports.join(", ")
+            )
+        }
+    } else {
+        let mut ids: Vec<&str> = entries.iter().map(|entry| entry.id.as_str()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        format!("configured: {}", ids.join(", "))
+    };
+    Err(Failure::new(
+        CommandErrorCode::NotFound,
+        format!(
+            "no service {name:?} is configured{scope} ({known}; a repository kosse.json is read once a process of its project runs)"
+        ),
+    ))
+}
+
+/// Why `what` matches several services, and how to pick one: under `--here`/`--project`, the
+/// ready command for each candidate port (`command`); otherwise each PID and project, and the
+/// flags that narrow it.
+pub fn ambiguity(
+    what: &str,
+    services: &[Service],
+    root: Option<&str>,
+    command: impl Fn(u16) -> String,
+) -> String {
+    if let Some(root) = root {
+        let mut ports: Vec<u16> = services
+            .iter()
+            .flat_map(|service| service.endpoints.iter().map(|endpoint| endpoint.port))
+            .collect();
+        ports.sort_unstable();
+        ports.dedup();
+        let commands: Vec<String> = ports
+            .into_iter()
+            .map(|port| format!("`{}`", command(port)))
+            .collect();
+        return format!(
+            "{what} matches {} services in {root}; name a port: {}",
+            services.len(),
+            commands.join(", ")
+        );
+    }
+    let named: Vec<String> = services
+        .iter()
+        .map(|service| {
+            format!(
+                "PID {} in {}",
+                service.process.identity.pid,
+                service.project.as_deref().unwrap_or("no project")
+            )
+        })
+        .collect();
+    format!(
+        "{what} matches {} services ({}); narrow it with --here, --project or a port",
+        services.len(),
+        named.join(", ")
+    )
 }
 
 fn names(entry: &ConfiguredService, name: &str) -> bool {
@@ -356,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn a_project_filter_keeps_the_warning_of_a_process_whose_project_is_unknown() {
+    fn a_project_and_port_filter_keeps_the_warning_of_a_process_whose_project_is_unknown() {
         let unknown = |pid| ScanWarning::AttributionUnavailable {
             pid,
             reason: AttributionFailure::GitTimedOut,
@@ -369,8 +481,20 @@ mod tests {
             ],
             vec![unknown(3), ScanWarning::OtherUsersNotVisible],
         );
+        let mut by_project = snapshot.clone();
+        Filter {
+            root: Some("/a".to_owned()),
+            ..Filter::default()
+        }
+        .apply(&mut by_project);
+        // Without a port, a project filter does not list every unknown-project process.
+        assert_eq!(
+            by_project.observation.expect("observation").warnings,
+            [ScanWarning::OtherUsersNotVisible]
+        );
         let filter = Filter {
             root: Some("/a".to_owned()),
+            port: Some(3002),
             ..Filter::default()
         };
         filter.apply(&mut snapshot);
@@ -380,8 +504,8 @@ mod tests {
             .iter()
             .map(|service| service.process.identity.pid)
             .collect();
-        assert_eq!(pids, [1], "only the project's services");
-        // Process 3 might be in /a: its unknown stays visible rather than silently dropped.
+        assert_eq!(pids, Vec::<u32>::new(), "nothing of /a listens on 3002");
+        // Process 3 on that port might be in /a: its unknown stays visible, never dropped.
         assert_eq!(
             observation.warnings,
             [unknown(3), ScanWarning::OtherUsersNotVisible]

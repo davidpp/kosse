@@ -313,7 +313,8 @@ pub struct WaitArgs {
 
 #[derive(Debug, clap::Args)]
 pub struct PortArgs {
-    /// The TCP port.
+    /// The TCP port (1–65535).
+    #[arg(value_parser = clap::value_parser!(u16).range(1..))]
     pub port: u16,
 
     /// Print the `PortAnswer` JSON record; errors as a `CommandError` on stderr.

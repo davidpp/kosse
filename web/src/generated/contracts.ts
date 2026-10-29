@@ -694,6 +694,11 @@ instance: string,
  */
 url: string | null, 
 /**
+ * `false` when other users' listeners are hidden from this user: a met `gone` then means
+ * "gone as far as this user can see".
+ */
+otherUsersVisible: boolean, 
+/**
  * When the last observation was taken, in Unix milliseconds.
  */
 scannedAtMs: number, 

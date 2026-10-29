@@ -1,8 +1,8 @@
 //! Markdown (GFM) tables, the default output of agent-facing commands (blueprint/agent-surface.md).
 //!
-//! Cells are untrusted process- and probe-derived text: after [`printable`], backslashes, pipes
-//! and backticks are escaped so a cell can neither end early, add a column or row, nor open a code
-//! span. Columns are padded so the table also reads in a terminal.
+//! Cells are untrusted process- and probe-derived text: after [`printable`], backslashes, pipes,
+//! backticks, brackets and angle brackets are escaped so a cell can neither end early, add a
+//! column or row, open a code span, nor render a link, image or HTML. Columns are padded so the table also reads in a terminal.
 
 use std::io::{self, Write};
 
@@ -63,7 +63,7 @@ fn write_line<const N: usize>(
 }
 
 /// One escaped cell: control and invisible characters as [`printable`] escapes them, then `\`,
-/// `|` and `` ` `` backslash-escaped. Empty is [`UNKNOWN`].
+/// `|`, `` ` ``, `[`, `]`, `<` and `>` backslash-escaped. Empty is [`UNKNOWN`].
 pub fn cell(value: &str) -> String {
     let value = printable(value.trim());
     if value.is_empty() {
@@ -71,7 +71,7 @@ pub fn cell(value: &str) -> String {
     }
     let mut out = String::with_capacity(value.len());
     for character in value.chars() {
-        if matches!(character, '\\' | '|' | '`') {
+        if matches!(character, '\\' | '|' | '`' | '[' | ']' | '<' | '>') {
             out.push('\\');
         }
         out.push(character);
@@ -98,16 +98,17 @@ mod tests {
     }
 
     #[test]
-    fn hostile_cells_cannot_add_rows_columns_or_code_spans() {
+    fn hostile_cells_cannot_add_rows_columns_code_spans_links_or_html() {
         let mut table = Table::new(["PROCESS", "COMMAND"]);
         table.row(["node", "x | y\n| injected | row |"]);
         table.row(["sh", "a\\|b `rm -rf` \\"]);
         table.row(["", "\u{202E}gnp.exe"]);
+        table.row(["![i](http://e/x.png)", "[x](http://e) <img src=x>"]);
         let mut out = Vec::new();
         table.write(&mut out).expect("in-memory write");
         let text = String::from_utf8(out).expect("UTF-8");
         let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(lines.len(), 5, "{text}");
+        assert_eq!(lines.len(), 6, "{text}");
         for line in &lines {
             assert_eq!(columns(line), 2, "{line}");
         }
@@ -122,5 +123,12 @@ mod tests {
             lines[4]
         );
         assert!(!text.contains('\u{202E}'), "bidi override passed through");
+        // No link, image or HTML: every bracket is escaped.
+        assert!(
+            lines[5].contains(r"!\[i\](http://e/x.png)")
+                && lines[5].contains(r"\[x\](http://e) \<img src=x\>"),
+            "{}",
+            lines[5]
+        );
     }
 }

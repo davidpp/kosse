@@ -13,7 +13,7 @@ Kossé itself stays passive and does no inference ([non-goals](product.md#explic
 ## Agent jobs
 
 1. **What runs for this project?** Services of the worktree I am in, not the whole machine.
-2. **Which URL or port?** For a named service, for scripting (`curl "$(kosse url web)/health"`).
+2. **Which URL or port?** For a named service, for scripting (`curl "$(kosse url web)health"`: the URL ends in `/`).
 3. **Is port N free, and if not, whose is it?** Before starting a server; names the project and identity instead of a bare PID.
 4. **Wait until it is up / answering HTTP / gone.** Replaces `sleep` + retry loops, with a timeout and an honest final observation.
 5. **Stop what I left running**, non-interactively but under the same identity and every-port confirmation as the dashboard.
@@ -71,7 +71,9 @@ Discovery (S18):
 | 3 | Refused by policy, nothing changed: confirmation required, stale identity, port set mismatch, no force offer, never-signalled process, action rate limit, invalid profile, precondition failed |
 | 4 | Could not observe: scan failure, instance unverifiable or absent (stop/force), action outcome unobservable, config unreadable or newer |
 
-Failures print one plain line on stderr, plus the confirming command where one exists (S17). With `--json` they print a typed JSON error instead (`ApiError`-shaped). Stdout carries only the result.
+Failures print one plain line on stderr, plus the confirming command where one exists (S17). With `--json` they print a typed JSON error instead (`ApiError`-shaped). Stdout carries only the result. Known limit: clap's own usage errors (exit 2) print plain text even with `--json`.
+
+An ambiguity is 1 for `url` and `wait` but 3 for `stop`: a read command that cannot pick one service has a negative answer and nothing is at stake, while `stop` refuses to act on a target that is not exactly one confirmed identity, which is a policy refusal.
 
 ## Customization: prompt first, form second
 
