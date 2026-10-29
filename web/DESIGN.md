@@ -2,38 +2,38 @@
 name: Kossé
 description: A calm, dense, keyboard-first local dashboard for development services.
 colors:
-  ink: "oklch(0.2756 0.0139 196.4)"
-  ink-muted: "oklch(0.4901 0.0183 176.4)"
-  canvas: "oklch(0.9708 0.0045 134.8)"
-  surface: "oklch(1 0 0)"
-  line: "oklch(0.64 0.0146 159.7)"
-  line-strong: "oklch(0.5393 0.023 168.7)"
-  accent: "oklch(0.4767 0.082 191.4)"
-  focus: "oklch(0.4767 0.082 191.4)"
-  listening: "oklch(0.4036 0.029 176.1)"
-  reachable: "oklch(0.4873 0.1454 258.1)"
-  stale: "oklch(0.5006 0.1056 74.9)"
-  failed: "oklch(0.5091 0.1555 21)"
-  unknown: "oklch(0.4901 0.0183 176.4)"
-  danger: "oklch(0.5091 0.1555 21)"
-  on-accent: "oklch(1 0 0)"
-  on-danger: "oklch(1 0 0)"
-  ink-dark: "oklch(0.9417 0.006 170.4)"
-  ink-muted-dark: "oklch(0.7543 0.0171 172.5)"
-  canvas-dark: "oklch(0.2094 0.012 186.9)"
-  surface-dark: "oklch(0.2616 0.0158 182.7)"
-  line-dark: "oklch(0.5465 0.0222 172.2)"
-  line-strong-dark: "oklch(0.6776 0.0262 166.7)"
-  accent-dark: "oklch(0.8125 0.096 187.9)"
-  focus-dark: "oklch(0.8125 0.096 187.9)"
-  listening-dark: "oklch(0.8202 0.0218 170.5)"
-  reachable-dark: "oklch(0.7856 0.1094 258)"
-  stale-dark: "oklch(0.8119 0.1153 83.7)"
-  failed-dark: "oklch(0.7938 0.1198 15.6)"
-  unknown-dark: "oklch(0.7543 0.0171 172.5)"
-  danger-dark: "oklch(0.7938 0.1198 15.6)"
-  on-accent-dark: "oklch(0.2094 0.012 186.9)"
-  on-danger-dark: "oklch(0.2094 0.012 186.9)"
+  ink: "oklch(0.2574 0.0056 286.0023)"
+  ink-muted: "oklch(0.4922 0.0142 285.8659)"
+  canvas: "oklch(0.9756 0.0026 106.4483)"
+  surface: "oklch(1 0 89.8756)"
+  line: "oklch(0.6433 0.0148 285.9776)"
+  line-strong: "oklch(0.5589 0.0153 285.8944)"
+  accent: "oklch(0.4024 0.1765 261.2387)"
+  focus: "oklch(0.4024 0.1765 261.2387)"
+  listening: "oklch(0.4535 0.0178 285.67)"
+  reachable: "oklch(0.5059 0.1771 261.6903)"
+  stale: "oklch(0.4888 0.1022 77.0857)"
+  failed: "oklch(0.5081 0.1625 17.8377)"
+  unknown: "oklch(0.4922 0.0142 285.8659)"
+  danger: "oklch(0.5081 0.1625 17.8377)"
+  on-accent: "oklch(1 0 89.8756)"
+  on-danger: "oklch(1 0 89.8756)"
+  ink-dark: "oklch(0.9455 0.0027 106.4502)"
+  ink-muted-dark: "oklch(0.7411 0.0142 286.0473)"
+  canvas-dark: "oklch(0.2099 0.0039 286.0588)"
+  surface-dark: "oklch(0.2574 0.0056 286.0023)"
+  line-dark: "oklch(0.573 0.0167 285.8599)"
+  line-strong-dark: "oklch(0.677 0.0175 285.9232)"
+  accent-dark: "oklch(0.7715 0.1157 265.3437)"
+  focus-dark: "oklch(0.7715 0.1157 265.3437)"
+  listening-dark: "oklch(0.7983 0.014 286.0791)"
+  reachable-dark: "oklch(0.7961 0.1024 263.9862)"
+  stale-dark: "oklch(0.8095 0.1108 82.4964)"
+  failed-dark: "oklch(0.7945 0.1219 9.3455)"
+  unknown-dark: "oklch(0.7411 0.0142 286.0473)"
+  danger-dark: "oklch(0.7945 0.1219 9.3455)"
+  on-accent-dark: "oklch(0.2099 0.0039 286.0588)"
+  on-danger-dark: "oklch(0.2099 0.0039 286.0588)"
   hairline: "color-mix(in oklab, {colors.line} 32%, {colors.surface})"
   row: "color-mix(in oklab, {colors.accent} 8%, {colors.surface})"
   failed-wash: "color-mix(in oklab, {colors.failed} 9%, {colors.surface})"
@@ -118,8 +118,8 @@ Describes the dashboard as built in S07 (`web/src`). Colour roles come from
 A switchboard of projects: one card per worktree, one line per process with every port it owns
 patched in. Operate mode throughout. It is opened from the tray for a few seconds at a time, so the
 first viewport is the whole job: which projects run, on which ports, what HTTP saw, and the
-actions. Density and consistency outrank expression; the brand lives in the green-tinted neutrals,
-the Fleuve focus ring and the mark.
+actions. Density and consistency outrank expression; the brand lives in the Québec-blue focus ring,
+primary actions and the header's Relay mark and Kibernetyk Mono wordmark, on neutral surfaces.
 
 Light and dark follow the system appearance; there is no in-app switch. The only motion is state
 feedback (150 ms colour transitions, a spinning refresh icon while a scan runs) and it collapses
@@ -135,14 +135,14 @@ saturated colour on screen.
   card, rows are separated by the derived `hairline`, which is decorative.
 - `line-strong` bounds interactive controls (inputs, secondary buttons).
 - `ink` carries text; `ink-muted` secondary text (≥ 4.5:1 on canvas and surface).
-- `accent` (Fleuve) marks the mark, primary actions (Save) and native control tint. `focus` is the
+- `accent` (Québec blue, #003DA5 / #91B3FF) marks the mark, primary actions (Save) and native control tint. `focus` is the
   2px keyboard ring with a 2px background gap; on service rows it is drawn inset (`row` wash plus
   the ring), because rows are focused with j/k.
-- `danger` (Arrêt) names the Stop action: red text on row buttons; a solid red fill only on the
+- `danger` (Stop red) names the Stop action: red text on row buttons; a solid red fill only on the
   final Stop and Force confirmations. Solid buttons use `on-accent` / `on-danger` text (surface in
   light, canvas in dark).
-- Derived roles mix in OKLab (an OKLCH mix with the achromatic surface interpolates hue and turned
-  the teal row wash pink in WebKit): `hairline`, `row`, `failed-wash`, `stale-wash`.
+- Derived roles mix in OKLab (an OKLCH mix with a near-achromatic surface interpolates hue and
+  shifted the row wash off-hue in WebKit): `hairline`, `row`, `failed-wash`, `stale-wash`.
 
 ### Named Rules
 
@@ -178,7 +178,8 @@ System sans for text, `ui-monospace` for data (ports, PIDs, paths, commands, met
 `data` size with tabular figures. Hierarchy comes from weight and colour at a fixed rem scale:
 body 14px; card titles 14px semibold, -0.025em; dialog titles 16px semibold; `small` 12px for
 metric labels, tags and hints. No web fonts ship (`bun run budget` fails on font files and
-`@font-face`).
+`@font-face`): the header wordmark is an inline SVG of Kibernetyk Mono SemiBold outlines
+(`brand/kosse-wordmark.svg`) drawn in `ink`, beside the 16-point Relay mark in `accent`.
 
 ## Layout
 

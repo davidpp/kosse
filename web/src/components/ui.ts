@@ -6,7 +6,7 @@ const control =
 /** Bordered secondary button on the surface. */
 export const button = `${control} border border-line-strong bg-surface text-ink not-disabled:hover:bg-canvas not-disabled:active:translate-y-px`;
 
-/** Light button: a hairline border at rest; red text for Stop (Arrêt in rows). */
+/** Light button: a hairline border at rest; red `danger` text for Stop in rows. */
 export const quiet = `${control} border border-hairline px-2 text-ink not-disabled:hover:border-line not-disabled:hover:bg-canvas`;
 export const quietDanger = `${control} border border-hairline px-2 text-danger not-disabled:hover:border-danger not-disabled:hover:bg-failed-wash`;
 
@@ -17,10 +17,10 @@ export const rowButton = "-my-0.5 h-6";
 export const small =
   "inline-flex h-5 shrink-0 items-center rounded-[4px] border border-line-strong bg-surface px-1.5 text-small font-medium text-ink transition-colors duration-150 ease-out hover:bg-canvas";
 
-/** Solid Fleuve: the primary action of a dialog (Save). */
+/** Solid accent (Québec blue): the primary action of a dialog (Save). */
 export const primary = `${control} bg-accent text-on-accent not-disabled:hover:bg-accent/90 not-disabled:active:translate-y-px`;
 
-/** Solid Arrêt: only the final Stop and Force confirmations. */
+/** Solid danger: only the final Stop and Force confirmations. */
 export const danger = `${control} bg-danger text-on-danger not-disabled:hover:bg-danger/90 not-disabled:active:translate-y-px`;
 
 export const input =

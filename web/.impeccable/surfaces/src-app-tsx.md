@@ -15,10 +15,10 @@ project, act, close. Keyboard first, instant scan, fast first paint, cheap while
 THESIS: A switchboard of projects: each card is one worktree, each line one process with every
 port it owns patched in. Refuses the flat process table that hides which checkout a port belongs to.
 
-OWN-WORLD: Brand "Le raccord": green-tinted neutral canvas, white raised cards with 1px Joint
-boundaries, Fleuve only for focus/selection/primary, observation markers by shape (filled dot,
-ring, dashed ring, alert glyph), Arrêt red as text on rows and solid only on the final confirm.
-System sans, mono tabular data.
+OWN-WORLD: Brand "Relay": neutral canvas, white raised cards with 1px line boundaries, Québec
+blue only for focus/selection/primary, observation markers by shape (filled dot, ring, dashed
+ring, alert glyph), danger red as text on rows and solid only on the final confirm. System sans,
+mono tabular data; the header wordmark is outlined Kibernetyk Mono SVG, never a web font.
 
 STORY: The developer sees which projects run, recognises the worktree/branch, opens or inspects a
 port, and stops one process after confirming every port it serves.

@@ -1,7 +1,7 @@
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="brand/kosse-lockup-night.svg">
-    <img src="brand/kosse-lockup.svg" alt="Kosse" height="56">
+    <img src="brand/kosse-lockup.svg" alt="Kossé" height="56">
   </picture>
 </h1>
 
@@ -144,4 +144,4 @@ Kossé is developed blueprint-first. [`blueprint/`](blueprint/README.md) holds t
 
 ## Brand
 
-_Kossé ?_ is Québécois for "what's that?", the question you ask about an unfamiliar port. The mark, **Le raccord**, is a K whose one stem is the process and whose two arms are the endpoints it owns. Its colour is **Fleuve**, the St. Lawrence's green-teal. The identity, palette and tokens are in [`brand/BRAND.md`](brand/BRAND.md); the assets and how to regenerate them are in [`brand/`](brand/README.md).
+_Kossé ?_ is Québécois for "what's that?", the question you ask about an unfamiliar port. The **Relay** mark is a separated K, with dedicated optical geometry for the menu bar; its colour is a Québec-inspired blue (#003DA5), and the wordmark is set in Kibernetyk Mono SemiBold and shipped only as outlines. The identity, palette and tokens are in [`brand/BRAND.md`](brand/BRAND.md); the assets and how to regenerate them are in [`brand/`](brand/README.md).

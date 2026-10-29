@@ -198,7 +198,7 @@ test("keyboard: rows, Inspect sheet, deep link and Escape", async ({ page }) => 
   await page.keyboard.press("ArrowDown");
   const focused = row(page, web.ports[0] ?? 0);
   await expect(focused).toBeFocused();
-  // Visible focus: a 2px Fleuve outline on the row.
+  // Visible focus: a 2px accent (Québec blue) outline on the row.
   expect(await focused.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("solid");
   await page.keyboard.press("Enter");
 

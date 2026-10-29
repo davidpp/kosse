@@ -40,7 +40,10 @@ export function Header({
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 sm:h-12 sm:flex-nowrap sm:py-0">
         <div className="flex items-center gap-2">
           <KosseMark />
-          <h1 className="font-semibold tracking-tight">Kossé</h1>
+          <h1>
+            <KosseWordmark />
+            <span className="sr-only">Kossé</span>
+          </h1>
         </div>
         <div className="order-last flex w-full items-center gap-3 sm:order-none sm:ml-4 sm:w-auto sm:flex-1">
           <label className="relative block min-w-0 flex-1 sm:max-w-md">
@@ -120,13 +123,30 @@ function LiveStatus({ connection, freshness }: { connection: Connection; freshne
   );
 }
 
-/** The Kossé mark (brand/BRAND.md): one stem, two arms; geometry from brand/tools/mark.mjs. */
+/** The Relay mark at its 16-point optical size (brand/BRAND.md, brand/tray/tray-16.svg). */
 function KosseMark() {
   return (
     <svg viewBox="0 0 16 16" className="size-4 text-accent" aria-hidden>
+      <rect x="2" y="2" width="3" height="12" rx="1" fill="currentColor" />
+      <path
+        d="M12.5 3 7 8 12.5 13"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** brand/kosse-wordmark.svg (Kibernetyk Mono SemiBold outlines) as a relative path; no font ships. */
+function KosseWordmark() {
+  return (
+    <svg viewBox="11 -182.2 698 183.2" className="h-3.5 w-auto text-ink" aria-hidden>
       <path
         fill="currentColor"
-        d="M1 1L5 1L5 15L1 15ZM4.9985 8.4977L3.0015 5.5023L9.7515 1.0023L11.7485 3.9977ZM3.019 8.5092L4.981 5.4908L14.981 11.9908L13.019 15.0092Z"
+        d="M36.8 0h-24.8v-160h24.8v67.6h32.4l38-37.8v-29.8h24.8v40l-40 40l40 40v40h-24.8v-29.8l-38-37.8h-32.4v67.6zm119.2-30v-60l30-30h60l30 30v60l-30 30h-60l-30-30zm24.8-49.8v32.2v7.4l15.4 15.4h39.6l15.4-15.4v-39.6l-15.4-15.4h-39.6l-15.4 15.4zm119.2 42.2h17.6l12.6 12.8h59.6l5.4-5.4v-12l-5.4-5.4h-69.8l-20-20v-32.4l20-20h80l20 20v17.6h-17.6l-12.6-12.8h-59.6l-5.4 5.4v12l5.4 5.4h69.8l20 20v32.4l-20 20h-80l-20-20v-17.6zm144 0h17.6l12.6 12.8h59.6l5.4-5.4v-12l-5.4-5.4h-69.8l-20-20v-32.4l20-20h80l20 20v17.6h-17.6l-12.6-12.8h-59.6l-5.4 5.4v12l5.4 5.4h69.8l20 20v32.4l-20 20h-80l-20-20v-17.6zm264 0v17.6l-20 20h-80l-20-20v-80l20-20h80l20 20v52.4h-95.2v17.4l5.4 5.4h59.6l12.6-12.8h17.6zm-95.2-52.2v17.4h70.4v-17.4l-5.4-5.4h-59.6l-5.4 5.4zm24-49v-15.8l26.6-26.6h15.8v15.8l-26.6 26.6h-15.8z"
       />
     </svg>
   );

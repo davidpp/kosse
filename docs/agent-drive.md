@@ -29,7 +29,7 @@ bun run app -- stop                  # quit the app, release the fixture world
 
 ## The preview identity
 
-Every debug build (`bun run app`, `bun run dev`, all tests) is a preview, so it is never mistaken for the installed app: the window is titled `Kossé · preview (<branch>)` (the checkout's branch, read from its `HEAD` file by `crates/app/build.rs` at build time), the tray and the window's Dock / ⌘-Tab icon use the mirrored-K preview artwork (`brand/tray/tray-preview*.png`, `brand/Kosse-preview.iconset`), and the tray tooltip names it the same way. Release builds show `Kossé` and the standard icons. A bare executable still appears as `kosse` in the app menu, ⌘-Tab and Activity Monitor: those names come from a bundle's `Info.plist`, which Kossé does not have.
+Every debug build (`bun run app`, `bun run dev`, all tests) is a preview, so it is never mistaken for the installed app: the window is titled `Kossé · preview (<branch>)` (the checkout's branch, read from its `HEAD` file by `crates/app/build.rs` at build time), the tray and the window's Dock / ⌘-Tab icon use the split-stem K preview artwork (`brand/tray/tray-preview*.png`, `brand/Kosse-preview.iconset`), and the tray tooltip names it the same way. Release builds show `Kossé` and the standard icons. A bare executable still appears as `kosse` in the app menu, ⌘-Tab and Activity Monitor: those names come from a bundle's `Info.plist`, which Kossé does not have.
 
 ## Writing checks with it
 

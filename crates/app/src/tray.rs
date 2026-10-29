@@ -48,7 +48,7 @@ const STALL_CHECK: Duration = Duration::from_secs(5);
 const DEFAULT_ICON: &[u8] = include_bytes!("../../../brand/tray/tray-default@2x.png");
 #[cfg(not(debug_assertions))]
 const ATTENTION_ICON: &[u8] = include_bytes!("../../../brand/tray/tray-attention@2x.png");
-// Debug builds show the preview identity (mirrored K), so a development or test instance is never
+// Debug builds show the preview identity (split-stem K), so a development or test instance is never
 // mistaken for the installed one.
 #[cfg(debug_assertions)]
 const DEFAULT_ICON: &[u8] = include_bytes!("../../../brand/tray/tray-preview@2x.png");

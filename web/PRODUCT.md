@@ -68,7 +68,7 @@ status, including 404), or a specific failure, with unknown shown as unknown.
 
 ## Brand Commitments
 
-- Identity: [brand/BRAND.md](../brand/BRAND.md) (mark, Fleuve palette, roles in
+- Identity: [brand/BRAND.md](../brand/BRAND.md) (Relay mark, Québec-blue palette, roles in
   [brand/tokens.json](../brand/tokens.json)). Use the mark's geometry; never substitute a font K.
 - Voice (owner, 2026-10-28): strictly plain, calm and factual, written like a developer tool for
   developers looking after their own dev services. State what was observed and what to do next; no

@@ -15,7 +15,7 @@ use objc2_foundation::NSData;
 /// so macOS would show its generic "exec" icon.
 #[cfg(not(debug_assertions))]
 const APP_ICON: &[u8] = include_bytes!("../../../brand/Kosse.iconset/icon_256x256@2x.png");
-/// Debug builds: the preview tile (inverted, mirrored K), like the tray's preview icons.
+/// Debug builds: the preview tile (pale tile, split-stem K), like the tray's preview icons.
 #[cfg(debug_assertions)]
 const APP_ICON: &[u8] = include_bytes!("../../../brand/Kosse-preview.iconset/icon_256x256@2x.png");
 

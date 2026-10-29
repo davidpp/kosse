@@ -1,0 +1,14 @@
+{
+  "name": "kosse-brand-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node generate.mjs",
+    "validate": "node validate.mjs"
+  },
+  "dependencies": {
+    "harfbuzzjs": "1.6.4",
+    "opentype.js": "1.3.4",
+    "sharp": "0.34.5"
+  }
+}

@@ -1,63 +1,47 @@
-# Kosse — Le raccord
+# Kossé — Relay
 
-## Idea
-
-Kosse shows the development services running on your Mac and connects each endpoint to the process and project that own it. The name comes from Québécois “kossé ?” (“what's that?”), the question you ask about a port you don't recognise. That is etymology, not a tagline: Kosse has none. Write **Kosse** in prose and **kosse** in packages and the wordmark.
+Kossé makes local development services recognizable: which process owns each port, and which project owns that process. Its name comes from Québécois “kossé ?” (“what's that?”). Write **Kossé** in the interface and prose; **kosse** remains the executable and package name.
 
 ## Mark
 
-One stem is the process; its two arms are the endpoints it owns. The short upper arm and longer, planted lower arm make an asymmetric K. Flat caps, open wedges, no nodes. This is ownership, not a Git history.
+Relay is a separated K: one rounded vertical stem beside two joined diagonal arms. The open joint is intentional; the symbol is independently drawn, never a font K. The large master is on a 100-unit grid: stem x=15–29, y=14–86 with 7-unit corner radius; arms join at (46,50), ending at (77,20) and (77,80), with 14-unit round strokes. Geometry lives in [tools/mark.mjs](tools/mark.mjs).
 
-All geometry comes from [tools/mark.mjs](tools/mark.mjs), on a 16-unit grid: stem x=1–5, y=1–15; junction (4,7); arm endpoints (10.75,2.5) and (14,13.5); arm width 3. Small exports use 3.6. Never substitute a font K. Keep one stem-width of clear space in layouts; the asset canvas itself is tightly fitted. Minimum mark size: 16 px.
+Use the large master for the app icon and lockup. Keep at least one stem-width of clear space around the visible mark. Small template icons use dedicated geometry below.
 
 ## Wordmark
 
-Lowercase **kosse**, Bricolage Grotesque Bold 700, outlined and single-colour. Manual pair adjustments: ko −0.025 em, os −0.018 em, ss −0.012 em, se −0.018 em. The supplied static font determines its optical design; no variable optical-size claim. Use the assets rather than retyping. The lockup combines the mark with the unchanged wordmark.
+**Kossé**, capital K and acute accent, in **Kibernetyk Mono SemiBold**. Retain the original monospace advances; no proportional kerning or letter-by-letter stretching. The outlined SVGs come from the [font](fonts/README.md) committed here, v1.0.1; interfaces draw those outlines and never load the font. The mono letterforms supply the terminal character without a prompt symbol, cursor, scanline or retro screen effect.
+
+The font is SIL OFL 1.1; its copyright and full license ship in [fonts/OFL.txt](fonts/OFL.txt). The mark and original artwork remain MIT. The font is for the wordmark; body and interface text use the system faces.
 
 ## Colour
 
-**Fleuve** is the St. Lawrence’s deep green-teal: the Québec link lives in colour, without symbols. Light Fleuve is #006B68; dark Fleuve is #71D6CD. Neutrals carry a slight green tint. Canvas: #F4F6F3 / #121A19; surface: #FFFFFF / #1C2725. Full OKLCH values and sRGB hex are in [tokens.json](tokens.json).
+**Québec-inspired blue #003DA5** is the app tile and light-surface accent. **#91B3FF** is its accessible dark-surface companion. These are product colours; the hex is not claimed as an official digital flag specification. The government's visual guide specifies Pantone 293 for the fleurdelisé rectangles ([source](https://cdn-contenu.quebec.ca/cdn-contenu/gouvernement/travailler/programme-identification-visuelle/guides/section1_general.pdf)). No fleur-de-lis or governmental signature is used.
 
-Contrast below is the lower WCAG ratio against canvas or surface, calculated from sRGB. Focus aliases Fleuve visually; unknown uses the muted-text values. Colour always accompanies state shapes and labels.
+Surfaces are neutral: canvas #F7F7F5 / #18181A, surface #FFFFFF / #232326, ink #232326 / #EDEDEB. Blue carries selection, focus and primary actions. Red names destructive actions. Observation colours are distinct semantic roles and do not mean service health. An HTTP 404 still counts as reachable HTTP.
 
-| Role · name          | Light / dark hex  | Light contrast | Dark contrast |
-| -------------------- | ----------------- | -------------: | ------------: |
-| ink · Encre          | #202A2A / #E8EDEB |          13.55 |         12.99 |
-| ink-muted · Cendre   | #566460 / #A5B3AE |           5.70 |          7.07 |
-| line · Joint         | #858F89 / #64756F |           3.07 |          3.16 |
-| line-strong · Arête  | #62736C / #899D94 |           4.61 |          5.35 |
-| accent · Fleuve      | #006B68 / #71D6CD |           5.85 |          8.93 |
-| listening · Graphite | #384E48 / #B7C9C2 |           8.22 |          8.89 |
-| reachable · Bleu     | #235DB0 / #8DBBFF |           5.92 |          7.82 |
-| stale · Ocre         | #865900 / #E5BB65 |           5.61 |          8.51 |
-| failed · Brique      | #AD353D / #FF9BA2 |           5.76 |          7.66 |
-
-Listening is an observation, not success. Reachable means an HTTP response, including errors, not health. Unknown stays readable. **Arrêt**, the danger token, aliases failed but names an action. Use red text in rows and a solid red button only for the final Stop confirmation.
-
-Solid buttons use surface text in light mode and canvas text in dark mode. Accent: 6.36:1 / 10.28:1; danger: 6.26:1 / 8.81:1. Focus rings are 2 px with a 2 px background-coloured gap. Keep meaningful borders fully opaque.
-
-## Type
-
-Bricolage Grotesque is used only as outlined brand artwork. The dashboard uses system-ui for text and ui-monospace for ports, PIDs, paths and commands, with tabular figures for metrics. No bundled or requested web fonts.
+All roles live in [tokens.json](tokens.json), generated from [tools/palette.mjs](tools/palette.mjs). Text roles meet 4.5:1 against both canvas and surface; meaningful boundaries/focus meet 3:1. The validation command checks both appearances.
 
 ## Tray
 
-Only **default** and **attention**. The latter cuts a 2 × 2 pt notch from the lower stem at y=11, retaining 2 pt of stem. It means discovery failed or the snapshot is stale; an individual failed HTTP probe does not change the tray. The menu supplies the reason. Confirmation stays in the dialog.
+The **Optical 18** master is drawn directly in an 18-point canvas. Its stem has whole-pixel edges x=2–5 and y=2–16; the 2.5-point diagonal arms meet at (7.25,9) and end at (14,3)/(14,15). The minimum joint gap is 1 point. This tightens the joint relative to the large mark so it reads as one K in the menu bar.
 
-The 18 pt template has black RGB and transparent alpha, a 14 pt tall glyph in a 16 pt inner grid, and whole-pixel stem and notch edges at 1×. macOS supplies the tint. No animation. The preview simulates tint on menu-bar greys; native template rendering remains to be checked in the app.
+A separate 16-point master uses x=2–5 and y=2–14 for the stem, 2.5-point arms through (7,8), ending at (12.5,3)/(12.5,13). Do not create it by resizing Optical 18. The app uses the 18-point `@2x` PNGs; macOS supplies the template tint. RGB is black with transparent alpha, in both 1× and 2× exports.
 
-## Preview builds
+**Attention** cuts a small notch into the inner lower stem. It means discovery failed or the shared snapshot became stale, not that one service returned an HTTP error. The menu supplies the reason; the icon does not animate.
 
-Development and preview (debug) builds mirror the K, so a branch build is never mistaken for the installed app. The mirror happens inside the same 16-unit grid, so stem and notch edges stay on whole pixels and the attention notch lands on the stem's outer edge. The tray has `preview` and `preview-attention`, with the same template rules. The app icon also inverts its tile: a Fleuve K on a Fond tile with a Fleuve rim (`app-icon-preview-1024.png`, `Kosse-preview.icns`). Release builds never use these.
+## Preview identity
 
-## Voice
+Debug builds use a **split stem**, visibly divided at the centre. The app icon also changes from a white mark on blue to a blue split-stem mark on a pale tile with a blue rim. It remains a K, not a mirrored release icon. The tray has separate preview and preview-attention templates, with the split and attention notch independently visible. Existing asset names preserve the compile-time debug/release boundary.
 
-Strictly plain, specific and unhurried, written for a developer looking after their own services. Never infer “forgotten”, “safe” or “healthy” from observations alone. No French in the interface; the name carries the Québec link.
+The window title also retains “preview” and the branch when available. Never use the release mark for a development process.
 
-- Empty after a successful scan: “No listeners found. Start a local service and it will appear here.”
-- Stop confirmation, illustrative values: “Stop node (PID 4821) in storefront? This will request a graceful stop and affect ports :5173 and :5174.” Buttons: **Cancel** / **Stop process**.
-- Unknown cwd: “Project unknown. The working directory isn’t available.”
+## Native app icon
 
-## Assets
+The 1024 px master has a 100 px transparent outer margin and an 824 px flat superellipse tile. Small iconset entries use the optical mark rather than reducing the large glyph. The favicon fills its canvas for legibility. No gradients, glass, remote fonts or image dependencies are needed at runtime.
 
-[README.md](README.md) lists the generated assets and regeneration command. The app icon is a white mark on a flat Fleuve superellipse, inset 100 px on its 1024 px canvas. The 16 and 32 pt iconset entries use heavier arms and a larger glyph. The favicon fills its canvas to preserve legibility. [preview.png](preview.png) shows the family at review sizes.
+## Voice and evidence
+
+Plain, specific, unhurried. Do not infer “forgotten”, “safe” or “healthy” from an observation. Stop confirms the exact process and all ports before an action. Unknown remains unknown.
+
+[preview.png](preview.png) shows the generated family. [tools/validate.mjs](tools/validate.mjs) checks file dimensions, transparent template pixels, distinguishable states, the real accent glyph, font advances and palette contrast. Native status-item tint, Dock appearance and activation still require evidence from the actual app; the contact sheet does not establish those checks.

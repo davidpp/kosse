@@ -27,7 +27,7 @@ const REAP_DEADLINE: Duration = Duration::from_secs(5);
 #[cfg(not(debug_assertions))]
 pub const TITLE: &str = "Kossé";
 /// Debug builds (`bun run app`, `bun run dev`, tests) say they are a preview, and of which branch,
-/// so they are never mistaken for the installed app (with the mirrored-K icons, `tray.rs`,
+/// so they are never mistaken for the installed app (with the split-stem K icons, `tray.rs`,
 /// `activation.rs`).
 #[cfg(debug_assertions)]
 pub const TITLE: &str = concat!("Kossé · preview", env!("KOSSE_PREVIEW_SUFFIX"));
