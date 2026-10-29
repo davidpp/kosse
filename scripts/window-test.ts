@@ -55,8 +55,24 @@ async function until(js: string, ms = 10_000): Promise<unknown> {
   return last;
 }
 
+/** A real click at the element's centre, once that centre holds still: a dialog that just
+ * opened (or a scrolled-into-view target) may still be moving, and a native click aimed at its
+ * first position can miss on a slower machine. */
 async function click(selector: string, text = "") {
-  const point = await page(`(() => {
+  let point = await locate(selector, text);
+  for (let waited = 0; waited < 1000; waited += 100) {
+    await delay(100);
+    const again = await locate(selector, text);
+    if (JSON.stringify(again) === JSON.stringify(point)) break;
+    point = again;
+  }
+  if (point === null || typeof point !== "object")
+    throw new Error(`nothing to click: ${selector} ${text}`);
+  await control({ op: "click", ...point }, socket);
+}
+
+async function locate(selector: string, text: string): Promise<unknown> {
+  return page(`(() => {
   const all = [...document.querySelectorAll(${JSON.stringify(selector)})];
   const el = ${JSON.stringify(text)} === "" ? all[0] : all.find((e) => e.textContent.trim() === ${JSON.stringify(text)});
   if (!el) return null;
@@ -64,9 +80,6 @@ async function click(selector: string, text = "") {
   const r = el.getBoundingClientRect();
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 })()`);
-  if (point === null || typeof point !== "object")
-    throw new Error(`nothing to click: ${selector} ${text}`);
-  await control({ op: "click", ...point }, socket);
 }
 
 const key = (name: string) => control({ op: "key", key: name }, socket);
@@ -370,7 +383,13 @@ async function flows(world: World, opened: string) {
     `!document.querySelector("dialog[open]") && ![...document.querySelectorAll("section h2")].some((h) => h.textContent === ${JSON.stringify(NAME)})`,
     8000,
   );
-  check("Remove deletes the saved profile", removed === true);
+  check(
+    "Remove deletes the saved profile",
+    removed === true,
+    await page(
+      `({ dialog: document.querySelector("dialog[open]")?.textContent?.slice(0, 200) ?? null, headings: [...document.querySelectorAll("section h2")].map((h) => h.textContent) })`,
+    ),
+  );
 
   // Deep links: the tray's Inspect and Stop… take POST /api/window to the same window.
   const web = identityOf(world.fixtures.web.pid);
