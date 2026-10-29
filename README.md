@@ -16,7 +16,7 @@ You start dev servers from terminals, scripts and coding agents. A day later the
 
 <sub>Fixture processes from the browser suite (`bun run screenshots`).</sub>
 
-> **Status: v0.2.0, macOS on Apple silicon, unsigned** ([releases](https://github.com/davidpp/kosse/releases)). Verified from the installed binary ([audit](docs/evidence/S10.md)). Two checks need a person at a desktop and are **pending**: the native tray and window checklist ([S08](docs/evidence/S08.md#human-checklist)) and a real login cycle with `kosse startup enable` ([S09](docs/evidence/S09.md#unverified-deferred-approval-gates)).
+> **Status: v0.2.1, macOS on Apple silicon, unsigned** ([releases](https://github.com/davidpp/kosse/releases)). Verified from the installed binary ([audit](docs/evidence/S10.md)). Two checks need a person at a desktop and are **pending**: the native tray and window checklist ([S08](docs/evidence/S08.md#human-checklist)) and a real login cycle with `kosse startup enable` ([S09](docs/evidence/S09.md#unverified-deferred-approval-gates)).
 
 ## What it does
 
