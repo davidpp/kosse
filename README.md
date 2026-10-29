@@ -1,7 +1,7 @@
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="brand/kosse-lockup-night.svg">
-    <img src="brand/kosse-lockup.svg" alt="Kosse" height="56">
+    <img src="brand/kosse-lockup.svg" alt="Kossé" height="56">
   </picture>
 </h1>
 
@@ -16,7 +16,7 @@ You start dev servers from terminals, scripts and coding agents. A day later the
 
 <sub>Owned fixture processes in the native Rune window.</sub>
 
-> **Status: v0.1.0, macOS on Apple silicon, unsigned.** The native Rune port is locally verified through the real window and packaged CLI/API ([S12 evidence](docs/evidence/S12-rune.md)); no published release yet. VoiceOver, physical menu-bar interaction and a real login cycle remain unverified.
+> **Status: v0.2.0, macOS on Apple silicon, unsigned** ([GitHub Releases](https://github.com/davidpp/kosse/releases)). The native Rune window is verified through the real window and the packaged CLI/API ([S12 evidence](docs/evidence/S12.md)). VoiceOver, physical menu-bar interaction and a real login cycle remain unverified.
 
 ## What it does
 
@@ -35,29 +35,41 @@ You start dev servers from terminals, scripts and coding agents. A day later the
 
 ## Install
 
-Kossé is one self-contained executable with the dashboard built in; it needs no Bun or Node at runtime. It is **not signed or notarized** (Apple silicon's mandatory signature is the linker's ad-hoc one). A binary fetched with `curl` and extracted with `tar` carries no quarantine attribute, so it runs as is; a browser download is quarantined and macOS refuses to open it.
+Kossé is one self-contained executable with the dashboard built in; it needs no Bun, Node or other runtime. It is **not signed or notarized** (Apple silicon's mandatory signature is the linker's ad-hoc one).
 
-- **Local release from source** (with the [development setup](#development)):
+**From GitHub Releases** (macOS on Apple silicon):
 
-  ```sh
-  bun run release:local    # artifacts/kosse-0.1.0-aarch64-apple-darwin.tar.gz + .sha256 + notices + manifest
-  bun run install:local    # verifies it, installs ~/.local/bin/kosse (--prefix <dir> elsewhere)
-  bun run uninstall:local  # removes exactly what it installed; keeps your configuration unless --purge
-  ```
+```sh
+curl -fsSL https://github.com/davidpp/kosse/releases/latest/download/install.sh | sh
+```
 
-- **From an archive.** Next to `kosse-<version>-aarch64-apple-darwin.tar.gz` and its `.sha256`:
+The script downloads the latest archive and its `.sha256`, refuses it unless the SHA-256 matches, verifies its build provenance with `gh attestation verify` when an authenticated [GitHub CLI](https://cli.github.com) is installed, and installs `~/.local/bin/kosse`. It changes nothing else. Options: `curl -fsSL …/install.sh | sh -s -- --version X.Y.Z --prefix <dir>` (installs `<dir>/bin/kosse`).
 
-  ```sh
-  shasum -a 256 -c kosse-<version>-aarch64-apple-darwin.tar.gz.sha256
-  tar -xzf kosse-<version>-aarch64-apple-darwin.tar.gz
-  mkdir -p ~/.local/bin && install -m 0755 kosse-<version>-aarch64-apple-darwin/kosse ~/.local/bin/
-  ```
+By hand, from the [release page](https://github.com/davidpp/kosse/releases/latest):
 
-  Only for an archive whose origin and checksum you trust, `xattr -d com.apple.quarantine kosse` lifts Gatekeeper's check after a browser download.
+```sh
+v=X.Y.Z; a=kosse-$v-aarch64-apple-darwin   # the release version
+curl -fLO https://github.com/davidpp/kosse/releases/download/v$v/$a.tar.gz
+curl -fLO https://github.com/davidpp/kosse/releases/download/v$v/$a.tar.gz.sha256
+shasum -a 256 -c $a.tar.gz.sha256
+gh attestation verify $a.tar.gz -R davidpp/kosse   # optional: built by this repository's release workflow
+tar -xzf $a.tar.gz
+mkdir -p ~/.local/bin && install -m 0755 $a/kosse ~/.local/bin/
+```
 
-- **Homebrew (unpublished template).** `release:local` also writes `artifacts/kosse.rb` from [`packaging/homebrew/kosse.rb.tmpl`](packaging/homebrew/kosse.rb.tmpl); there is no tap. To try it: host the archive, run `bun run release:local --url <its URL>`, `brew tap-new <you>/kosse`, copy `artifacts/kosse.rb` into that tap's `Formula/`, then `brew install <you>/kosse/kosse`.
+Files downloaded with `curl` carry no quarantine attribute, so the unsigned binary runs as is. A browser download is quarantined and macOS refuses to open it; only for an archive whose origin and checksum you trust, `xattr -d com.apple.quarantine kosse` lifts Gatekeeper's check for that file.
 
-If `~/.local/bin` is not on your `PATH` (it is not on a stock Mac): `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile`, then open a new terminal. `kosse doctor` checks the setup.
+If `~/.local/bin` is not on your `PATH` (it is not on a stock Mac): `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile`, then open a new terminal. Then run `kosse` to start the menu-bar app, and optionally `kosse startup enable` to start it at each login. `kosse doctor` checks the setup.
+
+**Homebrew.** Each release also carries `kosse.rb`, a formula for exactly that archive. There is no public tap yet; to use it, `brew tap-new <you>/kosse`, copy `kosse.rb` into that tap's `Formula/`, then `brew install <you>/kosse/kosse`.
+
+**Local release from source** (with the [development setup](#development)):
+
+```sh
+bun run release:local    # artifacts/kosse-<version>-aarch64-apple-darwin.tar.gz + .sha256 + notices + formula
+bun run install:local    # verifies it, installs ~/.local/bin/kosse (--prefix <dir> elsewhere)
+bun run uninstall:local  # removes exactly what it installed; keeps your configuration unless --purge
+```
 
 ## Usage
 
@@ -65,7 +77,7 @@ If `~/.local/bin` is not on your `PATH` (it is not on a stock Mac): `echo 'expor
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `kosse`                                 | The menu-bar app: tray menu plus the native Rune dashboard, opening its window (`--no-open` to skip). A second `kosse` brings the running app's window forward instead of starting another. |
 | `kosse open`                            | The dashboard window without anything resident: serves until you close the window, then exits. With the menu-bar app running it shows that app's window.                                    |
-| `kosse serve`                           | Foreground API owner without a tray; `kosse open` shows its native window.                                                                                                                  |
+| `kosse serve`                           | Foreground owner without a tray: opens the native window (`--no-open` to skip); `kosse open` shows that window. `/` is only an information page, not a browser dashboard.                   |
 | `kosse list [--json]`                   | One row per listening port with project, branch and package. Uses the running instance's snapshot when there is one, otherwise scans once. `--json` prints the `Snapshot` contract.         |
 | `kosse doctor [--json]`                 | Checks platform, binary and `PATH`, configuration, who holds the port, `git`, login startup. Changes nothing.                                                                               |
 | `kosse startup enable\|disable\|status` | Opt-in login startup: a per-user LaunchAgent running this `kosse --no-open` at each login (no `KeepAlive`, so Quit stays quit). Off until enabled.                                          |
@@ -91,7 +103,7 @@ crates/app/src/native/  Rune window, controls, profile editor and guarded API cl
 
 Every view reads the same snapshot and uses the same action policy; there is no second scanner or alternate destructive path. The native UI consumes the Rust contracts directly; generated TypeScript supports the development harness, and CI fails on drift. Details: [architecture](blueprint/architecture.md), [product contract](blueprint/product.md), [verification gates](blueprint/verification.md).
 
-The native port has no web bundle or WebKit process. Its release executable is approximately 21 MB. Previous WebKit footprint measurements in S08–S10 are historical; a controlled native idle-memory benchmark has not yet been recorded.
+The native port has no web bundle or WebKit process. Always on, the menu-bar app idles at about 0.3 % CPU and 12 MB with the window closed; the window is a child process that exits when closed and costs 65–280 MB while open, depending on use ([footprint](docs/evidence/S12.md#footprint)). The release executable is about 21 MB.
 
 ## Security model
 
@@ -115,7 +127,7 @@ Tests run against real things: owned fixture processes checked against `lsof`, t
 
 ## Limitations
 
-- macOS on Apple silicon only; no signed, notarized or published build.
+- macOS on Apple silicon only; not signed or notarized; no public Homebrew tap.
 - Redaction is heuristic: a bare positional secret without a recognisable key or shape is shown.
 - Other users' sockets are invisible without administrator rights (reported as a snapshot warning); Kossé never asks for them.
 - CPU needs two observations: a fresh process reads "warming up" for one scan, and `kosse list` (one shot) always does.

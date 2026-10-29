@@ -84,7 +84,7 @@ Required executable command contract (implement, test, then document exact synta
 - `kosse`: resident app with tray + server, opens dashboard on explicit initial launch.
 - `kosse open`: on-demand dashboard without a resident app: starts the server (or reuses a verified running instance), opens the dashboard window, and exits with it.
 - `kosse tui` (next phase): on-demand terminal client; attaches to a verified running instance or starts a private server for its lifetime.
-- `kosse serve --no-open --port <n>`: foreground headless.
+- `kosse serve [--no-open] --port <n>`: foreground owner without a tray; opens the native window unless `--no-open`. Its `/` is a script-free information page, not a browser dashboard.
 - `kosse list --json`: daemon snapshot when compatible instance exists; one-shot discovery otherwise.
 - `kosse doctor`: dependency/platform/config/instance diagnostics, non-destructive.
 - `kosse startup enable|disable|status`: opt-in user login management; evaluate service-manager/auto-launch instead of bespoke cross-platform templates.

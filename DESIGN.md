@@ -19,22 +19,22 @@ typography:
     fontWeight: 600
     lineHeight: "20px"
   body:
-    fontFamily: "system-ui"
+    fontFamily: "Inter"
     fontSize: "13px"
     fontWeight: 400
     lineHeight: "20px"
   label:
-    fontFamily: "system-ui"
+    fontFamily: "Inter"
     fontSize: "13px"
     fontWeight: 500
     lineHeight: "20px"
   project-title:
-    fontFamily: "system-ui"
+    fontFamily: "Inter"
     fontSize: "17px"
     fontWeight: 500
     lineHeight: "20px"
   inspector-title:
-    fontFamily: "system-ui"
+    fontFamily: "Inter"
     fontSize: "19px"
     fontWeight: 500
     lineHeight: "20px"
@@ -116,9 +116,9 @@ Focus currently uses rune-kit's neutral blue, recorded separately from the actio
 
 ## Typography
 
-Native system sans carries interface text, medium-weight controls and project headings. System mono carries ports, paths, commands and compact CPU, memory and age values. Frontmatter sizes represent Rune logical points using portable `px` notation; they are not browser CSS instructions.
+Inter, bundled in the executable (Regular, Medium and SemiBold), carries interface text, medium-weight controls and project headings. The system monospace font carries ports, paths, commands and compact CPU, memory and age values. Frontmatter sizes represent Rune logical points using portable `px` notation; they are not browser CSS instructions.
 
-The identity uses the separated Relay K and Kibernetyk Mono wordmark defined in [brand/BRAND.md](brand/BRAND.md). The bundled wordmark assets and the native title use Semibold; the native title is 19 points. Preserve the original monospace advances. System fonts are for operational hierarchy, not an invented display identity.
+The identity uses the separated Relay K and Kibernetyk Mono wordmark defined in [brand/BRAND.md](brand/BRAND.md). The bundled wordmark assets and the native title use Semibold; the native title is 19 points. Preserve the original monospace advances. Inter and the system monospace font are for operational hierarchy, not an invented display identity.
 
 ## Layout
 

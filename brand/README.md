@@ -20,7 +20,7 @@ Font provenance and exact SHA-256 are recorded in [fonts/README.md](fonts/README
 
 ## Regenerate and validate
 
-Requires the repository's Bun/Node toolchain and macOS `iconutil`. Build dependencies are pinned in `tools/package.json` and `tools/bun.lock`; no external `BRAND_TOOLS` directory is needed.
+Requires the repository's Bun toolchain and macOS `iconutil`. Build dependencies are pinned in `tools/package.json` and `tools/bun.lock`; no external `BRAND_TOOLS` directory is needed.
 
 ```sh
 bun install --cwd brand/tools --frozen-lockfile --ignore-scripts
@@ -32,4 +32,4 @@ The generator writes only the assets in `brand/` and `tokens.json`. It reads the
 
 Edit `tools/mark.mjs` for geometry, `tools/palette.mjs` for colour, and `tools/generate.mjs` for composition. Keep this manifest and `BRAND.md` current when those choices change. `preview.png` uses system Helvetica for specimen labels, so those labels can vary slightly with the host OS; the wordmark is always outlined from the pinned font.
 
-The current Rust embed paths remain unchanged. Release and debug compile different assets; neither chooses the other identity at runtime. Native window wordmark rendering may embed `fonts/KibernetykMono-SemiBold.ttf` directly, alongside its license in distribution notices.
+The current Rust embed paths remain unchanged. Release and debug compile different assets; neither chooses the other identity at runtime. The native window embeds `fonts/KibernetykMono-SemiBold.ttf` directly for its wordmark, and the release's third-party notices carry its license.

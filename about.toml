@@ -19,9 +19,6 @@ accepted = ["ISC"]
 [untrusted]
 accepted = ["ISC"]
 
-[option-ext]
-accepted = ["MPL-2.0"]
-
 [libloading]
 accepted = ["ISC"]
 

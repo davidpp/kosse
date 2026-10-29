@@ -2,21 +2,44 @@
 
 All notable changes to Kossé are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [Unreleased]
 
-### Fixed
+## 0.2.0 - 2026-10-29
 
-- Dialogs in the dashboard window (Stop, Force, Customize, the removal confirmation) drew as a 2px sliver behind the backdrop in macOS's WKWebView; service rows overflowed the window horizontally between 768 and about 820 px wide ([S11](docs/evidence/S11.md)).
-- Kossé's own row offers no Stop (dashboard and tray); a deep link to it explains why instead of a confirmation that would be refused.
-- The dashboard window's Dock and ⌘-Tab icon is Kossé's, not the generic executable icon.
+The dashboard is now a native window compiled into `kosse`; nothing in Kossé runs a web view or a JavaScript runtime. The first version published as a GitHub Release. Evidence: [S12](https://github.com/davidpp/kosse/blob/v0.2.0/docs/evidence/S12.md).
+
+### Changed
+
+- The dashboard is a native [Rune](https://github.com/anomalyco/rune) window (`kosse window`, a child of its owner) compiled into the `kosse` executable. It reads the same guarded loopback API and SSE stream as before and uses the same action policy; the tray, `serve` and `kosse open` each reuse their owner's one window.
+- `/` on the loopback port is now a script-free information page; the API is unchanged. `kosse serve` opens the native window unless `--no-open`, and `kosse open` against a running `serve` shows that owner's window instead of opening a browser.
+- A window that cannot start is reported on stderr and in the tray; nothing falls back to the browser.
+- Customize this project is a structured editor: a project/service sidebar, explicit fields for names, matching rules, protocol, probe path, links and availability, repository values shown as inherited and read-only, and a fixed Save/Cancel footer.
+- New identity: the Relay K mark with dedicated menu-bar geometry, Québec-inspired blue and a Kibernetyk Mono wordmark. The window uses bundled Inter for interface text. Debug builds carry a split-stem preview identity (icons and `Kossé · preview (<branch>)`).
 
 ### Added
 
-- `bun run app` drives the real app and window from an agent (debug-only control socket; [docs/agent-drive.md](docs/agent-drive.md)); `bun run test:window` is the real-window regression suite. Debug builds carry a preview identity (mirrored-K icons, `Kossé · preview (<branch>)`).
+- `bun run app` starts and drives the real menu-bar app and native window on owned fixtures through a debug-only control socket ([docs/agent-drive.md](https://github.com/davidpp/kosse/blob/v0.2.0/docs/agent-drive.md)); `bun run test:window` is the real-window regression suite, driven with AppKit events.
+- A tag-driven release workflow: a `vX.Y.Z` tag runs the full gate and the packaged-archive test, attests build provenance and publishes a GitHub Release with the archive, its SHA-256 file, a Homebrew formula and an `install.sh` that verifies the checksum (and the attestation when `gh` is available).
+
+### Removed
+
+- The browser dashboard: WebKit/wry, the Vite bundle and its 50 kB budget, TanStack Redact and Query, Vitest and the Playwright suite (`bun run test:e2e`, `bun run screenshots`, `bun run budget`).
+- The debug-only `--dev` flag of `kosse serve` and the Vite development server; `bun run dev` builds and runs the native app.
+
+### Fixed
+
+- Kossé's own row offers no Stop (dashboard and tray); a deep link to it explains why instead of a confirmation that would be refused.
+- The dashboard window's Dock and ⌘-Tab icon is Kossé's, not the generic executable icon.
+- The 0.1.0 WKWebView window drew dialogs as a 2px sliver and let service rows overflow horizontally between 768 and about 820 px ([S11](https://github.com/davidpp/kosse/blob/v0.2.0/docs/evidence/S11.md)); fixed there, and superseded by the native window.
+
+### Known limitations
+
+- VoiceOver and the OS accessibility tree, physical pointer feel, menu-bar and Dock appearance under real interaction, activation alongside other apps and a real login cycle are not verified.
+- macOS on Apple silicon only; not signed or notarized; no public Homebrew tap.
 
 ## 0.1.0 - 2026-10-28
 
-First version: built, packaged and verified locally on macOS arm64; not signed, notarized, tagged or published. Each item links the slice evidence in [`docs/evidence/`](docs/evidence/).
+First version: built, packaged and verified locally on macOS arm64; not signed, notarized, tagged or published. Its browser dashboard and WKWebView window were replaced in 0.2.0. Each item links the slice evidence in [`docs/evidence/`](docs/evidence/).
 
 ### Added
 
@@ -37,3 +60,6 @@ First version: built, packaged and verified locally on macOS arm64; not signed, 
 
 - The native tray/window checklist and a real login cycle await a person at a desktop.
 - macOS on Apple silicon only; unsigned; no tap or public download.
+
+[Unreleased]: https://github.com/davidpp/kosse/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/davidpp/kosse/releases/tag/v0.2.0

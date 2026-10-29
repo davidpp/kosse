@@ -15,12 +15,14 @@ This is the dependency/specification index, not a second status tracker. Live st
 | S08 | Add native macOS tray lifecycle, on-demand `kosse open` and single-instance behavior | S07 |
 | S09 | Implement local packaging, install/uninstall and opt-in login startup | S08 |
 | S10 | Run installed-entrypoint acceptance audit and complete operator docs | S09 |
+| S11 | Drive the real dashboard window and fix what it revealed | S10 |
+| S12 | Replace the browser dashboard with a native Rune window | S11 |
 
 ## Dependency graph
 
 ```text
 S01 → S02 → S03 → S04 → S05 ─┐
- │             └→ S06 ──────┼→ S07 → S08 → S09 → S10
+ │             └→ S06 ──────┼→ S07 → S08 → S09 → S10 → S11 → S12
  └→ S01b ───────────────────┘
 ```
 
@@ -37,6 +39,8 @@ Create Cargo core/app workspace and web via supported current Vite/React + TanSt
 From a clean dependency install, dev serves a minimal page through the intended dev proxy; production binary serves embedded page; actual check/build/test/fmt:check commands pass. Generated type staleness fails a test/check. Hook is non-mutating and CI uses same checks. Document versions, commands, and missing platform prerequisites; the public remote exists, so CI runs on push. Read current docs and inspect existing files first.
 
 ## S01b
+
+Superseded by S12: the web runtime and its budget were removed.
 
 Added 2026-10-28 by owner direction: Kossé is a resident tool and must stay nimble; the S01 web scaffold (React, TanStack Router/Query, shadcn/Base UI, Geist) shipped ~103 kB gzipped JS for one status line.
 
@@ -100,6 +104,8 @@ Fixture tests cover traversal/symlinks, ambiguity, multiple processes in cwd, po
 
 ## S07
 
+The web dashboard was superseded by S12; its behaviour contract carries over to the native window.
+
 ### Scope
 
 Use Impeccable (design context, then craft, critique and audit) and the slim Redact stack in architecture.md, within its performance budget, to implement dense grouped dashboard, search, endpoint links, metrics, inspect route, all-listeners/noise controls, aliases, metadata provenance, explicit stop/force dialogs, responsive/theme/accessibility/error/stale/empty states. TanStack Query owns server state with SSE integration (revision-ordered). Wire “Customize this project” and persisted central profiles/preferences through guarded API; consume generated contracts. Display effective metadata provenance and declared custom-domain links without falsely verifying them.
@@ -109,6 +115,8 @@ Use Impeccable (design context, then craft, critique and audit) and the slim Red
 Playwright against real Rust backend + owned fixtures verifies discover→filter→open/inspect→confirm stop→observe disappearance/respawn, force escalation and reload persistence. Customize a project without repo metadata, reload and verify persistence plus unchanged monitored repo files/status. Screenshots cover desktop/narrow/light/dark; keyboard/focus/reduced motion checked. SSE loss/reconnect and failed mutation show honest UI. Build/lint/types/unit/browser gates pass; no mock-only completion.
 
 ## S08
+
+The wry/WKWebView window and browser fallback were superseded by S12; the tray, `kosse open` and single-instance contract hold.
 
 ### Scope
 
@@ -144,11 +152,11 @@ Full local command suite green; installed browser+tray+CLI workflow has evidence
 
 Added 2026-10-28 by owner direction: some users don't want a resident app, and terminal users want a first-class client.
 
-Deferred by owner direction (2026-10-28): v1 ships the Rust binary with the dashboard (window or browser) and `kosse open` for on-demand use; the OpenTUI client starts after v1.
+Deferred by owner direction (2026-10-28): v1 ships the Rust binary with the dashboard window and `kosse open` for on-demand use; the OpenTUI client starts after v1.
 
 #### Scope
 
-`tui/` workspace package on OpenTUI (load its skill and current docs), consuming `web/src/generated/contracts.ts` (shared, never duplicated) and the HTTP/SSE API. `kosse tui` subcommand: attach to a verified running instance (never trust an unverified port occupant), otherwise spawn `kosse serve` privately on a free loopback port for the session and stop it by identity on exit. Feature parity with the dashboard (product.md Terminal surface), keyboard-first, brand palette mapped to terminal colours with a monochrome fallback, narrow-width layout. Compile with `bun build --compile`; measure startup time, RSS and executable size.
+`tui/` workspace package on OpenTUI (load its skill and current docs), consuming `contracts/contracts.ts` (shared, never duplicated) and the HTTP/SSE API. `kosse tui` subcommand: attach to a verified running instance (never trust an unverified port occupant), otherwise spawn `kosse serve` privately on a free loopback port for the session and stop it by identity on exit. Feature parity with the dashboard (product.md Terminal surface), keyboard-first, brand palette mapped to terminal colours with a monochrome fallback, narrow-width layout. Compile with `bun build --compile`; measure startup time, RSS and executable size.
 
 #### Acceptance
 
@@ -159,6 +167,10 @@ Real-terminal tests (OpenTUI's test renderer or a PTY harness against the real b
 
 S10 audits all slice evidence before v1 is declared complete. Missing actual GUI/installed-entrypoint verification is not satisfied by mocks or passing unit tests. Do not silently shrink scope to complete a loop. Human-only or privileged actions need explicit approval; local packaging can complete without publishing or signing.
 
+
+## S11 — Real-window driving
+
+Added 2026-10-28: drive the shipped window from an agent (`bun run app`, debug-only control socket) and as an automated suite (`bun run test:window`), and fix what it reveals. Evidence: docs/evidence/S11.md. Its WKWebView-specific fixes were superseded by S12; the drive facility and suite carry over to the native window.
 
 ## S12 — Native Rune port
 

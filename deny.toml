@@ -17,10 +17,11 @@ ignore = []
 # in the graph; add others deliberately when a new dependency needs them.
 allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "MIT", "Unicode-3.0"]
 confidence-threshold = 0.9
-# ISC, only for the TLS stack the release binary ships for HTTP probes (S04): rustls's ring
-# provider and webpki certificate verifier. Permissive and MIT-compatible; allowed per crate rather
-# than globally so a new ISC dependency is a deliberate decision.
 exceptions = [
+  # MPL-2.0 (file-level copyleft), only for Rune's audio decoders: rune-kit depends on rune with its
+  # default features, which include `ogg-audio` (symphonia, opuscule), and Cargo gives kosse no way
+  # to turn a dependency's dependency's default features off. Kossé plays no audio. Shipped
+  # unmodified; their source stays on crates.io and the release notices carry their license.
   { crate = "symphonia-utils-xiph", allow = ["MPL-2.0"] },
   { crate = "symphonia-metadata", allow = ["MPL-2.0"] },
   { crate = "symphonia-format-ogg", allow = ["MPL-2.0"] },
@@ -29,14 +30,14 @@ exceptions = [
   { crate = "symphonia-codec-vorbis", allow = ["MPL-2.0"] },
   { crate = "symphonia", allow = ["MPL-2.0"] },
   { crate = "opuscule", allow = ["MPL-2.0"] },
+  # ISC, permissive and MIT-compatible, allowed per crate rather than globally so a new ISC
+  # dependency is a deliberate decision: the TLS stack the release binary ships for HTTP probes
+  # (S04: rustls's ring provider and webpki certificate verifier), and libloading, which wgpu-hal
+  # (Rune's GPU backend) uses to load system graphics libraries.
   { crate = "libloading", allow = ["ISC"] },
   { crate = "ring", allow = ["ISC"] },
   { crate = "rustls-webpki", allow = ["ISC"] },
   { crate = "untrusted", allow = ["ISC"] },
-  # MPL-2.0 (file-level copyleft), only for option-ext: wry -> dirs -> dirs-sys -> option-ext, a
-  # non-optional dependency of the dashboard window's web view on macOS (S08). Shipped unmodified;
-  # its source stays available on crates.io and the release notices (S09) must carry its license.
-  { crate = "option-ext", allow = ["MPL-2.0"] },
 ]
 
 [licenses.private]

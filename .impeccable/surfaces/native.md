@@ -18,4 +18,4 @@ A project/service sidebar anchors a structured editor. Name inheritance, local m
 
 ## Form and authority
 
-Neutral light/dark Rune layers, compact system text and mono facts, with Québec blue selected controls. Relay's separated K and optically tuned menu-bar geometry remain brand assets. The current code and DESIGN.md supersede review screenshots captured before the density and blue-control corrections. Behavioral and visual acceptance belongs in docs/evidence; this surface brief makes no test-pass claim.
+Neutral light/dark Rune layers, compact Inter text and system mono facts, with Québec blue selected controls. Relay's separated K and optically tuned menu-bar geometry remain brand assets. The current code and DESIGN.md supersede review screenshots captured before the density and blue-control corrections. Behavioral and visual acceptance belongs in docs/evidence; this surface brief makes no test-pass claim.
