@@ -237,7 +237,7 @@ fn a_dry_run_predicts_what_the_running_instance_applies() {
         "set",
         "--dry-run",
         "--json",
-        "--port",
+        "--instance-port",
         &port,
         "--file",
         &text(&file),
@@ -306,7 +306,7 @@ fn a_dry_run_predicts_what_the_running_instance_applies() {
     let shown = kosse(
         &world.config,
         &world.repo.join("apps/web"),
-        &["profile", "show", "--json", "--port", &port],
+        &["profile", "show", "--json", "--instance-port", &port],
         None,
     );
     let shown: ProfileShow = json_of(&shown);
@@ -363,7 +363,7 @@ fn revisions_refuse_a_lost_update_between_the_cli_and_the_api() {
     let shown = kosse(
         &world.config,
         &world.repo,
-        &["profile", "show", "--json", "--port", "0"],
+        &["profile", "show", "--json", "--instance-port", "0"],
         None,
     );
     let initial: ProfileShow = json_of(&shown);
@@ -456,7 +456,7 @@ fn invalid_profiles_are_refused_whole() {
                 "set",
                 "--dry-run",
                 "--json",
-                "--port",
+                "--instance-port",
                 "0",
                 "--file",
                 "-",
@@ -533,7 +533,10 @@ fn an_unusable_configuration_is_never_overwritten() {
                 Some(profile.as_str()),
             ),
             (&["profile", "remove", "--json"][..], None),
-            (&["profile", "show", "--json", "--port", "0"][..], None),
+            (
+                &["profile", "show", "--json", "--instance-port", "0"][..],
+                None,
+            ),
         ] {
             let refused = kosse(&config, &project, args, stdin);
             assert_eq!(code(&refused), UNOBSERVED, "{contents}: {args:?}");
@@ -565,7 +568,7 @@ fn the_prompt_carries_no_process_derived_text() {
     let context = kosse(
         &config,
         &repo,
-        &["profile", "context", "--json", "--port", "0"],
+        &["profile", "context", "--json", "--instance-port", "0"],
         None,
     );
     let context: ProfileContext = json_of(&context);

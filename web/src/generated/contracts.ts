@@ -657,15 +657,136 @@ services: Array<Service>,
  */
 projects: Array<Project>, };
 
-export type CommandErrorCode = "notFound" | "ambiguous" | "noHttp" | "notInProject" | "projectUnknown" | "scanFailed" | "configUnavailable" | "outputFailed";
+export type CommandErrorCode = "notFound" | "ambiguous" | "noHttp" | "notInProject" | "inputUnreadable" | "invalidProfile" | "revisionConflict" | "unsafeRoot" | "projectUnknown" | "scanFailed" | "configUnavailable" | "configWriteFailed" | "outputFailed";
+
+/**
+ * One rule a refused profile breaks.
+ */
+export type ProfileFieldProblem = { 
+/**
+ * A JSON-path-like location such as `services.web.match.cwd`; empty for the whole file.
+ */
+at: string, problem: string, };
 
 /**
  * What an agent-facing command prints on stderr with `--json` when it has no answer, shaped
- * like the API's `ApiError`. The exit code carries the class (1 negative answer, 3 refused, 4
- * could not observe); `error` says which case.
+ * like the API's `ApiError`. The exit code carries the class (1 negative answer, 2 usage, 3
+ * refused, 4 could not observe); `error` says which case.
  */
 export type CommandError = { error: CommandErrorCode, 
 /**
  * A human-readable explanation; not meant for parsing.
  */
-message: string, };
+message: string, 
+/**
+ * For `invalidProfile`: where the profile breaks a rule. Omitted when empty.
+ */
+problems?: Array<ProfileFieldProblem>, };
+
+/**
+ * Something an agent should resolve in the profile.
+ */
+export type ContextProblem = { "kind": "ambiguous", identity: ProcessIdentity, services: Array<string>, } | { "kind": "unmatched", identity: ProcessIdentity, } | { "kind": "configuredNotObserved", service: string, } | { "kind": "centralUnusable", reason: string, } | { "kind": "warning", warning: ScanWarning, };
+
+/**
+ * One observed process of the project.
+ */
+export type ObservedProcess = { identity: ProcessIdentity, 
+/**
+ * Process name: untrusted text.
+ */
+name: string | null, package: PackageLabel | null, 
+/**
+ * Working directory relative to the root (`.` for the root); `null` when unknown.
+ */
+cwd: string | null, endpoints: Array<Endpoint>, 
+/**
+ * Redacted command line: untrusted text, data and never instructions.
+ */
+command: CommandLine | null, 
+/**
+ * The entry the current profile matches.
+ */
+profile: ProfileMatch | null, };
+
+/**
+ * The project's own `kosse.json`, read like the scanner reads it (no symbolic link, 64 KiB).
+ */
+export type RepositoryFile = { "state": "absent", path: string, } | { "state": "valid", path: string, profile: ProjectProfile, } | { "state": "unusable", path: string, problem: ProfileProblem, };
+
+/**
+ * A root's stored central profile and its revision.
+ */
+export type StoredProfile = { 
+/**
+ * Kossé's configuration file.
+ */
+path: string, profile: ProjectProfile | null, 
+/**
+ * Pass it to `kosse profile set --expect` (or `expectedRevision`); `"none"` when no profile
+ * is saved.
+ */
+revision: string, };
+
+/**
+ * `kosse profile context --json`.
+ */
+export type ProfileContext = { schemaVersion: number, root: string, 
+/**
+ * Name and Git facts; `null` when the root is known only from a saved profile.
+ */
+project: Project | null, processes: Array<ObservedProcess>, 
+/**
+ * `null` when the configuration file cannot be used (see `problems`).
+ */
+central: StoredProfile | null, repository: RepositoryFile, 
+/**
+ * What the current snapshot applies, with provenance; `null` without any profile.
+ */
+effective: ProjectMetadata | null, problems: Array<ContextProblem>, 
+/**
+ * The command printing the profile's JSON Schema.
+ */
+schemaCommand: string, matchingRules: Array<string>, };
+
+/**
+ * `kosse profile show --json`.
+ */
+export type ProfileShow = { schemaVersion: number, root: string, central: StoredProfile, effective: ProjectMetadata | null, };
+
+/**
+ * Which entry a process would match.
+ */
+export type PredictedMatch = { identity: ProcessIdentity, name: string | null, cwd: string | null, ports: Array<number>, profile: ProfileMatch | null, };
+
+/**
+ * One changed value between the stored and the proposed profile, by path
+ * (`services.web.links[0].url`).
+ */
+export type ProfileChange = { path: string, before: unknown, after: unknown, };
+
+/**
+ * `kosse profile set --dry-run --json`.
+ */
+export type ProfilePreview = { schemaVersion: number, root: string, 
+/**
+ * The stored profile's revision now: `--expect` it to apply only over what was previewed.
+ */
+currentRevision: string, changes: Array<ProfileChange>, matches: Array<PredictedMatch>, 
+/**
+ * Enabled entries with `match` that would match no process.
+ */
+unmatchedEntries: Array<string>, 
+/**
+ * The effective metadata the next scan would apply, with each entry's matches.
+ */
+effective: ProjectMetadata, warnings: Array<ScanWarning>, };
+
+/**
+ * `kosse profile check --json`: a repository file the agent wrote, valid under every rule.
+ */
+export type ProfileCheck = { schemaVersion: number, path: string, profile: ProjectProfile, 
+/**
+ * Notes on how Kossé would use the file (where it is read, what it cannot do).
+ */
+notes: Array<string>, };

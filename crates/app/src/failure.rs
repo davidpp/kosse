@@ -1,6 +1,7 @@
-//! How the agent-facing read commands (`list`, `url`, `port`) fail: one plain stderr line, or
-//! with `--json` a `CommandError` record, and an exit code that tells a negative answer (1) from
-//! a refusal (3) and from not being able to observe (4). Usage errors are clap's (2).
+//! How the agent-facing commands (`list`, `url`, `port`, `profile`) fail: one plain stderr line,
+//! or with `--json` a `CommandError` record, and an exit code that tells a negative answer (1)
+//! from a usage error (2: clap's, a directory outside any project, unreadable input), a refusal
+//! (3) and not being able to observe (4).
 
 use std::{
     io::{self, Write},
@@ -8,6 +9,7 @@ use std::{
 };
 
 use kosse_core::{
+    agent::ProfileFieldProblem,
     agent::{CommandError, CommandErrorCode},
     profiles::StoreError,
     sockets::SocketsError,
@@ -19,6 +21,8 @@ use crate::text::printable;
 pub struct Failure {
     pub code: CommandErrorCode,
     pub message: String,
+    /// Where a refused profile breaks a rule.
+    pub problems: Vec<ProfileFieldProblem>,
 }
 
 impl Failure {
@@ -26,6 +30,7 @@ impl Failure {
         Self {
             code,
             message: message.into(),
+            problems: Vec::new(),
         }
     }
 
@@ -34,10 +39,14 @@ impl Failure {
             CommandErrorCode::NotFound | CommandErrorCode::Ambiguous | CommandErrorCode::NoHttp => {
                 1
             }
-            CommandErrorCode::NotInProject => 3,
+            CommandErrorCode::NotInProject | CommandErrorCode::InputUnreadable => 2,
+            CommandErrorCode::InvalidProfile
+            | CommandErrorCode::RevisionConflict
+            | CommandErrorCode::UnsafeRoot => 3,
             CommandErrorCode::ProjectUnknown
             | CommandErrorCode::ScanFailed
             | CommandErrorCode::ConfigUnavailable
+            | CommandErrorCode::ConfigWriteFailed
             | CommandErrorCode::OutputFailed => 4,
         }
     }
@@ -51,7 +60,26 @@ impl From<SocketsError> for Failure {
 
 impl From<StoreError> for Failure {
     fn from(error: StoreError) -> Self {
-        Self::new(CommandErrorCode::ConfigUnavailable, error.to_string())
+        let message = error.to_string();
+        match error {
+            StoreError::Rejected(error) => Self {
+                problems: vec![ProfileFieldProblem {
+                    at: error.at,
+                    problem: error.problem,
+                }],
+                ..Self::new(CommandErrorCode::InvalidProfile, message)
+            },
+            // The profile would make the file larger than Kossé reads.
+            StoreError::TooLarge => Self::new(CommandErrorCode::InvalidProfile, message),
+            StoreError::RevisionMismatch { .. } => {
+                Self::new(CommandErrorCode::RevisionConflict, message)
+            }
+            StoreError::Io { .. } => Self::new(CommandErrorCode::ConfigWriteFailed, message),
+            StoreError::Unusable { .. }
+            | StoreError::NoHome
+            | StoreError::RelativeDir
+            | StoreError::Conflict(_) => Self::new(CommandErrorCode::ConfigUnavailable, message),
+        }
     }
 }
 
@@ -67,15 +95,21 @@ pub fn written(result: io::Result<()>) -> Result<(), Failure> {
     }
 }
 
-/// The exit code of a read command, reporting its failure on stderr.
+/// The exit code of a command, reporting its failure on stderr.
 pub fn exit(result: Result<(), Failure>, json: bool) -> ExitCode {
     let Err(failure) = result else {
         return ExitCode::SUCCESS;
     };
+    failed(&failure, json)
+}
+
+/// Reports `failure` on stderr and returns its exit code.
+pub fn failed(failure: &Failure, json: bool) -> ExitCode {
     if json {
         let record = CommandError {
             error: failure.code,
             message: failure.message.clone(),
+            problems: failure.problems.clone(),
         };
         // Serializing a struct of an enum and a string cannot fail; stderr may be closed.
         if let Ok(line) = serde_json::to_string(&record) {

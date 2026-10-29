@@ -1,5 +1,5 @@
 //! The JSON records of the agent-facing commands (`kosse url`, `kosse port` and their errors; see
-//! blueprint/agent-surface.md). `kosse list --json` prints the [`crate::model::Snapshot`] itself.
+//! blueprint/agent-surface.md; `kosse profile`'s are in [`crate::profiles::authoring`]). `kosse list --json` prints the [`crate::model::Snapshot`] itself.
 //! Wire contracts, generated into TypeScript like the rest of the model.
 
 use serde::{Deserialize, Serialize};
@@ -7,7 +7,8 @@ use ts_rs::TS;
 
 use crate::model::{ProcessIdentity, Project, Service};
 
-/// Bumped when a change to [`UrlAnswer`] or [`PortAnswer`] would break an existing reader.
+/// Bumped when a change to [`UrlAnswer`], [`PortAnswer`] or a `kosse profile` record
+/// ([`crate::profiles::authoring`]) would break an existing reader.
 pub const AGENT_SCHEMA_VERSION: u32 = 1;
 
 /// `kosse url --json`: the one endpoint of the named service (or port) that answered HTTP.
@@ -52,14 +53,27 @@ pub enum PortState {
 }
 
 /// What an agent-facing command prints on stderr with `--json` when it has no answer, shaped
-/// like the API's `ApiError`. The exit code carries the class (1 negative answer, 3 refused, 4
-/// could not observe); `error` says which case.
+/// like the API's `ApiError`. The exit code carries the class (1 negative answer, 2 usage, 3
+/// refused, 4 could not observe); `error` says which case.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandError {
     pub error: CommandErrorCode,
     /// A human-readable explanation; not meant for parsing.
     pub message: String,
+    /// For `invalidProfile`: where the profile breaks a rule. Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<ProfileFieldProblem>>", optional)]
+    pub problems: Vec<ProfileFieldProblem>,
+}
+
+/// One rule a refused profile breaks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileFieldProblem {
+    /// A JSON-path-like location such as `services.web.match.cwd`; empty for the whole file.
+    pub at: String,
+    pub problem: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -72,14 +86,25 @@ pub enum CommandErrorCode {
     /// The service listens, but no endpoint of it answered HTTP; `message` gives the probe state
     /// (exit 1).
     NoHttp,
-    /// `--here` or `--project` names a directory that is in no project (exit 3).
+    /// The directory (`--here`, `--project`, a `kosse profile` root) is in no project (exit 2).
     NotInProject,
+    /// `kosse profile set --file` or `check` could not read its input (exit 2).
+    InputUnreadable,
+    /// The profile breaks a rule; `problems` says where. Nothing was written (exit 3).
+    InvalidProfile,
+    /// The stored profile's revision is not the `--expect`ed one: another writer changed it.
+    /// Nothing was written (exit 3).
+    RevisionConflict,
+    /// The root holds control or invisible formatting characters, so no prompt is made (exit 3).
+    UnsafeRoot,
     /// The directory's project could not be determined (unreadable, `git` failed) (exit 4).
     ProjectUnknown,
     /// Listening sockets could not be enumerated (exit 4).
     ScanFailed,
     /// Kossé's configuration cannot be read, is invalid or is from a newer Kossé (exit 4).
     ConfigUnavailable,
+    /// Writing Kossé's configuration failed (permissions, disk); nothing was changed (exit 4).
+    ConfigWriteFailed,
     /// The answer could not be written to stdout (exit 4).
     OutputFailed,
 }

@@ -7,6 +7,7 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 ### Added
 
 - Agent read surface ([S13](docs/evidence/S13.md)): `kosse list` prints Markdown tables (columns `PROJECT`, `BRANCH`, `SERVICE`, `PORT`, `HTTP`, `PROCESS`, `PID.START`, `AGE`) and takes `--here`, `--project`, `--port` and `--service` (also for `--json`); `kosse url <service|port>` prints a service's local URL; `kosse port <n>` says whether a port is free and who holds it. Documented exit codes (0/1/2/3/4) and `CommandError` JSON on stderr with `--json`.
+- Agent profile authoring ([S15](docs/evidence/S15.md)): `kosse profile context|show|set|remove|check|prompt` gives the coding agent in a repository what Kossé observes there, validates and previews (`set --dry-run`, computed by the scanner's own matching) a central profile, and writes only Kossé's configuration. Stored profiles carry a revision: `--expect <revision>` and `POST /api/profile`'s `expectedRevision` refuse a lost update (`revisionConflict`).
 
 ### Changed
 

@@ -27,7 +27,7 @@ pub enum Command {
     Serve(ServeArgs),
     /// Print the TCP listeners on this machine and their processes as a Markdown table (one row
     /// per port), then the configured services no process matches: the running instance's
-    /// snapshot, or a one-shot scan when none runs. Exits 3 when `--here` is outside a project, 4
+    /// snapshot, or a one-shot scan when none runs. Exits 2 when `--here` is outside a project, 4
     /// when nothing could be observed.
     List(ListArgs),
     /// Print the URL (`http(s)://localhost:<port>/`) of a service or port that answered HTTP.
@@ -43,7 +43,8 @@ pub enum Command {
     /// A project's central profile, for the coding agent that authors it: observed facts, the
     /// stored and effective profile, a validated preview, and writes to Kossé's own configuration
     /// only. Markdown by default, `--json` for tooling. Exits 0 when answered or applied, 1 when
-    /// a dry run finds an ambiguity or an entry matching nothing, 2 on a usage error, 3 when
+    /// a dry run finds an ambiguity or an entry matching nothing, 2 on a usage error (or a
+    /// directory outside any project), 3 when
     /// refused (invalid profile, revision changed), 4 when Kossé could not observe or read its
     /// configuration.
     #[command(subcommand)]
@@ -144,10 +145,8 @@ pub struct ProfileObserveArgs {
     #[arg(long)]
     pub json: bool,
 
-    /// The port of the running instance whose snapshot to read; scans once when no Kossé
-    /// answers there (or with 0).
-    #[arg(long, default_value_t = DEFAULT_PORT)]
-    pub port: u16,
+    #[command(flatten)]
+    pub instance: InstanceArgs,
 }
 
 #[derive(Debug, clap::Args)]
@@ -173,10 +172,9 @@ pub struct ProfileSetArgs {
     #[arg(long)]
     pub json: bool,
 
-    /// For `--dry-run`: the port of the running instance whose snapshot to read; scans once
-    /// when no Kossé answers there (or with 0).
-    #[arg(long, default_value_t = DEFAULT_PORT)]
-    pub port: u16,
+    /// For `--dry-run`: which instance's snapshot to read.
+    #[command(flatten)]
+    pub instance: InstanceArgs,
 }
 
 #[derive(Debug, clap::Args)]

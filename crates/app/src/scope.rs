@@ -19,7 +19,7 @@ use std::{
 use kosse_core::{
     agent::CommandErrorCode,
     attribution::Attributor,
-    model::{ScanWarning, Service, Snapshot},
+    model::{Project, ScanWarning, Service, Snapshot},
     profiles::{
         CentralStore, Profiles,
         view::{ConfiguredService, ProfileMatch, ProjectMetadata},
@@ -112,7 +112,7 @@ pub fn root(scope: &Scope, snapshot: &Snapshot) -> Result<Option<String>, Failur
     } else {
         return Ok(None);
     };
-    project_of(&dir).map(Some)
+    project_of(&dir).map(|project| Some(project.root))
 }
 
 fn known_root(dir: &Path, snapshot: &Snapshot) -> Option<String> {
@@ -126,8 +126,8 @@ fn known_root(dir: &Path, snapshot: &Snapshot) -> Option<String> {
     known.into_iter().find(|root| *root == text).cloned()
 }
 
-/// The root of the project `dir` is in, as attribution resolves a process's working directory.
-fn project_of(dir: &Path) -> Result<String, Failure> {
+/// The project `dir` is in, as attribution resolves a process's working directory.
+pub fn project_of(dir: &Path) -> Result<Project, Failure> {
     let shown = printable(&dir.display().to_string());
     let canonical: PathBuf = dir.canonicalize().map_err(|error| {
         Failure::new(
@@ -143,7 +143,7 @@ fn project_of(dir: &Path) -> Result<String, Failure> {
     };
     let mut attributor = Attributor::for_current_user();
     match attributor.attribute([text], Instant::now()).remove(text) {
-        Some(Ok(Some(attribution))) => Ok(attribution.project.root),
+        Some(Ok(Some(attribution))) => Ok(attribution.project),
         Some(Ok(None)) | None => Err(Failure::new(
             CommandErrorCode::NotInProject,
             format!(

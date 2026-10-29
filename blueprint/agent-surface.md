@@ -36,7 +36,7 @@ Kossé itself stays passive and does no inference ([non-goals](product.md#explic
 Read and wait (S13, S14):
 
 - `kosse list [--here | --project <root>] [--port <n>] [--service <name>] [--json]`. The default becomes a Markdown table (it replaces today's space-aligned table). `--here` resolves the caller's cwd to its project root with the same stat-only walk and `git.rs` as attribution; outside a project it fails with a typed error instead of printing everything. Filters apply to `--json` as well: the `Snapshot` keeps its contract and holds only the matching services.
-- `kosse url <service | port> [--here]` prints only an `http(s)://localhost:<port>/` URL from `prober::open_url` for an endpoint that answered HTTP (the profile's probe path when declared). Exits 1 when there is none, with the endpoint's probe state on stderr.
+- `kosse url <service | port> [--here]` prints only an `http(s)://localhost:<port>/` URL from `prober::open_url` for an endpoint that answered HTTP: the root URL only, no probe path appended (AGENTS.md). Exits 1 when there is none, with the endpoint's probe state on stderr.
 - `kosse port <n> [--json]`: `free`, or the owning identity, project, service and process name. Other users' sockets stay invisible and are reported as such: "free as far as this user can see", never a definite free.
 - `kosse wait (--port <n> | <service>) [--http | --gone] [--timeout <dur>] [--here]` exits 0 on the condition and 1 on timeout, printing the last observation (one table row) either way. It follows the instance's SSE when one runs, otherwise it scans in process at a bounded cadence. `--http` issues requested probes (`POST /api/probe` policy: own-user loopback only, marked `requested`) with backoff, and reports skip reasons instead of waiting forever on an endpoint that can never be probed.
 
@@ -47,7 +47,7 @@ Profiles (S15):
 - `kosse profile set [<root> | .] --file <path | -> [--dry-run] [--expect <revision>]` validates with `profiles/validate.rs` (refused as a whole on any rule failure, with typed problems). `--dry-run` prints the diff against the stored profile and the resulting match table: each observed process, the entry it would match, ambiguities, and entries that would match nothing. Without `--dry-run` it writes through `CentralStore`, like `config move`, with or without an instance; the instance picks the file up through its existing watch.
 - `kosse profile remove [<root> | .] [--expect <revision>]` and `kosse profile check <kosse.json>` (validates a repository file the agent wrote for sharing; Kossé never writes it).
 - `kosse profile prompt [<root> | .]` prints the customization prompt that the window also shows (S16).
-- S15 outcome: implemented as above; CONTRIBUTING.md has the exact syntax, records and exit codes. `<root>` is the project of the given directory (attribution's walk and `git.rs`); a directory outside any project is a usage error (2) unless a central profile is saved for exactly that path. A dry run exits 1 for an ambiguous process or an enabled entry with `match` that matches nothing; processes no entry matches are listed but are not negative (a project may run processes the owner does not name). The JSON records (`ProfileContext`, `ProfileShow`, `ProfilePreview`, `ProfileCheck`, versioned by `schemaVersion`) are Rust types in `crates/core/src/profiles/authoring.rs`; a generated schema for them waits for S13's mechanism for the other agent records. The prompt refuses a root with control or invisible formatting characters.
+- S15 outcome: implemented as above; CONTRIBUTING.md has the exact syntax, records and exit codes. `<root>` is the project of the given directory (attribution's walk and `git.rs`); a directory outside any project is a usage error (2) unless a central profile is saved for exactly that path. A dry run exits 1 for an ambiguous process or an enabled entry with `match` that matches nothing; processes no entry matches are listed but are not negative (a project may run processes the owner does not name). The JSON records (`ProfileContext`, `ProfileShow`, `ProfilePreview`, `ProfileCheck`) are Rust types in `crates/core/src/profiles/authoring.rs`, versioned by `AGENT_SCHEMA_VERSION` and generated into the TypeScript contracts like `UrlAnswer`/`PortAnswer`; failures are S13's `CommandError`, with `problems` for an invalid profile. The instance to ask is `--instance-port`, as for the read commands. The prompt refuses a root with control or invisible formatting characters.
 
 Actions (S17):
 
@@ -64,8 +64,8 @@ Discovery (S18):
 | Code | Meaning |
 |---|---|
 | 0 | Answered / condition met / applied |
-| 1 | Negative answer: no URL, wait timed out, port taken where `--free` asserted, dry run found ambiguity |
-| 2 | Usage error |
+| 1 | Negative answer: no URL, wait timed out, dry run found ambiguity |
+| 2 | Usage error, including a directory outside any project (`--here`, `--project`, a `profile` root) |
 | 3 | Refused by policy: stale identity, port set mismatch, no force offer, invalid profile, precondition failed |
 | 4 | Could not observe: scan failure, instance unverifiable, config unreadable or newer |
 
@@ -95,7 +95,7 @@ Nothing here relaxes an [AGENTS.md](../AGENTS.md) invariant. The relevant points
 
 - The CLI is a client of the one scanner when an instance runs. Without one, read commands scan in their own process, exactly as `list` does today. No command starts a second scanner beside a running instance.
 - Mutations: profiles go only through `CentralStore`; actions only through the guarded API to `action::revalidate` → `signal.rs`. The guard's threat model (websites, DNS rebinding; not same-user processes) is unchanged. An agent running as the user is a same-user process, which is why the confirmation lives in the arguments and the server still revalidates.
-- Probing: `wait --http` and `url` use requested probes under the existing policy. Repository files still never steer probing.
+- Probing: `wait --http` uses requested probes under the existing policy; `url` requests none and prints only what the instance's probes already saw. Repository files still never steer probing.
 - Output: everything passes `redact` in `inspect.rs` as today; tables and agent records add no raw field.
 - Agent files: Kossé never writes into agent configuration, `~/.claude`, repositories or `.gitignore` on its own. `agent skill --write` and the user's paste are the explicit routes.
 

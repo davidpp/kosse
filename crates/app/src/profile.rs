@@ -13,31 +13,27 @@
 //!
 //! Markdown by default; `--json` prints the versioned records of [`authoring`] (or the API's
 //! [`SavedProfile`]). Exit codes: 0 answered or applied, 1 negative (a dry run finds an ambiguous
-//! process or an entry matching nothing; `remove` finds nothing to remove), 2 usage, 3 refused
-//! (invalid profile, revision changed), 4 could not observe (scan failed, configuration
-//! unreadable or newer). Failures print one line on stderr, or with `--json` a JSON error
-//! `{error, message, problems?}`.
+//! process or an entry matching nothing; `remove` finds nothing to remove), and failures as every
+//! agent command reports them ([`crate::failure`]): 2 usage (outside a project, unreadable
+//! input), 3 refused (invalid profile, revision changed), 4 could not observe (scan failed,
+//! configuration unreadable or newer).
 
 use std::{
     env, fs,
     io::{self, Read as _, Write},
     path::Path,
     process::ExitCode,
-    time::Instant,
 };
 
 use kosse_core::{
-    attribution::Attributor,
+    agent::{AGENT_SCHEMA_VERSION, CommandErrorCode, ProfileFieldProblem},
     contract::SavedProfile,
-    model::{
-        Endpoint, GitHead, HttpProbe, Observation, ProbeResult, Project, ScanWarning, Snapshot,
-    },
+    model::{Endpoint, GitHead, HttpProbe, Observation, ProbeResult, Project, ScanWarning},
     profiles::{
-        CentralStore, Profiles, ProjectProfile, StoreError,
+        CentralStore, ProjectProfile, StoreError,
         authoring::{
-            self, AUTHORING_SCHEMA_VERSION, ContextProblem, MATCHING_RULES, ObservedProcess,
-            ProfileCheck, ProfileContext, ProfilePreview, ProfileShow, RepositoryFile,
-            StoredProfile,
+            self, ContextProblem, MATCHING_RULES, ObservedProcess, ProfileCheck, ProfileContext,
+            ProfilePreview, ProfileShow, RepositoryFile, StoredProfile,
         },
         central,
         document::REPO_FILE_NAME,
@@ -46,8 +42,6 @@ use kosse_core::{
         validate,
         view::{ConfiguredService, ProfileMatch, ProfileProblem, ProjectMetadata},
     },
-    scan::Scanner,
-    snapshot::{AttemptTimer, SnapshotTracker},
 };
 use serde::Serialize;
 
@@ -55,109 +49,27 @@ use crate::{
     cli::{
         ProfileCheckArgs, ProfileCommand, ProfileObserveArgs, ProfileRemoveArgs, ProfileSetArgs,
     },
-    instance::{self, Found},
+    failure::{self, Failure},
     markdown::{Table, UNKNOWN, cell},
+    scope,
     text::printable,
 };
 
 const SCHEMA_COMMAND: &str = "kosse config schema";
 
+/// A successful command's exit code: answered, or a negative answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Exit {
     Answered = 0,
     Negative = 1,
-    Usage = 2,
-    Refused = 3,
-    Unobserved = 4,
 }
 
-/// Why a command failed: one stderr line, or this JSON with `--json`.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Failure {
-    error: FailureCode,
-    message: String,
-    /// Where a refused profile breaks a rule.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    problems: Vec<Problem>,
-    #[serde(skip)]
-    exit: Exit,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "camelCase")]
-enum FailureCode {
-    NotAProject,
-    InputUnreadable,
-    InvalidProfile,
-    RevisionConflict,
-    UnsafeRoot,
-    ConfigUnavailable,
-    ConfigWriteFailed,
-    ScanFailed,
-    OutputFailed,
-}
-
-#[derive(Debug, Serialize)]
-struct Problem {
-    /// A JSON-path-like location such as `services.web.match.cwd`; empty for the whole file.
-    at: String,
-    problem: String,
-}
-
-impl Failure {
-    fn new(error: FailureCode, exit: Exit, message: impl Into<String>) -> Self {
-        Self {
-            error,
-            message: message.into(),
-            problems: Vec::new(),
-            exit,
-        }
-    }
-
-    fn invalid(problem: &ProfileProblem) -> Self {
-        // Untrusted text: it may quote the file.
-        Self::new(
-            FailureCode::InvalidProfile,
-            Exit::Refused,
-            format!("profile refused: {problem}"),
-        )
-    }
-
-    fn report(&self, json: bool) {
-        if json && let Ok(text) = serde_json::to_string(self) {
-            report!("{text}");
-        } else {
-            report!("kosse: {}", printable(&self.message));
-        }
-    }
-}
-
-impl From<StoreError> for Failure {
-    fn from(failure: StoreError) -> Self {
-        let message = failure.to_string();
-        match failure {
-            StoreError::Rejected(error) => Self {
-                problems: vec![Problem {
-                    at: error.at,
-                    problem: error.problem,
-                }],
-                ..Self::new(FailureCode::InvalidProfile, Exit::Refused, message)
-            },
-            StoreError::RevisionMismatch { .. } => {
-                Self::new(FailureCode::RevisionConflict, Exit::Refused, message)
-            }
-            StoreError::Conflict(_) | StoreError::TooLarge => {
-                Self::new(FailureCode::ConfigUnavailable, Exit::Refused, message)
-            }
-            StoreError::Unusable { .. } | StoreError::NoHome | StoreError::RelativeDir => {
-                Self::new(FailureCode::ConfigUnavailable, Exit::Unobserved, message)
-            }
-            StoreError::Io { .. } => {
-                Self::new(FailureCode::ConfigWriteFailed, Exit::Unobserved, message)
-            }
-        }
-    }
+fn invalid(problem: &ProfileProblem) -> Failure {
+    // Untrusted text: it may quote the file.
+    Failure::new(
+        CommandErrorCode::InvalidProfile,
+        format!("profile refused: {problem}"),
+    )
 }
 
 pub fn run(command: &ProfileCommand) -> ExitCode {
@@ -176,11 +88,10 @@ pub fn run(command: &ProfileCommand) -> ExitCode {
         ProfileCommand::Check(args) => check(args),
         ProfileCommand::Prompt(args) => prompt(args.root.as_deref()),
     };
-    let exit = result.unwrap_or_else(|failure| {
-        failure.report(json);
-        failure.exit
-    });
-    ExitCode::from(exit as u8)
+    match result {
+        Ok(exit) => ExitCode::from(exit as u8),
+        Err(failure) => failure::failed(&failure, json),
+    }
 }
 
 /// A resolved project root.
@@ -194,11 +105,13 @@ fn store() -> Result<CentralStore, Failure> {
     Ok(CentralStore::from_env()?)
 }
 
+/// The project of `root` (or of the current directory), as `--here` and `--project` resolve it;
+/// a directory outside any project only when a central profile is saved for exactly that path (a
+/// moved or deleted project), so it can still be shown or removed.
 fn resolve(root: Option<&Path>, store: &CentralStore) -> Result<Target, Failure> {
     let cwd = env::current_dir().map_err(|error| {
         Failure::new(
-            FailureCode::NotAProject,
-            Exit::Usage,
+            CommandErrorCode::ProjectUnknown,
             format!("the current directory is unavailable: {error}"),
         )
     })?;
@@ -206,104 +119,29 @@ fn resolve(root: Option<&Path>, store: &CentralStore) -> Result<Target, Failure>
         Some(root) if root != Path::new(".") => cwd.join(root),
         _ => cwd,
     };
-    if let Some(project) = project_of(&dir)? {
-        return Ok(Target {
+    match scope::project_of(&dir) {
+        Ok(project) => Ok(Target {
             root: project.root.clone(),
             project: Some(project),
-        });
-    }
-    // A saved profile whose project is gone (moved or deleted) can still be shown or removed.
-    if let Some(text) = dir.to_str()
-        && let Ok((root, Some(_))) = store.stored(text)
-    {
-        return Ok(Target {
-            root,
-            project: None,
-        });
-    }
-    Err(Failure::new(
-        FailureCode::NotAProject,
-        Exit::Usage,
-        format!(
-            "{} is not inside a project (no Git worktree or package manifest below the home directory) and no profile is saved for it",
-            dir.display()
-        ),
-    ))
-}
-
-/// The project `dir` belongs to, by the scanner's attribution.
-fn project_of(dir: &Path) -> Result<Option<Project>, Failure> {
-    let Some(canonical) = fs::canonicalize(dir)
-        .ok()
-        .and_then(|path| path.to_str().map(str::to_owned))
-    else {
-        return Ok(None);
-    };
-    let mut attributor = Attributor::for_current_user();
-    match attributor
-        .attribute([canonical.as_str()], Instant::now())
-        .remove(canonical.as_str())
-    {
-        Some(Ok(attribution)) => Ok(attribution.map(|attribution| attribution.project)),
-        Some(Err(reason)) => Err(Failure::new(
-            FailureCode::ScanFailed,
-            Exit::Unobserved,
-            format!("the project of {} is unknown: {reason}", dir.display()),
-        )),
-        None => Ok(None),
+        }),
+        Err(failure) if failure.code == CommandErrorCode::NotInProject => {
+            match dir.to_str().map(|text| store.stored(text)) {
+                Some(Ok((root, Some(_)))) => Ok(Target {
+                    root,
+                    project: None,
+                }),
+                _ => Err(failure),
+            }
+        }
+        Err(failure) => Err(failure),
     }
 }
 
-/// The observation of a verified instance on `port`, else of one scan.
-fn observe(port: u16) -> Result<Observation, Failure> {
-    let snapshot = match running_snapshot(port) {
-        Some(snapshot) => snapshot,
-        None => scan_once()?,
-    };
-    if let (Some(failure), Some(_)) = (&snapshot.scanner.failure, &snapshot.observation) {
-        report!(
-            "kosse: warning: the latest scan failed ({}); using the last good scan",
-            printable(failure)
-        );
-    }
-    snapshot.observation.ok_or_else(|| {
-        Failure::new(
-            FailureCode::ScanFailed,
-            Exit::Unobserved,
-            "no scan has succeeded",
-        )
-    })
-}
-
-fn running_snapshot(port: u16) -> Option<Snapshot> {
-    if port == 0 {
-        return None;
-    }
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .ok()?;
-    match runtime.block_on(instance::find(port)) {
-        Found::Kosse(existing) => existing
-            .compatible_snapshot()
-            .filter(|snapshot| snapshot.observation.is_some()),
-        Found::Nothing | Found::Refused(_) => None,
-    }
-}
-
-fn scan_once() -> Result<Snapshot, Failure> {
-    let store = store()?;
-    let timer = AttemptTimer::start();
-    let mut scanner = Scanner::new();
-    let mut observation = scanner.scan().map_err(|error| {
-        Failure::new(
-            FailureCode::ScanFailed,
-            Exit::Unobserved,
-            format!("could not scan: {error}"),
-        )
-    })?;
-    Profiles::new(store).apply(&mut observation, scanner.own_user());
-    Ok(SnapshotTracker::new(None).succeeded(observation, timer.finish()))
+/// The observation of a verified instance on `instance_port`, else of one scan.
+fn observe(instance_port: u16, json: bool) -> Result<Observation, Failure> {
+    scope::observe(instance_port, json)?
+        .observation
+        .ok_or_else(|| Failure::new(CommandErrorCode::ScanFailed, "no scan has succeeded"))
 }
 
 fn stored_profile(store: &CentralStore, root: &str) -> Result<StoredProfile, Failure> {
@@ -326,7 +164,7 @@ fn effective_of(observation: &Observation, root: &str) -> Option<ProjectMetadata
 fn context(args: &ProfileObserveArgs) -> Result<Exit, Failure> {
     let store = store()?;
     let target = resolve(args.target.root.as_deref(), &store)?;
-    let observation = observe(args.port)?;
+    let observation = observe(args.instance.instance_port, args.json)?;
     let root = target.root.as_str();
     let mut problems = Vec::new();
     let central = match stored_profile(&store, root) {
@@ -392,7 +230,7 @@ fn context(args: &ProfileObserveArgs) -> Result<Exit, Failure> {
             .cloned()
     });
     let record = ProfileContext {
-        schema_version: AUTHORING_SCHEMA_VERSION,
+        schema_version: AGENT_SCHEMA_VERSION,
         root: target.root.clone(),
         project,
         processes,
@@ -427,9 +265,9 @@ fn show(args: &ProfileObserveArgs) -> Result<Exit, Failure> {
     let store = store()?;
     let target = resolve(args.target.root.as_deref(), &store)?;
     let central = stored_profile(&store, &target.root)?;
-    let observation = observe(args.port)?;
+    let observation = observe(args.instance.instance_port, args.json)?;
     let record = ProfileShow {
-        schema_version: AUTHORING_SCHEMA_VERSION,
+        schema_version: AGENT_SCHEMA_VERSION,
         effective: effective_of(&observation, &target.root),
         root: target.root,
         central,
@@ -453,8 +291,7 @@ fn show(args: &ProfileObserveArgs) -> Result<Exit, Failure> {
 fn proposed(file: &Path) -> Result<ProjectProfile, Failure> {
     let unreadable = |reason: String| {
         Failure::new(
-            FailureCode::InputUnreadable,
-            Exit::Usage,
+            CommandErrorCode::InputUnreadable,
             format!("could not read {}: {reason}", file.display()),
         )
     };
@@ -466,7 +303,7 @@ fn proposed(file: &Path) -> Result<ProjectProfile, Failure> {
             .read_to_end(&mut bytes)
             .map_err(|error| unreadable(error.to_string()))?;
         if bytes.len() > MAX_FILE_BYTES as usize {
-            return Err(Failure::invalid(&ProfileProblem::TooLarge {
+            return Err(invalid(&ProfileProblem::TooLarge {
                 limit_bytes: MAX_FILE_BYTES,
             }));
         }
@@ -476,7 +313,7 @@ fn proposed(file: &Path) -> Result<ProjectProfile, Failure> {
             Ok(Some((bytes, _))) => bytes,
             Ok(None) => return Err(unreadable("no such file".into())),
             Err(ProfileProblem::Unreadable { reason }) => return Err(unreadable(reason)),
-            Err(problem) => return Err(Failure::invalid(&problem)),
+            Err(problem) => return Err(invalid(&problem)),
         }
     };
     parse(&bytes)
@@ -485,15 +322,14 @@ fn proposed(file: &Path) -> Result<ProjectProfile, Failure> {
 /// Version first, then shape, then every rule; the first violation refuses the whole profile.
 fn parse(bytes: &[u8]) -> Result<ProjectProfile, Failure> {
     let profile: ProjectProfile =
-        source::parse_versioned(bytes).map_err(|problem| Failure::invalid(&problem))?;
+        source::parse_versioned(bytes).map_err(|problem| invalid(&problem))?;
     validate::profile(&profile).map_err(|error| Failure {
-        problems: vec![Problem {
+        problems: vec![ProfileFieldProblem {
             at: error.at.clone(),
             problem: error.problem.clone(),
         }],
         ..Failure::new(
-            FailureCode::InvalidProfile,
-            Exit::Refused,
+            CommandErrorCode::InvalidProfile,
             format!("profile refused: {error}"),
         )
     })?;
@@ -519,7 +355,7 @@ fn set(args: &ProfileSetArgs) -> Result<Exit, Failure> {
             .into());
         }
     }
-    let observation = observe(args.port)?;
+    let observation = observe(args.instance.instance_port, args.json)?;
     let repository = authoring::repository_file(Path::new(&target.root));
     let preview = authoring::preview(
         &observation,
@@ -586,12 +422,11 @@ fn check(args: &ProfileCheckArgs) -> Result<Exit, Failure> {
         Ok(Some((bytes, _))) => bytes,
         Ok(None) => {
             return Err(Failure::new(
-                FailureCode::InputUnreadable,
-                Exit::Usage,
+                CommandErrorCode::InputUnreadable,
                 format!("{}: no such file", args.path.display()),
             ));
         }
-        Err(problem) => return Err(Failure::invalid(&problem)),
+        Err(problem) => return Err(invalid(&problem)),
     };
     let profile = parse(&bytes)?;
     let mut notes = Vec::new();
@@ -604,8 +439,7 @@ fn check(args: &ProfileCheckArgs) -> Result<Exit, Failure> {
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf));
     let at_root = dir.as_deref().is_some_and(|dir| {
-        project_of(dir)
-            .is_ok_and(|project| project.is_some_and(|project| Path::new(&project.root) == dir))
+        scope::project_of(dir).is_ok_and(|project| Path::new(&project.root) == dir)
     });
     if !at_root {
         notes.push(
@@ -624,7 +458,7 @@ fn check(args: &ProfileCheckArgs) -> Result<Exit, Failure> {
         );
     }
     let record = ProfileCheck {
-        schema_version: AUTHORING_SCHEMA_VERSION,
+        schema_version: AGENT_SCHEMA_VERSION,
         path: args.path.to_string_lossy().into_owned(),
         profile,
         notes,
@@ -643,9 +477,8 @@ fn check(args: &ProfileCheckArgs) -> Result<Exit, Failure> {
 fn prompt(root: Option<&Path>) -> Result<Exit, Failure> {
     let store = store()?;
     let target = resolve(root, &store)?;
-    let text = prompt::customization(&target.root).map_err(|refused| {
-        Failure::new(FailureCode::UnsafeRoot, Exit::Refused, refused.to_string())
-    })?;
+    let text = prompt::customization(&target.root)
+        .map_err(|refused| Failure::new(CommandErrorCode::UnsafeRoot, refused.to_string()))?;
     print(false, &(), |out| out.write_all(text.as_bytes()))?;
     Ok(Exit::Answered)
 }
@@ -664,14 +497,8 @@ fn print<T: Serialize>(
     } else {
         markdown(&mut stdout)
     };
-    match written.and_then(|()| stdout.flush()) {
-        Err(error) if error.kind() != io::ErrorKind::BrokenPipe => Err(Failure::new(
-            FailureCode::OutputFailed,
-            Exit::Unobserved,
-            format!("could not write the output: {error}"),
-        )),
-        _ => Ok(()),
-    }
+    drop(stdout);
+    failure::written(written)
 }
 
 fn write_context(out: &mut impl Write, record: &ProfileContext) -> io::Result<()> {

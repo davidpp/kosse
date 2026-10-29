@@ -86,7 +86,7 @@ If `~/.local/bin` is not on your `PATH` (it is not on a stock Mac): `echo 'expor
 
 **Tray menu:** projects with their branch; each service as `name :port` with Open (only if it answered HTTP), Inspect and Stop… (both open the dashboard window at that service; Stop… is the dashboard's own confirmation); Open Dashboard; Quit Kossé. Quit stops Kossé only, never the services it shows. The icon switches to its attention variant only when discovery fails or stalls.
 
-Read commands (`list`, `url`, `port`) exit 0 with an answer, 1 for a negative answer, 2 on a usage error, 3 when refused (`--here` outside a project) and 4 when nothing could be observed; with `--json`, failures are a `CommandError` on stderr. Every flag and route is documented in [CONTRIBUTING.md](CONTRIBUTING.md#running-the-binary). Optional project names and links live in a central profile ("Customize this project" in the dashboard) or a read-only `kosse.json` in the repository ([schema](docs/kosse.schema.json), [format](blueprint/project-metadata.md)).
+Agent commands (`list`, `url`, `port`, `profile`) exit 0 with an answer, 1 for a negative answer, 2 on a usage error (including `--here` outside a project), 3 when refused and 4 when nothing could be observed; with `--json`, failures are a `CommandError` on stderr. Every flag and route is documented in [CONTRIBUTING.md](CONTRIBUTING.md#running-the-binary). Optional project names and links live in a central profile ("Customize this project" in the dashboard) or a read-only `kosse.json` in the repository ([schema](docs/kosse.schema.json), [format](blueprint/project-metadata.md)).
 
 ## Architecture
 

@@ -430,9 +430,10 @@ fn list_here_lists_only_the_callers_worktree() {
     assert_eq!(identities, [identity_cell(&in_linked)]);
     assert_eq!(table.cell(&table.rows[0], "BRANCH"), "feature");
 
-    // Outside a project: refused (3), with a typed error under --json and nothing on stdout.
+    // Outside a project: a usage error (2), with a typed error under --json and nothing on
+    // stdout.
     let refused = kosse_at(&outside, config, &here);
-    assert_eq!(refused.status.code(), Some(3));
+    assert_eq!(refused.status.code(), Some(2));
     assert_eq!(refused.stdout, b"", "stdout carries only answers");
     let error: kosse_core::agent::CommandError =
         serde_json::from_slice(&refused.stderr).expect("CommandError JSON on stderr");
@@ -441,7 +442,7 @@ fn list_here_lists_only_the_callers_worktree() {
         kosse_core::agent::CommandErrorCode::NotInProject
     );
     let plain = kosse_at(&outside, config, &here[..2]);
-    assert_eq!(plain.status.code(), Some(3));
+    assert_eq!(plain.status.code(), Some(2));
     let stderr = String::from_utf8(plain.stderr).expect("UTF-8");
     assert_eq!(stderr.lines().count(), 1, "one plain line: {stderr}");
     assert!(stderr.starts_with("kosse: "), "{stderr}");
@@ -488,14 +489,19 @@ fn list_filters_by_port_and_configured_service() {
         .collect();
     assert_eq!(lsof_owners, BTreeSet::from([one.pid()]));
 
+    // Scoped to this project: other suites' repositories may configure a `web` too.
+    let project = path_text(&repo);
     for name in ["web", "Storefront"] {
         assert_eq!(
-            pids_of(&run(&["--service", name])),
+            pids_of(&run(&["--service", name, "--project", &project])),
             BTreeSet::from([two.pid()]),
             "by configured ID or name: {name}"
         );
     }
-    assert_eq!(pids_of(&run(&["--service", "api"])), BTreeSet::new());
+    assert_eq!(
+        pids_of(&run(&["--service", "api", "--project", &project])),
+        BTreeSet::new()
+    );
 }
 
 /// Process-, Git- and profile-derived text lands in table cells, so a name holding `|`,
@@ -539,9 +545,13 @@ fn hostile_names_cannot_break_the_markdown_table() {
             "0",
         ],
     );
+    // Profile warnings are machine-wide; only one about this project's profile would matter.
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        output.status.success() && !stderr.contains("profile"),
+        output.status.success()
+            && !stderr
+                .lines()
+                .any(|line| line.contains("profile") && line.contains(&path_text(&repo))),
         "the profile applies: {stderr}"
     );
     // `markdown_tables` fails on a broken row, a stray code span or a table cut short.
@@ -574,8 +584,8 @@ fn hostile_names_cannot_break_the_markdown_table() {
     );
 }
 
-/// Exit codes distinguish a usage error (2) from a scope refusal (3, above) and from not being
-/// able to observe at all (4): here an unusable configuration directory.
+/// Exit codes distinguish a usage error (2, like a directory outside any project above) from not
+/// being able to observe at all (4): here an unusable configuration directory.
 #[test]
 fn list_exit_codes_tell_usage_from_unobservable() {
     let conflicting = Command::new(env!("CARGO_BIN_EXE_kosse"))

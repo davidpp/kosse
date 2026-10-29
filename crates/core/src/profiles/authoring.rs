@@ -1,6 +1,7 @@
 //! What an agent needs to author a central profile (`kosse profile …`, blueprint/agent-surface.md):
 //! the observed facts of one project, a preview of a proposed profile, and the records the CLI
-//! prints with `--json`.
+//! prints with `--json` (versioned by [`crate::agent::AGENT_SCHEMA_VERSION`], generated into
+//! TypeScript like the other agent records).
 //!
 //! Kossé stays passive: it never infers services or reads manifests. The preview runs the
 //! scanner's own merge and matching ([`effective::merge`], [`effective::assign`]) on a copy of the
@@ -10,6 +11,7 @@ use std::{collections::BTreeMap, fs, path::Path};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 
 use crate::{
     model::{
@@ -24,9 +26,6 @@ use crate::{
     },
 };
 
-/// The version of the records below. Bumped when a change would break an existing reader.
-pub const AUTHORING_SCHEMA_VERSION: u32 = 1;
-
 /// How processes are matched to profile entries, stated for agents (effective.rs and validate.rs
 /// are the authority).
 pub const MATCHING_RULES: &[&str] = &[
@@ -40,7 +39,7 @@ pub const MATCHING_RULES: &[&str] = &[
 ];
 
 /// A root's stored central profile and its revision.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredProfile {
     /// Kossé's configuration file.
@@ -52,7 +51,7 @@ pub struct StoredProfile {
 }
 
 /// The project's own `kosse.json`, read like the scanner reads it (no symbolic link, 64 KiB).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(
     tag = "state",
     rename_all = "camelCase",
@@ -74,7 +73,7 @@ pub enum RepositoryFile {
 }
 
 /// One observed process of the project.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ObservedProcess {
     pub identity: ProcessIdentity,
@@ -91,7 +90,7 @@ pub struct ObservedProcess {
 }
 
 /// Something an agent should resolve in the profile.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
@@ -114,7 +113,7 @@ pub enum ContextProblem {
 }
 
 /// `kosse profile context --json`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileContext {
     pub schema_version: u32,
@@ -134,7 +133,7 @@ pub struct ProfileContext {
 }
 
 /// `kosse profile show --json`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileShow {
     pub schema_version: u32,
@@ -145,16 +144,18 @@ pub struct ProfileShow {
 
 /// One changed value between the stored and the proposed profile, by path
 /// (`services.web.links[0].url`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileChange {
     pub path: String,
+    #[ts(type = "unknown")]
     pub before: Option<Value>,
+    #[ts(type = "unknown")]
     pub after: Option<Value>,
 }
 
 /// Which entry a process would match.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PredictedMatch {
     pub identity: ProcessIdentity,
@@ -165,7 +166,7 @@ pub struct PredictedMatch {
 }
 
 /// `kosse profile set --dry-run --json`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfilePreview {
     pub schema_version: u32,
@@ -194,7 +195,7 @@ impl ProfilePreview {
 }
 
 /// `kosse profile check --json`: a repository file the agent wrote, valid under every rule.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileCheck {
     pub schema_version: u32,
@@ -321,7 +322,7 @@ pub fn preview(
         proposed.keep_unknown_from(stored);
     }
     ProfilePreview {
-        schema_version: AUTHORING_SCHEMA_VERSION,
+        schema_version: crate::agent::AGENT_SCHEMA_VERSION,
         root: root.to_owned(),
         current_revision: crate::profiles::central::revision(stored),
         changes: diff(stored, proposed_stored.as_ref()),
