@@ -32,8 +32,8 @@ use kosse_core::{
     profiles::{
         CentralStore, ProjectProfile, StoreError,
         authoring::{
-            self, ContextProblem, MATCHING_RULES, ObservedProcess, ProfileCheck, ProfileContext,
-            ProfilePreview, ProfileShow, RepositoryFile, StoredProfile,
+            self, ContextProblem, MATCHING_RULES, ObservedProcess, ProfileApplied, ProfileCheck,
+            ProfileContext, ProfilePreview, ProfileShow, RepositoryFile, StoredProfile,
         },
         central,
         document::REPO_FILE_NAME,
@@ -47,7 +47,8 @@ use serde::Serialize;
 
 use crate::{
     cli::{
-        ProfileCheckArgs, ProfileCommand, ProfileObserveArgs, ProfileRemoveArgs, ProfileSetArgs,
+        ProfileCheckArgs, ProfileCommand, ProfileObserveArgs, ProfileRemoveArgs, ProfileRootArgs,
+        ProfileSetArgs,
     },
     failure::{self, Failure},
     markdown::{Table, UNKNOWN, cell},
@@ -86,7 +87,7 @@ pub fn run(command: &ProfileCommand) -> ExitCode {
         ProfileCommand::Set(args) => set(args),
         ProfileCommand::Remove(args) => remove(args),
         ProfileCommand::Check(args) => check(args),
-        ProfileCommand::Prompt(args) => prompt(args.root.as_deref()),
+        ProfileCommand::Prompt(args) => prompt(args),
     };
     match result {
         Ok(exit) => ExitCode::from(exit as u8),
@@ -105,17 +106,19 @@ fn store() -> Result<CentralStore, Failure> {
     Ok(CentralStore::from_env()?)
 }
 
-/// The project of `root` (or of the current directory), as `--here` and `--project` resolve it;
-/// a directory outside any project only when a central profile is saved for exactly that path (a
-/// moved or deleted project), so it can still be shown or removed.
-fn resolve(root: Option<&Path>, store: &CentralStore) -> Result<Target, Failure> {
+/// The project of the positional directory, `--project` or the current directory (`--here`,
+/// `.` or nothing), as attribution resolves it. A directory outside any project only when a
+/// central profile is saved for exactly that path (a moved or deleted project), so it can still
+/// be shown or removed. Root resolution never needs an instance: a root its snapshot knows is
+/// either an attributable project or a saved one.
+fn resolve(target: &ProfileRootArgs, store: &CentralStore) -> Result<Target, Failure> {
     let cwd = env::current_dir().map_err(|error| {
         Failure::new(
             CommandErrorCode::ProjectUnknown,
             format!("the current directory is unavailable: {error}"),
         )
     })?;
-    let dir = match root {
+    let dir = match target.root.as_deref().or(target.scope.project.as_deref()) {
         Some(root) if root != Path::new(".") => cwd.join(root),
         _ => cwd,
     };
@@ -163,8 +166,9 @@ fn effective_of(observation: &Observation, root: &str) -> Option<ProjectMetadata
 
 fn context(args: &ProfileObserveArgs) -> Result<Exit, Failure> {
     let store = store()?;
-    let target = resolve(args.target.root.as_deref(), &store)?;
+    let target = resolve(&args.target, &store)?;
     let observation = observe(args.instance.instance_port, args.json)?;
+    let target_detected = target.project.is_some();
     let root = target.root.as_str();
     let mut problems = Vec::new();
     let central = match stored_profile(&store, root) {
@@ -235,7 +239,7 @@ fn context(args: &ProfileObserveArgs) -> Result<Exit, Failure> {
         project,
         processes,
         central,
-        repository: authoring::repository_file(Path::new(root)),
+        repository: authoring::repository_file(Path::new(root), target_detected),
         effective,
         problems,
         schema_command: SCHEMA_COMMAND.to_owned(),
@@ -263,7 +267,7 @@ fn concerns(warning: &ScanWarning, root: &str) -> bool {
 
 fn show(args: &ProfileObserveArgs) -> Result<Exit, Failure> {
     let store = store()?;
-    let target = resolve(args.target.root.as_deref(), &store)?;
+    let target = resolve(&args.target, &store)?;
     let central = stored_profile(&store, &target.root)?;
     let observation = observe(args.instance.instance_port, args.json)?;
     let record = ProfileShow {
@@ -319,31 +323,36 @@ fn proposed(file: &Path) -> Result<ProjectProfile, Failure> {
     parse(&bytes)
 }
 
-/// Version first, then shape, then every rule; the first violation refuses the whole profile.
+/// Version first, then shape, then every rule; any violation refuses the whole profile, and every
+/// rule it breaks is listed.
 fn parse(bytes: &[u8]) -> Result<ProjectProfile, Failure> {
     let profile: ProjectProfile =
         source::parse_versioned(bytes).map_err(|problem| invalid(&problem))?;
-    validate::profile(&profile).map_err(|error| Failure {
-        problems: vec![ProfileFieldProblem {
-            at: error.at.clone(),
-            problem: error.problem.clone(),
-        }],
-        ..Failure::new(
-            CommandErrorCode::InvalidProfile,
-            format!("profile refused: {error}"),
-        )
-    })?;
+    let problems = validate::problems(&profile);
+    if let Some(first) = problems.first() {
+        let more = match problems.len() {
+            1 => String::new(),
+            count => format!(" (and {} more)", count - 1),
+        };
+        return Err(Failure {
+            message: format!("profile refused: {first}{more}"),
+            problems: problems
+                .into_iter()
+                .map(|error| ProfileFieldProblem {
+                    at: error.at,
+                    problem: error.problem,
+                })
+                .collect(),
+            ..Failure::new(CommandErrorCode::InvalidProfile, "")
+        });
+    }
     Ok(profile)
 }
 
 fn set(args: &ProfileSetArgs) -> Result<Exit, Failure> {
     let profile = proposed(&args.file)?;
     let store = store()?;
-    let target = resolve(args.target.root.as_deref(), &store)?;
-    if !args.dry_run {
-        let stored = store.save(&target.root, Some(profile), args.expect.as_deref())?;
-        return saved(args.json, target.root, stored);
-    }
+    let target = resolve(&args.target, &store)?;
     let (_, stored) = store.stored(&target.root)?;
     if let Some(expected) = &args.expect {
         let current = central::revision(stored.as_ref());
@@ -355,28 +364,68 @@ fn set(args: &ProfileSetArgs) -> Result<Exit, Failure> {
             .into());
         }
     }
+    // Observed before saving, so that a failed scan writes nothing.
     let observation = observe(args.instance.instance_port, args.json)?;
-    let repository = authoring::repository_file(Path::new(&target.root));
-    let preview = authoring::preview(
-        &observation,
-        &target.root,
-        stored.as_ref(),
-        Some(&profile),
-        repository.profile(),
-    );
-    print(args.json, &preview, |out| {
-        write_preview(out, &preview, &args.file)
+    let repository = authoring::repository_file(Path::new(&target.root), target.project.is_some());
+    let preview_of = |previous: Option<&ProjectProfile>, proposed: &ProjectProfile| {
+        authoring::preview(
+            &observation,
+            &target.root,
+            previous,
+            Some(proposed),
+            repository.profile(),
+        )
+    };
+    if args.dry_run {
+        let preview = preview_of(stored.as_ref(), &profile);
+        print(args.json, &preview, |out| {
+            write_preview(out, &preview, &args.file)
+        })?;
+        return Ok(exit_of(&preview));
+    }
+    let saved = store
+        .save(&target.root, Some(profile), args.expect.as_deref())?
+        .ok_or_else(|| Failure::new(CommandErrorCode::ConfigWriteFailed, "nothing was saved"))?;
+    let record = ProfileApplied {
+        schema_version: AGENT_SCHEMA_VERSION,
+        preview: preview_of(stored.as_ref(), &saved),
+        saved: SavedProfile {
+            root: target.root.clone(),
+            revision: central::revision(Some(&saved)),
+            profile: Some(saved),
+        },
+    };
+    print(args.json, &record, |out| {
+        writeln!(out, "saved: {}", printable(&record.saved.root))?;
+        writeln!(out, "revision: {}", record.saved.revision)?;
+        writeln!(
+            out,
+            "A running Kossé applies it within seconds; `kosse list` shows the result."
+        )?;
+        write_result(out, &record.preview)?;
+        if record.preview.is_ambiguous() {
+            writeln!(
+                out,
+                "The profile is saved, but the processes above match several entries and get none: fix the overlap and set it again."
+            )?;
+        }
+        Ok(())
     })?;
-    Ok(if preview.is_negative() {
+    Ok(exit_of(&record.preview))
+}
+
+/// 1 when a process is ambiguous; an entry matching nothing is fine (not running).
+fn exit_of(preview: &ProfilePreview) -> Exit {
+    if preview.is_ambiguous() {
         Exit::Negative
     } else {
         Exit::Answered
-    })
+    }
 }
 
 fn remove(args: &ProfileRemoveArgs) -> Result<Exit, Failure> {
     let store = store()?;
-    let target = resolve(args.target.root.as_deref(), &store)?;
+    let target = resolve(&args.target, &store)?;
     let (_, stored) = store.stored(&target.root)?;
     if stored.is_none()
         && args
@@ -384,11 +433,10 @@ fn remove(args: &ProfileRemoveArgs) -> Result<Exit, Failure> {
             .as_deref()
             .is_none_or(|e| e == central::NO_REVISION)
     {
-        report!(
-            "kosse: no central profile is saved for {}",
-            printable(&target.root)
-        );
-        return Ok(Exit::Negative);
+        return Err(Failure::new(
+            CommandErrorCode::NotFound,
+            format!("no central profile is saved for {}", target.root),
+        ));
     }
     let stored = store.save(&target.root, None, args.expect.as_deref())?;
     saved(args.json, target.root, stored)
@@ -474,9 +522,9 @@ fn check(args: &ProfileCheckArgs) -> Result<Exit, Failure> {
     Ok(Exit::Answered)
 }
 
-fn prompt(root: Option<&Path>) -> Result<Exit, Failure> {
+fn prompt(target: &ProfileRootArgs) -> Result<Exit, Failure> {
     let store = store()?;
-    let target = resolve(root, &store)?;
+    let target = resolve(target, &store)?;
     let text = prompt::customization(&target.root)
         .map_err(|refused| Failure::new(CommandErrorCode::UnsafeRoot, refused.to_string()))?;
     print(false, &(), |out| out.write_all(text.as_bytes()))?;
@@ -517,6 +565,11 @@ fn write_context(out: &mut impl Write, record: &ProfileContext) -> io::Result<()
     write_central_line(out, record.central.as_ref())?;
     let (path, state) = match &record.repository {
         RepositoryFile::Absent { path } => (path, "absent".to_owned()),
+        RepositoryFile::NotRead { path } => (
+            path,
+            "not read: the root is known only from its saved profile, not a detected project root"
+                .to_owned(),
+        ),
         RepositoryFile::Valid { path, .. } => (path, "valid".to_owned()),
         RepositoryFile::Unusable { path, problem } => (path, format!("not used: {problem}")),
     };
@@ -548,12 +601,22 @@ fn write_context(out: &mut impl Write, record: &ProfileContext) -> io::Result<()
         out,
         "format: `{SCHEMA_COMMAND}` prints the JSON Schema of a profile"
     )?;
-    let root = shell_quote(&printable(&record.root));
-    writeln!(
-        out,
-        "preview: `kosse profile set {root} --dry-run --file <file>`"
-    )?;
-    writeln!(out, "apply: `kosse profile set {root} --file <file>`")?;
+    if prompt::safe_root(&record.root).is_ok() {
+        let root = shell_quote(&record.root);
+        writeln!(
+            out,
+            "preview: `kosse profile set {root} --dry-run --file -` (the profile on standard input)"
+        )?;
+        writeln!(
+            out,
+            "apply: `kosse profile set {root} --expect <revision> --file -`"
+        )?;
+    } else {
+        writeln!(
+            out,
+            "commands: not shown, the root holds a backtick or a control or invisible character"
+        )?;
+    }
     writeln!(out, "\nMatching rules:\n")?;
     for rule in &record.matching_rules {
         writeln!(out, "- {rule}")?;
@@ -749,6 +812,24 @@ fn write_preview(out: &mut impl Write, preview: &ProfilePreview, file: &Path) ->
     writeln!(out, "\n## Entries\n")?;
     write_configured(out, Some(&preview.effective))?;
 
+    write_result(out, preview)?;
+    writeln!(out, "current revision: {}", preview.current_revision)?;
+    let file = file.to_string_lossy();
+    if prompt::safe_root(&preview.root).is_ok() && prompt::safe_root(&file).is_ok() {
+        writeln!(
+            out,
+            "apply: `kosse profile set {} --file {} --expect {}`",
+            shell_quote(&preview.root),
+            shell_quote(&file),
+            preview.current_revision
+        )?;
+    }
+    Ok(())
+}
+
+/// Ambiguous processes (exit 1), entries matching nothing (a note: their service may not be
+/// running) and the matching warnings.
+fn write_result(out: &mut impl Write, preview: &ProfilePreview) -> io::Result<()> {
     writeln!(out, "\n## Result\n")?;
     let ambiguous: Vec<String> = preview
         .matches
@@ -764,22 +845,17 @@ fn write_preview(out: &mut impl Write, preview: &ProfilePreview, file: &Path) ->
         }
     };
     writeln!(out, "ambiguous processes: {}", list(&ambiguous))?;
-    writeln!(
-        out,
-        "entries matching nothing: {}",
-        list(&preview.unmatched_entries)
-    )?;
+    if !preview.unmatched_entries.is_empty() {
+        writeln!(
+            out,
+            "note: entries matching nothing: {} (fine when their service is not running)",
+            list(&preview.unmatched_entries)
+        )?;
+    }
     for warning in &preview.warnings {
         writeln!(out, "warning: {}", printable(&warning.to_string()))?;
     }
-    writeln!(out, "current revision: {}", preview.current_revision)?;
-    writeln!(
-        out,
-        "apply: `kosse profile set {} --file {} --expect {}`",
-        shell_quote(&printable(&preview.root)),
-        shell_quote(&printable(&file.to_string_lossy())),
-        preview.current_revision
-    )
+    Ok(())
 }
 
 /// A serde enum's wire name (`allInterfaces`, `knownNonHttpPort`).
