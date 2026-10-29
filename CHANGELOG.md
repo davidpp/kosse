@@ -4,6 +4,10 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 
 ## Unreleased
 
+## 0.2.0 - 2026-10-29
+
+Coding agents become first-class users: one scoped `kosse` call answers what runs for a project, which URL or port, whether it is up, and stops or customizes it under the dashboard's safety policy, with Markdown tables by default and `--json` for scripts ([agent surface](blueprint/agent-surface.md)).
+
 ### Added
 
 - Homebrew: `brew install davidpp/tap/kosse`. The release workflow commits each release's formula to [davidpp/homebrew-tap](https://github.com/davidpp/homebrew-tap), so `brew upgrade` follows new versions.
