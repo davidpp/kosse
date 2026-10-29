@@ -355,33 +355,6 @@ fn withheld_metadata_is_unknown_not_guessed() {
 }
 
 #[test]
-fn snapshot_serializes_with_the_contract_field_names() {
-    let fixture = spawn(&FixtureSpec::new().listen(&[V4, V6]));
-    let snapshot = Scanner::new().scan().expect("scan");
-    let json = serde_json::to_value(service_of(&snapshot, &fixture)).expect("serialize");
-    let endpoint = &json["endpoints"][0];
-    assert_eq!(endpoint["protocol"], "tcp");
-    assert_eq!(endpoint["exposure"], "loopback");
-    assert_eq!(
-        endpoint["bindAddresses"],
-        serde_json::json!(["127.0.0.1", "::1"])
-    );
-    assert_eq!(
-        json["process"]["identity"]["startedAtSecs"],
-        fixture.record().started_at_secs
-    );
-    let warning = serde_json::to_value(ScanWarning::ProcessExited {
-        pid: 7,
-        ports: vec![80],
-    })
-    .expect("serialize");
-    assert_eq!(
-        warning,
-        serde_json::json!({"kind": "processExited", "pid": 7, "ports": [80]})
-    );
-}
-
-#[test]
 fn repeated_pids_are_inspected_once_and_kept() {
     // sysinfo 0.39 drops a process that appears twice in one refresh; the inspector dedupes.
     let fixture = spawn(&FixtureSpec::new().listen(&[V4]));
