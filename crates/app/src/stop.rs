@@ -368,16 +368,7 @@ impl Client {
                     && service.process.user_id == own_user
             })
             .map(|service| {
-                let ports: Vec<u16> = {
-                    let mut ports: Vec<u16> = service
-                        .endpoints
-                        .iter()
-                        .map(|endpoint| endpoint.port)
-                        .collect();
-                    ports.sort_unstable();
-                    ports.dedup();
-                    ports
-                };
+                let ports = scope::ports([service]);
                 Confirmation {
                     command: self.command(verb, service.process.identity, &ports),
                     identity: service.process.identity,

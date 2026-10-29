@@ -248,11 +248,7 @@ pub fn configured_entry<'a>(
     profiles: &'a [ProjectMetadata],
     id: &str,
 ) -> Option<&'a ConfiguredService> {
-    profiles
-        .iter()
-        .filter(|metadata| service.project.as_deref() == Some(metadata.root.as_str()))
-        .flat_map(|metadata| &metadata.services)
-        .find(|entry| entry.id == id)
+    scope::project_entries(service, profiles).find(|entry| entry.id == id)
 }
 
 fn service_label(entry: &ConfiguredService) -> String {

@@ -291,11 +291,29 @@ pub fn is_configured_as(service: &Service, profiles: &[ProjectMetadata], name: &
         Some(ProfileMatch::Matched { service: id }) => std::slice::from_ref(id),
         Some(ProfileMatch::Ambiguous { services }) => services,
     };
+    project_entries(service, profiles).any(|entry| ids.contains(&entry.id) && names(entry, name))
+}
+
+/// The configured entries of `service`'s project.
+pub fn project_entries<'a>(
+    service: &Service,
+    profiles: &'a [ProjectMetadata],
+) -> impl Iterator<Item = &'a ConfiguredService> {
     profiles
         .iter()
         .filter(|metadata| service.project.as_deref() == Some(metadata.root.as_str()))
         .flat_map(|metadata| &metadata.services)
-        .any(|entry| ids.contains(&entry.id) && names(entry, name))
+}
+
+/// Every port the services listen on, ascending, each once.
+pub fn ports<'a>(services: impl IntoIterator<Item = &'a Service>) -> Vec<u16> {
+    let mut ports: Vec<u16> = services
+        .into_iter()
+        .flat_map(|service| service.endpoints.iter().map(|endpoint| endpoint.port))
+        .collect();
+    ports.sort_unstable();
+    ports.dedup();
+    ports
 }
 
 /// Fails with `notFound` (exit 1) when no profile in scope configures a service `name` (by ID or
@@ -321,15 +339,15 @@ pub fn require_configured(
     }
     let scope = root.map_or_else(String::new, |root| format!(" in {root}"));
     let known = if entries.is_empty() {
-        let mut ports: Vec<u16> = observation
-            .services
-            .iter()
-            .filter(|service| in_scope(service.project.as_deref()))
-            .flat_map(|service| service.endpoints.iter().map(|endpoint| endpoint.port))
-            .collect();
-        ports.sort_unstable();
-        ports.dedup();
-        let ports: Vec<String> = ports.iter().map(ToString::to_string).collect();
+        let ports: Vec<String> = ports(
+            observation
+                .services
+                .iter()
+                .filter(|service| in_scope(service.project.as_deref())),
+        )
+        .iter()
+        .map(ToString::to_string)
+        .collect();
         if ports.is_empty() {
             "no services are configured and nothing listens".to_owned()
         } else {
@@ -362,13 +380,7 @@ pub fn ambiguity(
     command: impl Fn(u16) -> String,
 ) -> String {
     if let Some(root) = root {
-        let mut ports: Vec<u16> = services
-            .iter()
-            .flat_map(|service| service.endpoints.iter().map(|endpoint| endpoint.port))
-            .collect();
-        ports.sort_unstable();
-        ports.dedup();
-        let commands: Vec<String> = ports
+        let commands: Vec<String> = ports(services)
             .into_iter()
             .map(|port| format!("`{}`", command(port)))
             .collect();
