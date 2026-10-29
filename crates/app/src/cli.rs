@@ -165,7 +165,8 @@ pub enum ProfileCommand {
     Show(ProfileObserveArgs),
     /// Validate a profile and save it as the project's central profile (Kossé's own
     /// configuration, never the repository); a running Kossé applies it on its next scans.
-    /// Refused as a whole when any rule fails.
+    /// Refused as a whole when any rule fails. Prints which entry each process matches and
+    /// exits 1 when a process is ambiguous (the profile is saved all the same).
     Set(ProfileSetArgs),
     /// Remove the project's central profile.
     Remove(ProfileRemoveArgs),
@@ -176,11 +177,28 @@ pub enum ProfileCommand {
     Prompt(ProfileRootArgs),
 }
 
+/// Which project a `profile` command is about: a positional directory, `--here` or `--project`.
 #[derive(Debug, clap::Args)]
 pub struct ProfileRootArgs {
     /// The project root, or a directory inside the project; `.` or omitted: the current
-    /// directory's project.
+    /// directory's project (as `--here`).
+    #[arg(conflicts_with_all = ["here", "project"])]
     pub root: Option<std::path::PathBuf>,
+
+    #[command(flatten)]
+    pub scope: Scope,
+}
+
+/// A revision as `kosse profile show` prints it: 16 lowercase hex digits, or `none`.
+fn parse_revision(value: &str) -> Result<String, String> {
+    if kosse_core::profiles::authoring::is_revision(value) {
+        Ok(value.to_owned())
+    } else {
+        Err(
+            "a revision is 16 lowercase hex digits (as `kosse profile show` prints it) or `none`"
+                .into(),
+        )
+    }
 }
 
 #[derive(Debug, clap::Args)]
@@ -212,14 +230,14 @@ pub struct ProfileSetArgs {
     pub dry_run: bool,
 
     /// Refuse unless the stored profile still has this revision (`none`: no profile is saved).
-    #[arg(long, value_name = "REVISION")]
+    #[arg(long, value_name = "REVISION", value_parser = parse_revision)]
     pub expect: Option<String>,
 
     /// Print the versioned JSON record instead of Markdown.
     #[arg(long)]
     pub json: bool,
 
-    /// For `--dry-run`: which instance's snapshot to read.
+    /// Which instance's snapshot to read for the match summary (scans once without one).
     #[command(flatten)]
     pub instance: InstanceArgs,
 }
@@ -230,7 +248,7 @@ pub struct ProfileRemoveArgs {
     pub target: ProfileRootArgs,
 
     /// Refuse unless the stored profile still has this revision.
-    #[arg(long, value_name = "REVISION")]
+    #[arg(long, value_name = "REVISION", value_parser = parse_revision)]
     pub expect: Option<String>,
 
     /// Print the versioned JSON record instead of Markdown.

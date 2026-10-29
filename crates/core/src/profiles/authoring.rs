@@ -32,6 +32,7 @@ pub const MATCHING_RULES: &[&str] = &[
     "Only processes attributed to this project root are candidates; matching never crosses projects.",
     "`match.cwd` is relative to the root (`.` is the root): a process matches when its working directory is that directory or inside it. No `..`; a symbolic link leading outside the project matches nothing.",
     "`match.port` narrows to processes listening on that port; with `cwd` both must hold. `match` needs `cwd`, `port` or both, and unknown criteria are refused.",
+    "`match.cwd: \".\"` takes in every package's processes; for a service at the root only, use `match.port`.",
     "A process matched by several entries is ambiguous and gets none of them.",
     "An entry without `match` is declared only (name, links) and matches nothing; `disabled: true` suppresses an entry.",
     "Central over repository, field by field; `match` and `links` replace as a whole.",
@@ -59,6 +60,11 @@ pub struct StoredProfile {
 )]
 pub enum RepositoryFile {
     Absent {
+        path: String,
+    },
+    /// Not read: the root is known only from a saved central profile (a moved or deleted
+    /// project), and a repository file is read only at a detected project root.
+    NotRead {
         path: String,
     },
     Valid {
@@ -183,15 +189,33 @@ pub struct ProfilePreview {
 }
 
 impl ProfilePreview {
-    /// A process matching several entries, or an entry matching nothing.
+    /// A process matching several entries. An entry matching nothing is not negative: its
+    /// service may simply not be running.
     #[must_use]
-    pub fn is_negative(&self) -> bool {
-        !self.unmatched_entries.is_empty()
-            || self
-                .matches
-                .iter()
-                .any(|entry| matches!(entry.profile, Some(ProfileMatch::Ambiguous { .. })))
+    pub fn is_ambiguous(&self) -> bool {
+        self.matches
+            .iter()
+            .any(|entry| matches!(entry.profile, Some(ProfileMatch::Ambiguous { .. })))
     }
+}
+
+/// `kosse profile set --json` (without `--dry-run`): the profile as saved, and what the next scan
+/// applies with it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileApplied {
+    pub schema_version: u32,
+    pub saved: crate::contract::SavedProfile,
+    /// Against the profile it replaced; `currentRevision` is that profile's revision.
+    pub preview: ProfilePreview,
+}
+
+/// Whether `text` has the shape of a [`crate::profiles::central::revision`]: 16 lowercase hex
+/// digits, or `none`.
+#[must_use]
+pub fn is_revision(text: &str) -> bool {
+    text == crate::profiles::central::NO_REVISION
+        || (text.len() == 16 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
 }
 
 /// `kosse profile check --json`: a repository file the agent wrote, valid under every rule.
@@ -205,11 +229,15 @@ pub struct ProfileCheck {
     pub notes: Vec<String>,
 }
 
-/// The repository file at `root`, read under the scanner's rules.
+/// The repository file at `root`, read under the scanner's rules, and only when `root` is a
+/// detected project root (`detected`); otherwise it is reported as not read.
 #[must_use]
-pub fn repository_file(root: &Path) -> RepositoryFile {
+pub fn repository_file(root: &Path, detected: bool) -> RepositoryFile {
     let file = root.join(REPO_FILE_NAME);
     let path = file.to_string_lossy().into_owned();
+    if !detected {
+        return RepositoryFile::NotRead { path };
+    }
     match source::read(&file, Links::Refuse).and_then(|read| {
         read.map(|(bytes, _)| source::parse_profile(&bytes))
             .transpose()
@@ -225,7 +253,7 @@ impl RepositoryFile {
     pub fn profile(&self) -> Option<&ProjectProfile> {
         match self {
             Self::Valid { profile, .. } => Some(profile),
-            Self::Absent { .. } | Self::Unusable { .. } => None,
+            Self::Absent { .. } | Self::NotRead { .. } | Self::Unusable { .. } => None,
         }
     }
 }

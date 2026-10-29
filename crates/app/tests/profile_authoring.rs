@@ -24,7 +24,7 @@ use kosse_core::{
     contract::SavedProfile,
     model::{Observation, ProcessIdentity},
     profiles::{
-        authoring::{ProfileContext, ProfilePreview, ProfileShow},
+        authoring::{ProfileApplied, ProfileContext, ProfilePreview, ProfileShow, RepositoryFile},
         central::NO_REVISION,
         prompt::shell_quote,
         view::{ConfiguredService, ProfileMatch, ProfileSource},
@@ -45,6 +45,7 @@ const RATE_LIMITED_FOR: Duration = Duration::from_secs(3);
 
 /// Exit codes of `kosse profile` (blueprint/agent-surface.md, "Exit codes").
 const NEGATIVE: i32 = 1;
+const USAGE: i32 = 2;
 const REFUSED: i32 = 3;
 const UNOBSERVED: i32 = 4;
 
@@ -232,17 +233,14 @@ fn a_dry_run_predicts_what_the_running_instance_applies() {
         .file("proposed.json", &world.proposed())
         .expect("file");
 
-    let dry_run = world.kosse(&[
-        "profile",
-        "set",
-        "--dry-run",
-        "--json",
-        "--instance-port",
-        &port,
-        "--file",
-        &text(&file),
-    ]);
-    assert_eq!(code(&dry_run), NEGATIVE, "ambiguity and an unmatched entry");
+    let set = |extra: &[&str]| {
+        let mut args = vec!["profile", "set", "--json", "--instance-port", &port];
+        args.extend_from_slice(&["--file", file.to_str().expect("UTF-8")]);
+        args.extend_from_slice(extra);
+        world.kosse(&args)
+    };
+    let dry_run = set(&["--dry-run"]);
+    assert_eq!(code(&dry_run), NEGATIVE, "an ambiguous process");
     let preview: ProfilePreview = json_of(&dry_run);
     assert_eq!(preview.root, root);
     assert_eq!(preview.current_revision, NO_REVISION);
@@ -261,21 +259,17 @@ fn a_dry_run_predicts_what_the_running_instance_applies() {
     ));
     assert_eq!(preview.unmatched_entries, ["worker"]);
 
-    let applied = world.kosse(&[
-        "profile",
-        "set",
-        "--json",
-        "--file",
-        &text(&file),
-        "--expect",
-        &preview.current_revision,
-    ]);
-    assert!(
-        applied.status.success(),
+    // Applying an ambiguous profile saves it, shows the same result and exits 1.
+    let applied = set(&["--expect", &preview.current_revision]);
+    assert_eq!(
+        code(&applied),
+        NEGATIVE,
         "{}",
         String::from_utf8_lossy(&applied.stderr)
     );
-    let saved: SavedProfile = json_of(&applied);
+    let applied: ProfileApplied = json_of(&applied);
+    assert_eq!(applied.preview.matches, preview.matches);
+    let saved = applied.saved;
     assert_ne!(saved.revision, NO_REVISION);
 
     let observation = until(&server, "the instance applies the saved profile", |o| {
@@ -369,6 +363,15 @@ fn revisions_refuse_a_lost_update_between_the_cli_and_the_api() {
     let initial: ProfileShow = json_of(&shown);
     assert_eq!(initial.central.revision, NO_REVISION);
 
+    // Nothing to remove is a negative answer; a malformed revision is a usage error, never a
+    // conflict.
+    let nothing = world.kosse(&["profile", "remove", "--json"]);
+    assert_eq!(code(&nothing), NEGATIVE);
+    assert_eq!(error_code(&nothing), "notFound");
+    let malformed = cli_set(&named("Typo"), "not-a-revision");
+    assert_eq!(code(&malformed), USAGE);
+    assert!(!file.exists(), "nothing was written");
+
     let window = post(&named("From the window"), Some(&initial.central.revision));
     assert_eq!(window.status, 200, "{}", window.text());
     let window: SavedProfile = serde_json::from_slice(&window.body).expect("saved");
@@ -386,7 +389,8 @@ fn revisions_refuse_a_lost_update_between_the_cli_and_the_api() {
         "{}",
         String::from_utf8_lossy(&agent.stderr)
     );
-    let agent: SavedProfile = json_of(&agent);
+    let agent: ProfileApplied = json_of(&agent);
+    let agent = agent.saved;
 
     // The window's draft started from its own save: refused, the agent's save stands.
     let before = fs::read(&file).expect("read");
@@ -598,5 +602,153 @@ fn the_prompt_carries_no_process_derived_text() {
     let prompt = String::from_utf8(prompt.stdout).expect("UTF-8");
     assert!(prompt.contains(&shell_quote(&text(&repo))), "{prompt}");
     assert!(!prompt.contains(injected), "{prompt}");
+
+    // A backtick would end the prompt's code spans: no prompt is made for such a root.
+    let quoted = tree.dir("shop`x").expect("dir");
+    tree.file("shop`x/package.json", "{}").expect("manifest");
+    let refused = kosse(&config, &quoted, &["profile", "prompt"], None);
+    assert_eq!(code(&refused), REFUSED);
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("backtick"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
     assert!(!prompt.contains(&name), "{prompt}");
+}
+
+/// A repository `kosse.json` is read only at a detected project root. A root known only from its
+/// saved profile (a moved or deleted project) can still be shown and removed, but the file in its
+/// directory is not read. `--project` names the same root as the positional argument.
+#[test]
+fn a_saved_root_outside_any_project_never_has_its_repository_file_read() {
+    let tree = Sandbox::new().expect("sandbox");
+    let project = tree.dir("moved").expect("dir");
+    let manifest = tree.file("moved/package.json", "{}").expect("manifest");
+    let config = tree.root().join("config");
+    let named = json!({ "version": 1, "name": "Saved" }).to_string();
+    let saved = kosse(
+        &config,
+        tree.root(),
+        &[
+            "profile",
+            "set",
+            "--project",
+            &text(&project),
+            "--instance-port",
+            "0",
+            "--file",
+            "-",
+        ],
+        Some(&named),
+    );
+    assert!(
+        saved.status.success(),
+        "{}",
+        String::from_utf8_lossy(&saved.stderr)
+    );
+    fs::write(
+        project.join("kosse.json"),
+        json!({ "version": 1, "name": "Repo" }).to_string(),
+    )
+    .expect("repository file");
+    fs::remove_file(manifest).expect("no longer a project");
+
+    let context = kosse(
+        &config,
+        tree.root(),
+        &[
+            "profile",
+            "context",
+            &text(&project),
+            "--json",
+            "--instance-port",
+            "0",
+        ],
+        None,
+    );
+    assert!(
+        context.status.success(),
+        "{}",
+        String::from_utf8_lossy(&context.stderr)
+    );
+    let context: ProfileContext = json_of(&context);
+    assert_eq!(context.root, text(&project));
+    assert!(context.project.is_none());
+    assert!(
+        matches!(context.repository, RepositoryFile::NotRead { .. }),
+        "{:?}",
+        context.repository
+    );
+
+    let conflicting = kosse(
+        &config,
+        tree.root(),
+        &["profile", "show", "--here", "--project", &text(&project)],
+        None,
+    );
+    assert_eq!(code(&conflicting), USAGE);
+    let removed = kosse(
+        &config,
+        tree.root(),
+        &["profile", "remove", "--project", &text(&project)],
+        None,
+    );
+    assert!(
+        removed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&removed.stderr)
+    );
+}
+
+/// An entry whose service is not running matches nothing: a note, not a negative answer.
+#[test]
+fn an_entry_matching_nothing_is_not_negative() {
+    let world = world();
+    let mut unambiguous: Value = serde_json::from_str(&world.proposed()).expect("JSON");
+    unambiguous["services"]
+        .as_object_mut()
+        .expect("services")
+        .remove("api-port");
+    let without_overlap = kosse(
+        &world.config,
+        &world.repo,
+        &[
+            "profile",
+            "set",
+            "--dry-run",
+            "--json",
+            "--instance-port",
+            "0",
+            "--file",
+            "-",
+        ],
+        Some(&unambiguous.to_string()),
+    );
+    assert_eq!(code(&without_overlap), 0);
+    let unambiguous: ProfilePreview = json_of(&without_overlap);
+    assert_eq!(unambiguous.unmatched_entries, ["worker"]);
+}
+
+/// Every rule a profile breaks is listed, not only the first.
+#[test]
+fn every_broken_rule_is_listed() {
+    let tree = Sandbox::new().expect("sandbox");
+    let project = tree.dir("project").expect("dir");
+    tree.file("project/package.json", "{}").expect("manifest");
+    let config = tree.root().join("config");
+    let two_problems = r#"{"version":1,"services":{"web":{"match":{"cwd":"../x"},"probePath":"//evil.example/"}}}"#;
+    let refused = kosse(
+        &config,
+        &project,
+        &["profile", "set", "--json", "--file", "-"],
+        Some(two_problems),
+    );
+    let error: Value = serde_json::from_slice(&refused.stderr).expect("JSON error");
+    let at: Vec<&str> = error["problems"]
+        .as_array()
+        .expect("problems")
+        .iter()
+        .map(|problem| problem["at"].as_str().expect("at"))
+        .collect();
+    assert_eq!(at, ["services.web.match.cwd", "services.web.probePath"]);
 }

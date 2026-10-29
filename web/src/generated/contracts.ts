@@ -792,7 +792,7 @@ profile: ProfileMatch | null, };
 /**
  * The project's own `kosse.json`, read like the scanner reads it (no symbolic link, 64 KiB).
  */
-export type RepositoryFile = { "state": "absent", path: string, } | { "state": "valid", path: string, profile: ProjectProfile, } | { "state": "unusable", path: string, problem: ProfileProblem, };
+export type RepositoryFile = { "state": "absent", path: string, } | { "state": "notRead", path: string, } | { "state": "valid", path: string, profile: ProjectProfile, } | { "state": "unusable", path: string, problem: ProfileProblem, };
 
 /**
  * A root's stored central profile and its revision.
@@ -861,6 +861,16 @@ unmatchedEntries: Array<string>,
  * The effective metadata the next scan would apply, with each entry's matches.
  */
 effective: ProjectMetadata, warnings: Array<ScanWarning>, };
+
+/**
+ * `kosse profile set --json` (without `--dry-run`): the profile as saved, and what the next scan
+ * applies with it.
+ */
+export type ProfileApplied = { schemaVersion: number, saved: SavedProfile, 
+/**
+ * Against the profile it replaced; `currentRevision` is that profile's revision.
+ */
+preview: ProfilePreview, };
 
 /**
  * `kosse profile check --json`: a repository file the agent wrote, valid under every rule.

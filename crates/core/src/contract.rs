@@ -184,6 +184,7 @@ pub fn typescript_bindings() -> String {
     module.add::<crate::profiles::authoring::ProfileContext>();
     module.add::<crate::profiles::authoring::ProfileShow>();
     module.add::<crate::profiles::authoring::ProfilePreview>();
+    module.add::<crate::profiles::authoring::ProfileApplied>();
     module.add::<crate::profiles::authoring::ProfileCheck>();
     module.finish()
 }
