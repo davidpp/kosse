@@ -57,6 +57,9 @@ enum Message {
     StdinClosed,
     #[cfg(debug_assertions)]
     Dialog(String),
+    /// Debug builds only: a request on the agent control socket.
+    #[cfg(debug_assertions)]
+    Control(crate::window_control::Request, crate::window_control::Reply),
 }
 
 /// Runs the window until it closes, then exits the process. If it cannot start, it tells the
@@ -80,16 +83,8 @@ fn start(args: &WindowArgs) -> Result<Infallible, WindowError> {
         event_loop.set_activation_policy(ActivationPolicy::Accessory);
     }
     let proxy = event_loop.create_proxy();
-    // Without a menu bar, macOS routes no ⌘C/⌘V/⌘Q to the window.
-    let menu = app_menu().map_err(|error| WindowError::Window(error.to_string()))?;
-    menu.init_for_nsapp();
-    let window = WindowBuilder::new()
-        .with_title(&args.title)
-        .with_inner_size(SIZE)
-        .with_min_inner_size(MIN_SIZE)
-        .with_visible(mode.visible())
-        .build(&event_loop)
-        .map_err(|error| WindowError::Window(error.to_string()))?;
+    let menu = install_menu()?;
+    let window = build_window(&event_loop, &args.title, mode)?;
     let navigation_origin = origin.clone();
     let loaded = proxy.clone();
     let webview = WebViewBuilder::new()
@@ -127,8 +122,11 @@ fn start(args: &WindowArgs) -> Result<Infallible, WindowError> {
     let webview = webview
         .build(&window)
         .map_err(|error| WindowError::WebView(error.to_string()))?;
+    #[cfg(debug_assertions)]
+    serve_control(&proxy, &webview, mode);
     listen_to_owner(proxy, origin);
     if mode.visible() {
+        activation::set_app_icon();
         activation::activate_self();
     }
     say("ready");
@@ -170,9 +168,48 @@ fn start(args: &WindowArgs) -> Result<Infallible, WindowError> {
             }
             #[cfg(debug_assertions)]
             Event::UserEvent(Message::Dialog(heading)) => say(&format!("dialog {heading}")),
+            #[cfg(debug_assertions)]
+            Event::LoopDestroyed => crate::window_control::unlink(),
+            #[cfg(debug_assertions)]
+            Event::UserEvent(Message::Control(request, reply)) => {
+                if crate::window_control::answer(request, reply, &window, &webview) {
+                    *control_flow = ControlFlow::Exit;
+                }
+            }
             _ => {}
         }
     })
+}
+
+fn build_window(
+    event_loop: &tao::event_loop::EventLoop<Message>,
+    title: &str,
+    mode: TestMode,
+) -> Result<tao::window::Window, WindowError> {
+    WindowBuilder::new()
+        .with_title(title)
+        .with_inner_size(SIZE)
+        .with_min_inner_size(MIN_SIZE)
+        .with_visible(mode.shown())
+        .build(event_loop)
+        .map_err(|error| WindowError::Window(error.to_string()))
+}
+
+/// Debug builds only: the agent control socket, answered on the event loop (and the
+/// transparent test window's look).
+#[cfg(debug_assertions)]
+fn serve_control(
+    proxy: &tao::event_loop::EventLoopProxy<Message>,
+    webview: &wry::WebView,
+    mode: TestMode,
+) {
+    if matches!(mode, TestMode::Transparent) {
+        crate::window_control::make_transparent(webview);
+    }
+    let control = proxy.clone();
+    crate::window_control::serve(move |request, reply| {
+        control.send_event(Message::Control(request, reply)).is_ok()
+    });
 }
 
 /// Debug builds only, headless test windows: after each load, report the heading of the
@@ -191,6 +228,13 @@ mod test_probe {
     }
   }, 100);
 })();";
+}
+
+/// Installs the app menu bar: without one, macOS routes no ⌘C/⌘V/⌘Q to the window.
+fn install_menu() -> Result<Menu, WindowError> {
+    let menu = app_menu().map_err(|error| WindowError::Window(error.to_string()))?;
+    menu.init_for_nsapp();
+    Ok(menu)
 }
 
 /// The standard application, edit and window menus.
@@ -237,7 +281,9 @@ fn listen_to_owner(proxy: tao::event_loop::EventLoopProxy<Message>, origin: Orig
         .spawn(move || {
             for line in io::stdin().lock().lines() {
                 let Ok(line) = line else { break };
-                let (url, title) = line.split_once('\t').unwrap_or((line.as_str(), "Kossé"));
+                let (url, title) = line
+                    .split_once('\t')
+                    .unwrap_or((line.as_str(), crate::launcher::TITLE));
                 if !origin.contains(url) {
                     report!("kosse: the window ignores a URL outside its dashboard: {url:?}");
                     continue;
@@ -296,7 +342,12 @@ impl Origin {
 /// How tests run the window without showing it on the developer's desktop (debug builds only):
 /// `KOSSE_TEST_WINDOW=headless` keeps it invisible and reports each finished page load as
 /// `loaded <url>`; `headless-once` also closes it after the first load; `fail` makes it fail to
-/// start, exercising the browser fallback.
+/// start, exercising the browser fallback. `transparent` (`bun run test:window`) is a real, shown
+/// window that is fully transparent and lets every pointer event through to what is behind it:
+/// `WebKit` renders and `AppKit` delivers the control socket's events as for a visible window (an
+/// invisible one throttles rendering and ignores clicks), yet the person sees nothing, cannot
+/// click it, and it never activates. (A window placed off every display does not stay there:
+/// `AppKit` pulls a titled window back onto a screen when it is shown or resized.)
 #[derive(Clone, Copy)]
 enum TestMode {
     Off,
@@ -304,6 +355,8 @@ enum TestMode {
     Headless {
         once: bool,
     },
+    #[cfg(debug_assertions)]
+    Transparent,
 }
 
 impl TestMode {
@@ -312,14 +365,25 @@ impl TestMode {
         match std::env::var("KOSSE_TEST_WINDOW").as_deref() {
             Ok("headless") => return Ok(Self::Headless { once: false }),
             Ok("headless-once") => return Ok(Self::Headless { once: true }),
+            Ok("transparent") => return Ok(Self::Transparent),
             Ok("fail") => return Err(WindowError::TestFailure),
             _ => {}
         }
         Ok(Self::Off)
     }
 
+    /// The person's window: Dock icon, activation, brought forward on each route.
     fn visible(self) -> bool {
         matches!(self, Self::Off)
+    }
+
+    /// Whether the window is shown at all (on screen, or off it).
+    fn shown(self) -> bool {
+        #[cfg(debug_assertions)]
+        if matches!(self, Self::Transparent) {
+            return true;
+        }
+        self.visible()
     }
 
     fn reports_loads(self) -> bool {

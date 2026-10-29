@@ -96,14 +96,14 @@ export function CustomizeDialog({
   return (
     <Dialog title={`Customize ${title}`} labelledBy="customize-title" onClose={onClose}>
       <form
-        className="flex min-h-0 flex-1 flex-col"
+        className="flex min-h-0 flex-auto flex-col"
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
           submit();
         }}
       >
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        <div className="min-h-0 flex-auto space-y-4 overflow-y-auto px-4 py-4">
           <p className="text-ink-muted">
             Saved in Kossé's settings on this Mac. Nothing is written to the project or its Git
             state.

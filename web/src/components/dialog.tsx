@@ -50,16 +50,24 @@ export function Dialog({
     };
   }, []);
 
+  // The modal is sized by its content (the UA's `height: fit-content`), so nothing inside may size
+  // itself from the dialog's height: macOS's WKWebView resolves such a percentage (the UA's
+  // `max-height: calc(100% - …)` inherited, or a `flex-basis: 0%`) as 0 and draws a 2px dialog
+  // behind a visible backdrop (S11). Dialog and column cap themselves in the same viewport units
+  // instead (the column 2px less, the dialog's border), so only the body scrolls; the sheet has a
+  // definite height, so its column can fill it.
   const placement = sheet
     ? "m-0 ml-auto h-dvh max-h-none w-full max-w-none border-l sm:w-[34rem]"
-    : "m-auto w-[calc(100%-2rem)] max-w-lg rounded-panel border";
+    : "m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg overflow-hidden rounded-panel border";
   return (
     <dialog
       ref={ref}
       aria-labelledby={labelledBy}
       className={`${placement} border-line bg-surface p-0 text-ink`}
     >
-      <div className={sheet ? "flex h-full flex-col" : "flex max-h-[inherit] flex-col"}>
+      <div
+        className={sheet ? "flex h-full flex-col" : "flex max-h-[calc(100dvh-2rem-2px)] flex-col"}
+      >
         <div className="flex items-start gap-3 border-b border-hairline px-4 py-3">
           <h2
             id={labelledBy}

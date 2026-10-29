@@ -36,6 +36,8 @@ mod startup;
 mod text;
 mod tray;
 mod window;
+#[cfg(debug_assertions)]
+mod window_control;
 
 use std::{io, process::ExitCode};
 

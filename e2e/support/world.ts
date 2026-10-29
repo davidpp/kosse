@@ -11,6 +11,7 @@ import {
   type Fixture,
   type FixtureOptions,
   type Server,
+  type ServerOptions,
 } from "./processes.ts";
 import { createRepo, git } from "./repos.ts";
 
@@ -43,8 +44,17 @@ const fakeToken = ["kosse", "fixture", "token", "0000"].join("-");
  * they are free, one busy process and a plain (unsupervised) worker. The functional suite keeps
  * the default title, whose entity and markup test escaping.
  */
-export async function createWorld(options: { showcase?: boolean } = {}): Promise<World> {
+export async function createWorld(
+  options: {
+    showcase?: boolean;
+    /** How the instance starts (default `kosse serve`); `bun run app` starts the menu-bar app. */
+    start?: (options: ServerOptions) => Promise<Server>;
+    /** Fixture lifetime cap when their owner never closes their stdin (default 900 s). */
+    fixtureLifetimeSecs?: number;
+  } = {},
+): Promise<World> {
   const showcase = options.showcase ?? false;
+  const startServer = options.start ?? startKosse;
   // `/tmp`, not the per-user temporary directory, keeps machine-specific paths out of screenshots.
   const dir = await realpath(await mkdtemp(join("/tmp", "kosse-e2e-")));
   const configDir = join(dir, "config");
@@ -114,7 +124,10 @@ export async function createWorld(options: { showcase?: boolean } = {}): Promise
       },
     };
     const start = async (name: FixtureName) => {
-      const fixture = await startFixture(bin, specs[name]);
+      const fixture = await startFixture(bin, {
+        ...specs[name],
+        maxLifetimeSecs: options.fixtureLifetimeSecs,
+      });
       started.push(fixture);
       return fixture;
     };
@@ -141,7 +154,7 @@ export async function createWorld(options: { showcase?: boolean } = {}): Promise
     const probe = [fixtures.web, fixtures.api, fixtures.docs, fixtures.stubborn, fixtures.gateway];
     if (showcase) probe.push(fixtures.worker);
     const serve = (port?: number) =>
-      startKosse({
+      startServer({
         cwd: dir,
         configDir,
         probe: probe.map((fixture) => fixture.pid),

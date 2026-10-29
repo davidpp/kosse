@@ -83,10 +83,12 @@ impl Model {
             items.push(Item::Text(reason.clone()));
             items.push(Item::Separator);
         }
-        match latest.and_then(|snapshot| snapshot.observation.as_ref()) {
+        match latest
+            .and_then(|snapshot| Some((snapshot.observation.as_ref()?, snapshot.instance_pid)))
+        {
             None if latest.is_none() => items.push(Item::Text("Scanning…".to_owned())),
             None => {}
-            Some(observation) => services(observation, &mut items),
+            Some((observation, kosse)) => services(observation, kosse, &mut items),
         }
         if !matches!(items.last(), None | Some(Item::Separator)) {
             items.push(Item::Separator);
@@ -154,7 +156,8 @@ fn attention(snapshot: &Snapshot, now_ms: u64) -> Option<String> {
 }
 
 /// Project sections in the observation's order, then the listeners outside any project.
-fn services(observation: &Observation, items: &mut Vec<Item>) {
+/// `kosse` is this instance's PID: its own row has no Stop… (Kossé never signals itself).
+fn services(observation: &Observation, kosse: u32, items: &mut Vec<Item>) {
     let names: HashMap<&str, &ProjectMetadata> = observation
         .profiles
         .iter()
@@ -165,7 +168,7 @@ fn services(observation: &Observation, items: &mut Vec<Item>) {
             .services
             .iter()
             .filter(|service| service.project.as_deref() == Some(project.root.as_str()))
-            .map(|service| service_item(service, observation))
+            .map(|service| service_item(service, observation, kosse))
             .collect();
         if members.is_empty() {
             continue;
@@ -182,7 +185,7 @@ fn services(observation: &Observation, items: &mut Vec<Item>) {
         .services
         .iter()
         .filter(|service| service.project.is_none())
-        .map(|service| service_item(service, observation))
+        .map(|service| service_item(service, observation, kosse))
         .collect();
     if !others.is_empty() {
         others.sort_by(|a, b| label(a).cmp(label(b)));
@@ -225,7 +228,7 @@ fn heading(project: &Project, metadata: Option<&ProjectMetadata>) -> String {
 }
 
 /// `name :port[, :port]` with Open per HTTP endpoint, Inspect and Stop….
-fn service_item(service: &Service, observation: &Observation) -> Item {
+fn service_item(service: &Service, observation: &Observation, kosse: u32) -> Item {
     let name = service_name(service, observation);
     let ports: Vec<String> = service
         .endpoints
@@ -259,13 +262,15 @@ fn service_item(service: &Service, observation: &Observation) -> Item {
                     title: title.clone(),
                 },
             });
-            items.push(Item::Action {
-                label: "Stop…".to_owned(),
-                action: Action::Show {
-                    route: Route::Stop(target),
-                    title,
-                },
-            });
+            if service.process.identity.pid != kosse {
+                items.push(Item::Action {
+                    label: "Stop…".to_owned(),
+                    action: Action::Show {
+                        route: Route::Stop(target),
+                        title,
+                    },
+                });
+            }
         }
         // Without a start time the process cannot be named safely, so neither route exists.
         None => items.push(Item::Text(
@@ -391,6 +396,7 @@ mod tests {
         Snapshot {
             schema_version: kosse_core::model::SNAPSHOT_SCHEMA_VERSION,
             instance: "test".to_owned(),
+            instance_pid: 0,
             revision: 3,
             observation: Some(Observation {
                 scanned_at_ms: NOW,
@@ -496,6 +502,22 @@ mod tests {
     }
 
     #[test]
+    fn kosse_itself_has_no_stop() {
+        let mut snapshot = snapshot(
+            vec![service(
+                77,
+                "kosse",
+                Some("/src/shop"),
+                vec![endpoint(47831, HttpProbe::Pending)],
+            )],
+            vec![project("/src/shop", "shop", None)],
+        );
+        snapshot.instance_pid = 77;
+        let model = Model::of(Some(&snapshot), NOW);
+        assert_eq!(labels(submenu(&model, "kosse :47831")), ["Inspect"]);
+    }
+
+    #[test]
     fn actions_route_to_the_dashboard_and_never_signal() {
         let snapshot = snapshot(
             vec![service(
@@ -541,7 +563,7 @@ mod tests {
                     })
                     .expect("start")
                 ),
-                title: "Kossé — node".to_owned(),
+                title: launcher::title_for("node"),
             })
         );
     }

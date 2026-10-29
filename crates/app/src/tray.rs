@@ -44,8 +44,16 @@ use crate::{
 /// How often the menu is re-evaluated without a publication, so a stalled scanner shows.
 const STALL_CHECK: Duration = Duration::from_secs(5);
 
+#[cfg(not(debug_assertions))]
 const DEFAULT_ICON: &[u8] = include_bytes!("../../../brand/tray/tray-default@2x.png");
+#[cfg(not(debug_assertions))]
 const ATTENTION_ICON: &[u8] = include_bytes!("../../../brand/tray/tray-attention@2x.png");
+// Debug builds show the preview identity (mirrored K), so a development or test instance is never
+// mistaken for the installed one.
+#[cfg(debug_assertions)]
+const DEFAULT_ICON: &[u8] = include_bytes!("../../../brand/tray/tray-preview@2x.png");
+#[cfg(debug_assertions)]
+const ATTENTION_ICON: &[u8] = include_bytes!("../../../brand/tray/tray-preview-attention@2x.png");
 
 #[derive(Debug, thiserror::Error)]
 pub enum TrayError {
@@ -240,7 +248,7 @@ impl App {
             render(&self.items()).map_err(|error| TrayError::Icon(error.to_string()))?;
         let tray = TrayIconBuilder::new()
             .with_icon_templated(self.icons.for_model(&self.model))
-            .with_tooltip("Kossé")
+            .with_tooltip(launcher::TITLE)
             .with_menu(Box::new(menu))
             .build()
             .map_err(|error| TrayError::Icon(error.to_string()))?;
@@ -271,12 +279,10 @@ impl App {
         {
             report!("kosse: could not change the tray icon: {error}");
         }
-        let _ = tray.set_tooltip(Some(
-            self.model
-                .attention
-                .as_deref()
-                .map_or_else(|| "Kossé".to_owned(), |reason| format!("Kossé: {reason}")),
-        ));
+        let _ = tray.set_tooltip(Some(self.model.attention.as_deref().map_or_else(
+            || launcher::TITLE.to_owned(),
+            |reason| format!("{}: {reason}", launcher::TITLE),
+        )));
         self.render();
     }
 

@@ -23,9 +23,16 @@ const CLOSE_DEADLINE: Duration = Duration::from_secs(2);
 /// How long the reader waits for an exited window's process to be reapable.
 const REAP_DEADLINE: Duration = Duration::from_secs(5);
 
+/// The app's name in window titles and the tray tooltip.
+#[cfg(not(debug_assertions))]
 pub const TITLE: &str = "Kossé";
+/// Debug builds (`bun run app`, `bun run dev`, tests) say they are a preview, and of which branch,
+/// so they are never mistaken for the installed app (with the mirrored-K icons, `tray.rs`,
+/// `activation.rs`).
+#[cfg(debug_assertions)]
+pub const TITLE: &str = concat!("Kossé · preview", env!("KOSSE_PREVIEW_SUFFIX"));
 
-/// The window title for a service: `Kossé — <service>`.
+/// The window title for a service: `<TITLE> — <service>`.
 pub fn title_for(service: &str) -> String {
     format!("{TITLE} — {service}")
 }

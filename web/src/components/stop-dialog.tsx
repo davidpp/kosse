@@ -65,6 +65,27 @@ export function StopDialog({
       </Dialog>
     );
   }
+  if (target.request.identity.pid === snapshot.instancePid) {
+    return (
+      <Dialog title="Kossé cannot stop itself" labelledBy="stop-title" onClose={onClose}>
+        <p className="px-4 py-4">
+          PID {target.request.identity.pid} is this Kossé. Quit it from its menu-bar icon (Quit
+          Kossé), or with Ctrl-C where it runs in a terminal. Nothing was sent.
+        </p>
+        <div className="flex justify-end border-t border-hairline px-4 py-3">
+          <button
+            type="button"
+            className={button}
+            data-autofocus
+            ref={focusOnMount}
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+      </Dialog>
+    );
+  }
   return <Confirmation target={target} onClose={onClose} />;
 }
 

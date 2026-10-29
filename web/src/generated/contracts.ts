@@ -591,6 +591,11 @@ export type Snapshot = { schemaVersion: number,
  */
 instance: string, 
 /**
+ * PID of the publishing Kossé process, which never signals itself: the dashboard disables
+ * Stop on that row. `0` (never a real PID) in a snapshot from before this field existed.
+ */
+instancePid: number, 
+/**
  * Increases with every publication by this instance (successful or failed attempt), so
  * readers can order snapshots and drop out-of-order ones. A one-shot scan is revision 1.
  */

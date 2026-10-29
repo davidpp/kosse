@@ -7,8 +7,17 @@
 //! the terminal, so macOS may leave the window behind it; that is a platform limit, recorded in
 //! the human checklist.
 
-use objc2::MainThreadMarker;
-use objc2_app_kit::{NSApplication, NSApplicationActivationOptions, NSRunningApplication};
+use objc2::{AllocAnyThread, MainThreadMarker};
+use objc2_app_kit::{NSApplication, NSApplicationActivationOptions, NSImage, NSRunningApplication};
+use objc2_foundation::NSData;
+
+/// The Dock and ⌘-Tab icon of the window process (512 px). A bare executable has no bundle icon,
+/// so macOS would show its generic "exec" icon.
+#[cfg(not(debug_assertions))]
+const APP_ICON: &[u8] = include_bytes!("../../../brand/Kosse.iconset/icon_256x256@2x.png");
+/// Debug builds: the preview tile (inverted, mirrored K), like the tray's preview icons.
+#[cfg(debug_assertions)]
+const APP_ICON: &[u8] = include_bytes!("../../../brand/Kosse-preview.iconset/icon_256x256@2x.png");
 
 /// From the tray's main thread: let process `pid` come forward and ask it to.
 pub fn bring_forward(pid: u32) {
@@ -36,5 +45,25 @@ pub fn activate_self() {
             let _ = NSRunningApplication::currentApplication()
                 .activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows);
         }
+    }
+}
+
+/// From the window's main thread: use Kossé's icon for the process instead of the generic one.
+pub fn set_app_icon() {
+    let Some(main_thread) = MainThreadMarker::new() else {
+        return;
+    };
+    let data = NSData::with_bytes(APP_ICON);
+    let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(main_thread);
+    #[expect(
+        unsafe_code,
+        reason = "setApplicationIconImage is unsafe only because it may not accept nil; a decoded image is passed"
+    )]
+    // SAFETY: a valid NSImage on the main thread.
+    unsafe {
+        app.setApplicationIconImage(Some(&image));
     }
 }

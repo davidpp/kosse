@@ -48,6 +48,7 @@ export function snapshot(revision: number, instance = "a", services: Service[] =
   return {
     schemaVersion: 2,
     instance,
+    instancePid: 0,
     revision,
     observation: observation(services, revision * 3000),
     scanner: {

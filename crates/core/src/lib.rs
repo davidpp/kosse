@@ -7,6 +7,10 @@
 //! router or async
 //! runtime.
 
+// The workspace denies `unsafe_code` (the app opts in at its AppKit/WebKit call sites); the core
+// has none and may never gain any.
+#![forbid(unsafe_code)]
+
 pub mod action;
 pub mod attribution;
 pub mod contract;

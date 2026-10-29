@@ -13,3 +13,6 @@
 
 # agent worktrees created by Claude Code
 /.claude/worktrees/
+
+# `bun run app` state (docs/agent-drive.md)
+/var/

@@ -25,6 +25,8 @@ export type RowActions = {
   tryHttp: (identity: ProcessIdentity, port: number) => void;
   /** Results of "Try HTTP" requests, by `pid.start:port`; shown while the snapshot still says skipped. */
   tried: ReadonlyMap<string, Tried>;
+  /** This Kossé's own PID: its row offers no Stop (Kossé never signals itself). */
+  kossePid: number | null;
 };
 
 export function ProjectCard({ group, actions }: { group: ProjectGroup; actions: RowActions }) {
@@ -102,6 +104,9 @@ function ServiceLine({ row, actions }: { row: ServiceRow; actions: RowActions })
           <div className="flex min-h-5 min-w-0 items-center gap-1.5">
             {ended ? <Marker kind="ended" /> : null}
             <span className={`truncate font-medium ${ended ? "" : "text-ink"}`}>{row.name}</span>
+            {identity.pid === actions.kossePid ? (
+              <span className="shrink-0 text-small text-ink-muted">this Kossé</span>
+            ) : null}
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-ink-muted">
             {row.nameSource === null ? null : <Provenance source={row.nameSource} />}
@@ -132,7 +137,9 @@ function ServiceLine({ row, actions }: { row: ServiceRow; actions: RowActions })
           ? null
           : row.configured.links.map((link) => <DeclaredLink key={link.url} link={link} />)}
       </ul>
-      <div className="flex min-h-5 flex-wrap items-center justify-between gap-x-4 gap-y-2 md:flex-nowrap md:justify-end">
+      {/* Wraps at every width: in the md grid this column is `auto`, so a nowrap line here would
+          push the row past the window (S11). */}
+      <div className="flex min-h-5 flex-wrap items-center justify-between gap-x-4 gap-y-2 md:justify-end">
         {ended ? null : <Metrics row={row} />}
         <div className="flex items-center gap-1.5">
           <button
@@ -143,7 +150,20 @@ function ServiceLine({ row, actions }: { row: ServiceRow; actions: RowActions })
           >
             Inspect
           </button>
-          {ended ? null : (
+          {ended ? null : identity.pid === actions.kossePid ? (
+            <button
+              type="button"
+              className={`${quietDanger} ${rowButton}`}
+              disabled
+              title="This is Kossé itself. Quit it from its menu-bar icon instead."
+            >
+              Stop
+              <span className="sr-only">
+                {" "}
+                (unavailable: this is Kossé itself; quit it from its menu-bar icon)
+              </span>
+            </button>
+          ) : (
             <button
               type="button"
               className={`${quietDanger} ${rowButton}`}

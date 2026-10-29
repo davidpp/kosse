@@ -83,6 +83,7 @@ function Dashboard() {
     customize: setCustomizing,
     tryHttp,
     tried,
+    kossePid: data?.instancePid ?? null,
   };
 
   const inspected =

@@ -65,7 +65,7 @@ pub struct WindowArgs {
     /// The dashboard URL: `http://127.0.0.1:<port>/…` only.
     pub url: String,
     /// The window title.
-    #[arg(long, default_value = "Kossé")]
+    #[arg(long, default_value = crate::launcher::TITLE)]
     pub title: String,
 }
 

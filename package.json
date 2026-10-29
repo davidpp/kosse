@@ -12,9 +12,11 @@
   "type": "module",
   "scripts": {
     "dev": "bun scripts/dev.ts",
+    "app": "bun scripts/app.ts",
     "build": "bun run --cwd web build && bun run budget && cargo build --release --locked -p kosse",
     "check": "bun run fmt:check && bun run lint && bun run typecheck && bun run test && cargo build --release --locked -p kosse",
     "test": "bun run --cwd web test && bun run --cwd web build && bun run budget && cargo nextest run --workspace --locked && cargo test --doc --workspace --locked",
+    "test:window": "bun scripts/window-test.ts",
     "test:e2e": "bun run --cwd web build && cargo build --locked -p kosse -p kosse-fixtures --bins && playwright test --config e2e/playwright.config.ts",
     "screenshots": "KOSSE_SCREENSHOTS=1 bun run test:e2e e2e/screenshots.spec.ts --project webkit && oxipng -o 4 --strip safe -q -r docs/screenshots",
     "release:local": "bun scripts/release-local.ts",

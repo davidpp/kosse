@@ -107,6 +107,8 @@ bun install --frozen-lockfile
 bun run check      # the full non-mutating gate, identical to CI
 bun run dev        # backend + Vite on http://127.0.0.1:47833/
 bun run test:e2e   # Playwright (WebKit + Chromium) against the real server and owned fixtures
+bun run app -- start   # the real menu-bar app + window on fixtures (docs/agent-drive.md)
+bun run test:window    # real WKWebView window suite (transparent, click-through window)
 bun run build && target/release/kosse
 ```
 

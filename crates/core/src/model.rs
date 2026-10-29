@@ -26,6 +26,10 @@ pub struct Snapshot {
     /// snapshots by `revision` only within one instance: a new `instance` is a restart (revisions
     /// start again at 1), not an out-of-order event.
     pub instance: String,
+    /// PID of the publishing Kossé process, which never signals itself: the dashboard disables
+    /// Stop on that row. `0` (never a real PID) in a snapshot from before this field existed.
+    #[serde(default)]
+    pub instance_pid: u32,
     /// Increases with every publication by this instance (successful or failed attempt), so
     /// readers can order snapshots and drop out-of-order ones. A one-shot scan is revision 1.
     #[ts(type = "number")]

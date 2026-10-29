@@ -95,6 +95,7 @@ impl SnapshotTracker {
         Snapshot {
             schema_version: SNAPSHOT_SCHEMA_VERSION,
             instance: self.instance.clone(),
+            instance_pid: std::process::id(),
             revision: self.revision,
             observation: self.last_good.clone(),
             scanner: ScannerStatus {

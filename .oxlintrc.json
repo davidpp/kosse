@@ -54,5 +54,11 @@
       }
     ]
   },
+  "overrides": [
+    {
+      "files": ["scripts/app.ts", "scripts/window-test.ts"],
+      "rules": { "no-await-in-loop": "off" }
+    }
+  ],
   "ignorePatterns": ["web/dist/**", "web/src/generated/**"]
 }

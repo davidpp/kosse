@@ -4,6 +4,16 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 
 ## Unreleased
 
+### Fixed
+
+- Dialogs in the dashboard window (Stop, Force, Customize, the removal confirmation) drew as a 2px sliver behind the backdrop in macOS's WKWebView; service rows overflowed the window horizontally between 768 and about 820 px wide ([S11](docs/evidence/S11.md)).
+- Kossé's own row offers no Stop (dashboard and tray); a deep link to it explains why instead of a confirmation that would be refused.
+- The dashboard window's Dock and ⌘-Tab icon is Kossé's, not the generic executable icon.
+
+### Added
+
+- `bun run app` drives the real app and window from an agent (debug-only control socket; [docs/agent-drive.md](docs/agent-drive.md)); `bun run test:window` is the real-window regression suite. Debug builds carry a preview identity (mirrored-K icons, `Kossé · preview (<branch>)`).
+
 ## 0.1.0 - 2026-10-28
 
 First version: built, packaged and verified locally on macOS arm64; not signed, notarized, tagged or published. Each item links the slice evidence in [`docs/evidence/`](docs/evidence/).

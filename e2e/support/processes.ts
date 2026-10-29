@@ -82,6 +82,8 @@ export type FixtureOptions = {
   supervise?: boolean;
   /** Command-line arguments the fixture ignores (what `ps` and Kossé show). */
   args?: string[];
+  /** Exits after this long even if its owner never closes stdin (default 900 s). */
+  maxLifetimeSecs?: number;
 };
 
 export type Fixture = Owned & { name: string; ports: number[] };
@@ -108,7 +110,12 @@ async function spawnFixture(
   fixed: number[],
 ): Promise<Fixture> {
   const config = (options.listen ?? ["127.0.0.1"]).flatMap((group) => ["--listen", group]);
-  config.push("--serve", options.serve ?? "banner", "--max-lifetime-secs", "900");
+  config.push(
+    "--serve",
+    options.serve ?? "banner",
+    "--max-lifetime-secs",
+    String(options.maxLifetimeSecs ?? 900),
+  );
   for (const port of fixed) config.push("--port", String(port));
   if (options.title !== undefined) config.push("--title", options.title);
   if (options.busy) config.push("--busy");
@@ -145,32 +152,59 @@ async function spawnFixture(
 
 export type Server = Owned & { url: string; port: number };
 
-/** `kosse serve` scoped to the given fixtures: nothing else is probed or can be signalled. */
-export async function startKosse(options: {
+export type ServerOptions = {
   cwd: string;
   configDir: string;
   probe: number[];
   act: number[];
   port?: number;
-}): Promise<Server> {
-  const child = spawn(
-    join(targetDir, "kosse"),
-    [
-      "serve",
-      "--no-open",
-      "--port",
-      String(options.port ?? 0),
-      `--probe-only=${options.probe.join(",")}`,
-      `--act-only=${options.act.join(",")}`,
-    ],
-    {
-      cwd: options.cwd,
-      env: { ...process.env, KOSSE_CONFIG_DIR: options.configDir },
-      stdio: ["ignore", "ignore", "pipe"],
+};
+
+/** `kosse serve` scoped to the given fixtures: nothing else is probed or can be signalled. */
+export async function startKosse(options: ServerOptions): Promise<Server> {
+  const child = spawn(join(targetDir, "kosse"), ["serve", "--no-open", ...serverArgs(options)], {
+    cwd: options.cwd,
+    env: { ...process.env, KOSSE_CONFIG_DIR: options.configDir },
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  return listening(own(child));
+}
+
+function serverArgs(options: ServerOptions): string[] {
+  return [
+    "--port",
+    String(options.port ?? 0),
+    `--probe-only=${options.probe.join(",")}`,
+    `--act-only=${options.act.join(",")}`,
+  ];
+}
+
+/**
+ * The menu-bar app (tray + dashboard window) scoped like `startKosse`, for `bun run app` and the
+ * real-window suite. `env` adds the window hooks; every output line goes to `log`.
+ */
+export async function startKosseApp(
+  options: ServerOptions & { env: Record<string, string>; log: (line: string) => void },
+): Promise<Server> {
+  const child = spawn(join(targetDir, "kosse"), serverArgs(options), {
+    cwd: options.cwd,
+    env: { ...process.env, ...options.env, KOSSE_CONFIG_DIR: options.configDir },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  for (const stream of [child.stdout, child.stderr]) {
+    if (stream !== null) createInterface({ input: stream }).on("line", options.log);
+  }
+  return listening(own(child));
+}
+
+async function listening(owned: Owned): Promise<Server> {
+  const child = owned.child;
+  const line = await firstLine(child, "stderr", /listening on http:\/\//, 30_000).catch(
+    async (error: unknown) => {
+      await release(owned);
+      throw error;
     },
   );
-  const owned = own(child);
-  const line = await firstLine(child, "stderr", /listening on http:\/\//, 30_000);
   const url = /listening on (http:\/\/\S+?)\/?$/.exec(line)?.[1];
   if (url === undefined) throw new Error(`unexpected kosse output: ${line}`);
   return { ...owned, url, port: Number(new URL(url).port) };
