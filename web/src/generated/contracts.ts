@@ -657,7 +657,40 @@ services: Array<Service>,
  */
 projects: Array<Project>, };
 
-export type CommandErrorCode = "notFound" | "ambiguous" | "noHttp" | "notInProject" | "inputUnreadable" | "invalidProfile" | "revisionConflict" | "unsafeRoot" | "projectUnknown" | "scanFailed" | "configUnavailable" | "configWriteFailed" | "outputFailed";
+export type WaitCondition = "listening" | "http" | "gone";
+
+/**
+ * `kosse wait --json`: whether the condition held before the timeout, and the last observation
+ * of the services it was about.
+ */
+export type WaitAnswer = { schemaVersion: number, condition: WaitCondition, 
+/**
+ * The condition held; `false` on a timeout or when it can never hold (see the exit code).
+ */
+met: boolean, 
+/**
+ * Time from the start of the wait to its end.
+ */
+waitedMs: number, 
+/**
+ * `Snapshot.instance` of the last observation: the running Kossé's, or this command's own
+ * in-process scanner's. Its requested probes carry this ID in `X-Kosse-Instance`.
+ */
+instance: string, 
+/**
+ * For `http`, once met: `http(s)://localhost:<port>/` of the endpoint that answered.
+ */
+url: string | null, 
+/**
+ * When the last observation was taken, in Unix milliseconds.
+ */
+scannedAtMs: number, 
+/**
+ * The matching services in the last observation (empty when none listens).
+ */
+services: Array<Service>, projects: Array<Project>, };
+
+export type CommandErrorCode = "notFound" | "ambiguous" | "noHttp" | "timedOut" | "notProbeable" | "notInProject" | "inputUnreadable" | "invalidProfile" | "revisionConflict" | "unsafeRoot" | "projectUnknown" | "scanFailed" | "configUnavailable" | "configWriteFailed" | "outputFailed";
 
 /**
  * One rule a refused profile breaks.

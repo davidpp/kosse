@@ -36,11 +36,13 @@ impl Failure {
 
     fn exit_code(&self) -> u8 {
         match self.code {
-            CommandErrorCode::NotFound | CommandErrorCode::Ambiguous | CommandErrorCode::NoHttp => {
-                1
-            }
+            CommandErrorCode::NotFound
+            | CommandErrorCode::Ambiguous
+            | CommandErrorCode::NoHttp
+            | CommandErrorCode::TimedOut => 1,
             CommandErrorCode::NotInProject | CommandErrorCode::InputUnreadable => 2,
             CommandErrorCode::InvalidProfile
+            | CommandErrorCode::NotProbeable
             | CommandErrorCode::RevisionConflict
             | CommandErrorCode::UnsafeRoot => 3,
             CommandErrorCode::ProjectUnknown

@@ -1,5 +1,5 @@
 //! `kosse` entry point: parses the command line, picks the mode (menu-bar app, `open`, `serve`,
-//! `list`, `url`, `port`, `config`, `profile`, `doctor`, `startup`, the internal `window`), maps
+//! `list`, `url`, `port`, `wait`, `config`, `profile`, `doctor`, `startup`, the internal `window`), maps
 //! failures to exit codes (0 success, 1 runtime failure, 2 usage error via clap). The agent
 //! commands `list`, `url`, `port` and `profile` have their own codes (see `failure.rs`).
 
@@ -20,6 +20,7 @@ mod cli;
 mod config;
 mod customize;
 mod doctor;
+mod events;
 mod failure;
 mod guard;
 mod instance;
@@ -41,6 +42,7 @@ mod server;
 mod startup;
 mod text;
 mod tray;
+mod wait;
 mod window;
 #[cfg(debug_assertions)]
 mod window_control;
@@ -92,6 +94,7 @@ fn main() -> ExitCode {
         Some(Command::List(args)) => return list::run(args),
         Some(Command::Url(args)) => return query::url(args),
         Some(Command::Port(args)) => return query::port(args),
+        Some(Command::Wait(args)) => return wait::run(args),
         Some(Command::Profile(command)) => return profile::run(command),
         _ => {}
     }
@@ -117,6 +120,7 @@ fn run(cli: Cli) -> Result<(), AppError> {
             | Command::List(_)
             | Command::Url(_)
             | Command::Port(_)
+            | Command::Wait(_)
             | Command::Profile(_),
         ) => Ok(()),
     }

@@ -7,7 +7,7 @@ use ts_rs::TS;
 
 use crate::model::{ProcessIdentity, Project, Service};
 
-/// Bumped when a change to [`UrlAnswer`], [`PortAnswer`] or a `kosse profile` record
+/// Bumped when a change to [`UrlAnswer`], [`PortAnswer`], [`WaitAnswer`] or a `kosse profile` record
 /// ([`crate::profiles::authoring`]) would break an existing reader.
 pub const AGENT_SCHEMA_VERSION: u32 = 1;
 
@@ -52,6 +52,42 @@ pub enum PortState {
     Taken,
 }
 
+/// `kosse wait --json`: whether the condition held before the timeout, and the last observation
+/// of the services it was about.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WaitAnswer {
+    pub schema_version: u32,
+    pub condition: WaitCondition,
+    /// The condition held; `false` on a timeout or when it can never hold (see the exit code).
+    pub met: bool,
+    /// Time from the start of the wait to its end.
+    #[ts(type = "number")]
+    pub waited_ms: u64,
+    /// `Snapshot.instance` of the last observation: the running Kossé's, or this command's own
+    /// in-process scanner's. Its requested probes carry this ID in `X-Kosse-Instance`.
+    pub instance: String,
+    /// For `http`, once met: `http(s)://localhost:<port>/` of the endpoint that answered.
+    pub url: Option<String>,
+    /// When the last observation was taken, in Unix milliseconds.
+    #[ts(type = "number")]
+    pub scanned_at_ms: u64,
+    /// The matching services in the last observation (empty when none listens).
+    pub services: Vec<Service>,
+    pub projects: Vec<Project>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum WaitCondition {
+    /// A matching process listens.
+    Listening,
+    /// A matching endpoint gave any HTTP response (404 and 500 included).
+    Http,
+    /// No matching process listens any more.
+    Gone,
+}
+
 /// What an agent-facing command prints on stderr with `--json` when it has no answer, shaped
 /// like the API's `ApiError`. The exit code carries the class (1 negative answer, 2 usage, 3
 /// refused, 4 could not observe); `error` says which case.
@@ -86,6 +122,11 @@ pub enum CommandErrorCode {
     /// The service listens, but no endpoint of it answered HTTP; `message` gives the probe state
     /// (exit 1).
     NoHttp,
+    /// `kosse wait`: the condition did not hold before `--timeout` (exit 1).
+    TimedOut,
+    /// `kosse wait --http`: the endpoint may never be probed (another user's process, or not on
+    /// loopback), so waiting cannot help (exit 3).
+    NotProbeable,
     /// The directory (`--here`, `--project`, a `kosse profile` root) is in no project (exit 2).
     NotInProject,
     /// `kosse profile set --file` or `check` could not read its input (exit 2).
