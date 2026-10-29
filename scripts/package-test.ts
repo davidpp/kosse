@@ -308,7 +308,8 @@ async function main(): Promise<void> {
   const before = readRecord();
   const upgraded = installLocal(["--prefix", prefix, "--artifact", second]);
   assert(
-    upgraded.status === 0 && /upgraded 0\.1\.0 → 0\.1\.0/.test(upgraded.stdout),
+    upgraded.status === 0 &&
+      upgraded.stdout.includes(`upgraded ${expectedVersion} → ${expectedVersion}`),
     upgraded.stdout,
   );
   const after = readRecord();
