@@ -60,10 +60,9 @@ pub enum Command {
     /// A project's central profile, for the coding agent that authors it: observed facts, the
     /// stored and effective profile, a validated preview, and writes to Kossé's own configuration
     /// only. Markdown by default, `--json` for tooling. Exits 0 when answered or applied, 1 when
-    /// a dry run finds an ambiguity or an entry matching nothing, 2 on a usage error (or a
-    /// directory outside any project), 3 when
-    /// refused (invalid profile, revision changed), 4 when Kossé could not observe or read its
-    /// configuration.
+    /// a dry run or an applied profile has an ambiguous process (or `remove` finds nothing), 2 on
+    /// a usage error (or a directory outside any project), 3 when refused (invalid profile,
+    /// revision changed), 4 when Kossé could not observe or read its configuration.
     #[command(subcommand)]
     Profile(ProfileCommand),
     /// Check the platform, configuration, port, git and login startup; changes nothing. Exits 1

@@ -12,8 +12,8 @@
 //! verified running instance's snapshot, else from one scan, as for `kosse list`.
 //!
 //! Markdown by default; `--json` prints the versioned records of [`authoring`] (or the API's
-//! [`SavedProfile`]). Exit codes: 0 answered or applied, 1 negative (a dry run finds an ambiguous
-//! process or an entry matching nothing; `remove` finds nothing to remove), and failures as every
+//! [`SavedProfile`]). Exit codes: 0 answered or applied, 1 negative (a dry run or an applied
+//! profile has an ambiguous process; `remove` finds nothing to remove), and failures as every
 //! agent command reports them ([`crate::failure`]): 2 usage (outside a project, unreadable
 //! input), 3 refused (invalid profile, revision changed), 4 could not observe (scan failed,
 //! configuration unreadable or newer).
