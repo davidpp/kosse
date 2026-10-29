@@ -106,6 +106,9 @@ pub struct WaitAnswer {
     pub instance: String,
     /// For `http`, once met: `http(s)://localhost:<port>/` of the endpoint that answered.
     pub url: Option<String>,
+    /// `false` when other users' listeners are hidden from this user: a met `gone` then means
+    /// "gone as far as this user can see".
+    pub other_users_visible: bool,
     /// When the last observation was taken, in Unix milliseconds.
     #[ts(type = "number")]
     pub scanned_at_ms: u64,

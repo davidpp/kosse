@@ -21,6 +21,8 @@ const EVENT_LIMIT: usize = 32 * 1024 * 1024;
 pub struct Events {
     body: Incoming,
     buffer: Vec<u8>,
+    /// How far `buffer` has been searched for an event's end, so each byte is searched once.
+    searched: usize,
     /// The newest `(instance, revision)` returned; older ones are skipped.
     last: Option<(String, u64)>,
     driver: JoinHandle<Result<(), hyper::Error>>,
@@ -61,6 +63,7 @@ impl Events {
         Ok(Self {
             body: response.into_body(),
             buffer: Vec::new(),
+            searched: 0,
             last: None,
             driver,
         })
@@ -69,8 +72,14 @@ impl Events {
     /// The next newer snapshot; `None` when the stream ended.
     pub async fn next(&mut self) -> Result<Option<Snapshot>, String> {
         loop {
-            while let Some(end) = self.buffer.windows(2).position(|pair| pair == b"\n\n") {
+            // Back one byte: the previous chunk may have ended on the first `\n`.
+            while let Some(found) = self.buffer[self.searched.saturating_sub(1)..]
+                .windows(2)
+                .position(|pair| pair == b"\n\n")
+            {
+                let end = self.searched.saturating_sub(1) + found;
                 let event: Vec<u8> = self.buffer.drain(..end + 2).collect();
+                self.searched = 0;
                 if let Some(snapshot) = self.snapshot_of(&event)? {
                     return Ok(Some(snapshot));
                 }
@@ -80,6 +89,7 @@ impl Events {
                 Some(Err(error)) => return Err(error.to_string()),
                 Some(Ok(frame)) => {
                     if let Ok(data) = frame.into_data() {
+                        self.searched = self.buffer.len();
                         self.buffer.extend_from_slice(&data);
                         if self.buffer.len() > EVENT_LIMIT {
                             return Err("an event exceeds 32 MiB".to_owned());

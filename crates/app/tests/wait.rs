@@ -337,3 +337,67 @@ fn wait_times_out_with_the_last_observation_and_rejects_bad_arguments() {
         assert_eq!(status.code(), Some(2), "{args:?}");
     }
 }
+
+/// `--gone` never reports success for something it never saw: a service name no profile in scope
+/// configures is `notFound` at once, under every condition.
+#[test]
+fn wait_rejects_a_service_name_configured_nowhere() {
+    for condition in [&[][..], &["--gone"][..], &["--http"][..]] {
+        let mut args = vec![
+            "wait",
+            "no-such-service",
+            "--json",
+            "--timeout",
+            TIMEOUT,
+            "--instance-port",
+            "0",
+        ];
+        args.extend_from_slice(condition);
+        let started = Instant::now();
+        let output = Command::new(env!("CARGO_BIN_EXE_kosse"))
+            .env("KOSSE_CONFIG_DIR", NO_CONFIG)
+            .args(&args)
+            .output()
+            .expect("run kosse wait");
+        assert!(started.elapsed() < EXIT_WITHIN, "answered at once");
+        assert_eq!(output.status.code(), Some(1), "{condition:?}");
+        let error: CommandError = serde_json::from_slice(&output.stderr).expect("CommandError");
+        assert_eq!(error.error, CommandErrorCode::NotFound, "{condition:?}");
+        assert_eq!(output.stdout, b"", "nothing was observed for it");
+    }
+}
+
+/// Under `--project` with `--port`, a process still listening on the port whose project is
+/// unknown (here: its working directory was deleted) may be in that project, so the port is not
+/// "gone".
+#[test]
+fn wait_gone_is_not_met_while_an_unknown_project_process_holds_the_port() {
+    let tree = kosse_fixtures::repo::Sandbox::new().expect("sandbox");
+    let dir = tree.dir("app").expect("dir");
+    tree.file("app/package.json", "{}").expect("manifest");
+    let fixture = Fixture::spawn(&FixtureSpec::new().listen(&[V4])).expect("fixture");
+    std::fs::remove_dir_all(&fixture.record().cwd).expect("remove the fixture's own directory");
+    let port = port_of(&fixture).to_string();
+    let output = Command::new(env!("CARGO_BIN_EXE_kosse"))
+        .env("KOSSE_CONFIG_DIR", NO_CONFIG)
+        .args([
+            "wait",
+            "--port",
+            &port,
+            "--gone",
+            "--project",
+            dir.to_str().expect("UTF-8"),
+            "--timeout",
+            "2s",
+            "--instance-port",
+            "0",
+        ])
+        .output()
+        .expect("run kosse wait");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("was not gone") && stderr.contains("project is unknown"),
+        "{stderr}"
+    );
+}

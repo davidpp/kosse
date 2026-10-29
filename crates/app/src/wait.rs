@@ -33,7 +33,10 @@ use hyper::StatusCode;
 use kosse_core::{
     agent::{AGENT_SCHEMA_VERSION, CommandErrorCode, WaitAnswer, WaitCondition},
     contract::ProbeRequest,
-    model::{Endpoint, HttpProbe, ProbeResult, ProcessIdentity, SNAPSHOT_SCHEMA_VERSION, Snapshot},
+    model::{
+        Endpoint, HttpProbe, ProbeResult, ProcessIdentity, SNAPSHOT_SCHEMA_VERSION, ScanWarning,
+        Snapshot,
+    },
     probe,
     profiles::{self, CentralStore, Profiles},
     scan::{Scanner, unix_millis},
@@ -118,15 +121,29 @@ async fn wait(args: &WaitArgs) -> Result<(), Failure> {
         port: args.port,
         service: args.service.clone(),
     };
+    // A name configured nowhere in scope can never match: say so now, for every condition (and
+    // never report it "gone").
+    if let Some(name) = &args.service {
+        scope::require_configured(&latest, filter.root.as_deref(), name)?;
+    }
+    let probes_run = source.probes_run();
     let mut schedule = Schedule::default();
     let mut announced = false;
     loop {
         let mut view = latest.clone();
         filter.apply(&mut view);
-        let due = match judge(condition, &view, args.port, &what) {
-            Verdict::Met { url } => return print(args, condition, &view, url, started),
+        let unknown = unknown_on_port(&latest, &filter);
+        let output = Output {
+            args,
+            condition,
+            view: &view,
+            probes_run,
+            started,
+        };
+        let due = match judge(condition, &view, unknown, &filter, &what) {
+            Verdict::Met { url } => return output.print(url, true),
             Verdict::Never(failure) => {
-                print(args, condition, &view, None, started)?;
+                output.print(None, false)?;
                 return Err(failure);
             }
             Verdict::Waiting { probe } => probe,
@@ -149,14 +166,18 @@ async fn wait(args: &WaitArgs) -> Result<(), Failure> {
             continue;
         }
         if Instant::now() >= deadline {
-            print(args, condition, &view, None, started)?;
+            output.print(None, false)?;
+            let failed = match condition {
+                WaitCondition::Listening => "did not listen",
+                WaitCondition::Http => "did not answer HTTP",
+                WaitCondition::Gone => "was not gone",
+            };
             return Err(Failure::new(
                 CommandErrorCode::TimedOut,
                 format!(
-                    "{what} did not {} within {}{}",
-                    verb(condition),
+                    "{what} {failed} within {}{}",
                     shown(args.timeout),
-                    last_states(condition, &view, args.port)
+                    last_states(condition, &view, unknown, args.port, probes_run)
                 ),
             ));
         }
@@ -189,8 +210,33 @@ enum Verdict {
 
 type Key = (ProcessIdentity, u16);
 
-/// Whether `condition` holds in `view` (already filtered to the matching services).
-fn judge(condition: WaitCondition, view: &Snapshot, port: Option<u16>, what: &str) -> Verdict {
+/// Under `--here`/`--project` with `--port`: a process listens on the port but its project is
+/// unknown, so it may be in scope (and the port is not known to be released).
+fn unknown_on_port(snapshot: &Snapshot, filter: &Filter) -> bool {
+    let (Some(_), Some(port)) = (&filter.root, filter.port) else {
+        return false;
+    };
+    snapshot.observation.as_ref().is_some_and(|observation| {
+        observation.services.iter().any(|service| {
+            service.project.is_none()
+                && service
+                    .endpoints
+                    .iter()
+                    .any(|endpoint| endpoint.port == port)
+        })
+    })
+}
+
+/// Whether `condition` holds in `view` (already filtered to the matching services); `unknown`
+/// is [`unknown_on_port`].
+fn judge(
+    condition: WaitCondition,
+    view: &Snapshot,
+    unknown: bool,
+    filter: &Filter,
+    what: &str,
+) -> Verdict {
+    let port = filter.port;
     let services = view
         .observation
         .as_ref()
@@ -198,7 +244,7 @@ fn judge(condition: WaitCondition, view: &Snapshot, port: Option<u16>, what: &st
     match condition {
         WaitCondition::Listening if services.is_empty() => Verdict::Waiting { probe: Vec::new() },
         WaitCondition::Listening => Verdict::Met { url: None },
-        WaitCondition::Gone if services.is_empty() => Verdict::Met { url: None },
+        WaitCondition::Gone if services.is_empty() && !unknown => Verdict::Met { url: None },
         WaitCondition::Gone => Verdict::Waiting { probe: Vec::new() },
         WaitCondition::Http => match services {
             [] => Verdict::Waiting { probe: Vec::new() },
@@ -224,7 +270,7 @@ fn judge(condition: WaitCondition, view: &Snapshot, port: Option<u16>, what: &st
                 if !retry.is_empty() {
                     return Verdict::Waiting { probe: retry };
                 }
-                let states = states(&endpoints);
+                let states = states(&endpoints, true);
                 if endpoints
                     .iter()
                     .all(|endpoint| probe::requested_target(endpoint).is_none())
@@ -244,10 +290,9 @@ fn judge(condition: WaitCondition, view: &Snapshot, port: Option<u16>, what: &st
             }
             several => Verdict::Never(Failure::new(
                 CommandErrorCode::Ambiguous,
-                format!(
-                    "{what} matches {} services; narrow it with --here, --project or --port",
-                    several.len()
-                ),
+                scope::ambiguity(what, several, filter.root.as_deref(), |port| {
+                    format!("kosse wait --port {port} --http")
+                }),
             )),
         },
     }
@@ -264,15 +309,27 @@ fn answered_not_http(endpoint: &Endpoint) -> bool {
     )
 }
 
-fn states(endpoints: &[&Endpoint]) -> String {
+fn states(endpoints: &[&Endpoint], probes_run: bool) -> String {
     let states: Vec<String> = endpoints
         .iter()
-        .map(|endpoint| format!(":{} {}", endpoint.port, list::http_state(endpoint)))
+        .map(|endpoint| {
+            format!(
+                ":{} {}",
+                endpoint.port,
+                list::http_state(endpoint, probes_run)
+            )
+        })
         .collect();
     states.join("; ")
 }
 
-fn last_states(condition: WaitCondition, view: &Snapshot, port: Option<u16>) -> String {
+fn last_states(
+    condition: WaitCondition,
+    view: &Snapshot,
+    unknown: bool,
+    port: Option<u16>,
+    probes_run: bool,
+) -> String {
     let Some(observation) = view.observation.as_ref() else {
         return String::new();
     };
@@ -283,8 +340,13 @@ fn last_states(condition: WaitCondition, view: &Snapshot, port: Option<u16>) -> 
         .filter(|endpoint| port.is_none_or(|port| endpoint.port == port))
         .collect();
     match condition {
-        WaitCondition::Http if !endpoints.is_empty() => format!(" (last: {})", states(&endpoints)),
+        WaitCondition::Http if !endpoints.is_empty() => {
+            format!(" (last: {})", states(&endpoints, probes_run))
+        }
         WaitCondition::Http | WaitCondition::Listening => " (nothing listens)".to_owned(),
+        WaitCondition::Gone if endpoints.is_empty() && unknown => {
+            " (a process whose project is unknown still listens on the port)".to_owned()
+        }
         WaitCondition::Gone => " (still listening)".to_owned(),
     }
 }
@@ -327,35 +389,51 @@ fn patch(snapshot: &mut Snapshot, (identity, port): Key, result: HttpProbe) {
     }
 }
 
-/// The last observation: the service table's rows, or the `WaitAnswer` record.
-fn print(
-    args: &WaitArgs,
+/// What the wait prints once it ends.
+struct Output<'a> {
+    args: &'a WaitArgs,
     condition: WaitCondition,
-    view: &Snapshot,
-    url: Option<String>,
+    view: &'a Snapshot,
+    probes_run: bool,
     started: Instant,
-) -> Result<(), Failure> {
-    let Some(observation) = view.observation.as_ref() else {
-        return Ok(());
-    };
-    let mut stdout = io::stdout().lock();
-    if args.json {
-        let answer = WaitAnswer {
-            schema_version: AGENT_SCHEMA_VERSION,
-            condition,
-            met: url.is_some()
-                || (condition != WaitCondition::Http
-                    && observation.services.is_empty() == (condition == WaitCondition::Gone)),
-            waited_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-            instance: view.instance.clone(),
-            url,
-            scanned_at_ms: observation.scanned_at_ms,
-            services: observation.services.clone(),
-            projects: observation.projects.clone(),
+}
+
+impl Output<'_> {
+    /// The last observation: the service table's rows, or the `WaitAnswer` record. A met
+    /// `--gone` says, on stderr, that other users' listeners are invisible when they are.
+    fn print(&self, url: Option<String>, met: bool) -> Result<(), Failure> {
+        let Some(observation) = self.view.observation.as_ref() else {
+            return Ok(());
         };
-        return failure::written(list::write_json(&mut stdout, &answer));
+        let other_users_visible = !observation
+            .warnings
+            .contains(&ScanWarning::OtherUsersNotVisible);
+        let mut stdout = io::stdout().lock();
+        if self.args.json {
+            let answer = WaitAnswer {
+                schema_version: AGENT_SCHEMA_VERSION,
+                condition: self.condition,
+                met,
+                waited_ms: u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                instance: self.view.instance.clone(),
+                url,
+                other_users_visible,
+                scanned_at_ms: observation.scanned_at_ms,
+                services: observation.services.clone(),
+                projects: observation.projects.clone(),
+            };
+            return failure::written(list::write_json(&mut stdout, &answer));
+        }
+        failure::written(
+            list::services_table(observation, self.args.port, self.probes_run).write(&mut stdout),
+        )?;
+        if met && self.condition == WaitCondition::Gone && !other_users_visible {
+            report!(
+                "kosse: gone as far as this user can see (other users' listeners, system services included, are hidden without administrator privileges)"
+            );
+        }
+        Ok(())
     }
-    failure::written(list::services_table(observation, args.port).write(&mut stdout))
 }
 
 /// When each endpoint may be probed again.
@@ -440,10 +518,18 @@ impl Source {
                 remote.refreshed = remote.refresh().await;
                 return Ok(Self::Remote(Box::new(remote)));
             }
-            report!(
-                "kosse: the Kossé at {} uses another snapshot version; scanning in process instead",
-                existing.url
+            // Scanning in a loop beside it would be a second scanner.
+            let version = existing.snapshot.as_ref().map_or_else(
+                || "none".to_owned(),
+                |snapshot| snapshot.schema_version.to_string(),
             );
+            return Err(Failure::new(
+                CommandErrorCode::ScanFailed,
+                format!(
+                    "the Kossé at {} publishes snapshot version {version}, this kosse reads {SNAPSHOT_SCHEMA_VERSION}; `kosse wait` follows it rather than scanning beside it, so use a matching kosse (or stop that one)",
+                    existing.url
+                ),
+            ));
         }
         Ok(Self::Local(Box::new(Local {
             scanner: Scanner::new(),
@@ -453,6 +539,12 @@ impl Source {
             tracker: SnapshotTracker::new(Some(SCAN_INTERVAL)),
             next_scan: Instant::now(),
         })))
+    }
+
+    /// Whether a prober follows these snapshots (an instance's), so `pending` means a probe is
+    /// coming.
+    fn probes_run(&self) -> bool {
+        matches!(self, Self::Remote(_))
     }
 
     /// The next snapshot published before `until`; `None` when `until` comes first.

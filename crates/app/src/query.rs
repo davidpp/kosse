@@ -40,8 +40,11 @@ fn answer_url(args: &UrlArgs) -> Result<(), Failure> {
         port,
         service: port.is_none().then(|| args.target.clone()),
     };
+    if port.is_none() {
+        scope::require_configured(&snapshot, filter.root.as_deref(), &args.target)?;
+    }
     filter.apply(&mut snapshot);
-    let one_shot = snapshot.scanner.interval_ms.is_none();
+    let probes_run = list::probes_run(&snapshot);
     let observation = observation(&snapshot)?;
     let what = port.map_or_else(
         || format!("service {:?}", args.target),
@@ -62,11 +65,9 @@ fn answer_url(args: &UrlArgs) -> Result<(), Failure> {
         several => {
             return Err(Failure::new(
                 CommandErrorCode::Ambiguous,
-                format!(
-                    "{what} matches {} services ({}); narrow it with --here, --project or a port",
-                    several.len(),
-                    candidates(several)
-                ),
+                scope::ambiguity(&what, several, filter.root.as_deref(), |port| {
+                    format!("kosse url {port}")
+                }),
             ));
         }
     };
@@ -82,7 +83,7 @@ fn answer_url(args: &UrlArgs) -> Result<(), Failure> {
             ),
         ));
     }
-    let (port, url) = reachable(service, port, &what, one_shot)?;
+    let (port, url) = reachable(service, port, &what, probes_run)?;
     let mut stdout = io::stdout().lock();
     if args.json {
         let answer = UrlAnswer {
@@ -109,7 +110,7 @@ fn reachable(
     service: &Service,
     port: Option<u16>,
     what: &str,
-    one_shot: bool,
+    probes_run: bool,
 ) -> Result<(u16, String), Failure> {
     let endpoints: Vec<_> = service
         .endpoints
@@ -125,12 +126,18 @@ fn reachable(
         [] => {
             let states: Vec<String> = endpoints
                 .iter()
-                .map(|endpoint| format!(":{} {}", endpoint.port, list::http_state(endpoint)))
+                .map(|endpoint| {
+                    format!(
+                        ":{} {}",
+                        endpoint.port,
+                        list::http_state(endpoint, probes_run)
+                    )
+                })
                 .collect();
-            let hint = if one_shot {
-                " (no Kossé instance runs, and a one-shot scan never probes: start `kosse serve` or the menu-bar app)"
-            } else {
+            let hint = if probes_run {
                 ""
+            } else {
+                " (no Kossé instance runs, and a one-shot scan never probes: start `kosse serve` or the menu-bar app)"
             };
             Err(Failure::new(
                 CommandErrorCode::NoHttp,
@@ -138,31 +145,19 @@ fn reachable(
             ))
         }
         several => {
-            let ports: Vec<String> = several.iter().map(|(port, _)| port.to_string()).collect();
+            let commands: Vec<String> = several
+                .iter()
+                .map(|(port, _)| format!("`kosse url {port}`"))
+                .collect();
             Err(Failure::new(
                 CommandErrorCode::Ambiguous,
                 format!(
-                    "{what} answers HTTP on ports {}; name one",
-                    ports.join(", ")
+                    "{what} answers HTTP on several ports; name one: {}",
+                    commands.join(", ")
                 ),
             ))
         }
     }
-}
-
-/// Each PID with its project, for an ambiguity message.
-fn candidates(services: &[Service]) -> String {
-    let named: Vec<String> = services
-        .iter()
-        .map(|service| {
-            format!(
-                "PID {} in {}",
-                service.process.identity.pid,
-                service.project.as_deref().unwrap_or("no project")
-            )
-        })
-        .collect();
-    named.join(", ")
 }
 
 fn answer_port(args: &PortArgs) -> Result<(), Failure> {
@@ -202,7 +197,10 @@ fn answer_port(args: &PortArgs) -> Result<(), Failure> {
         };
         return failure::written(io::Write::write_all(&mut stdout, line.as_bytes()));
     }
-    failure::written(list::services_table(observation, Some(args.port)).write(&mut stdout))
+    failure::written(
+        list::services_table(observation, Some(args.port), list::probes_run(&snapshot))
+            .write(&mut stdout),
+    )
 }
 
 fn observation(snapshot: &Snapshot) -> Result<&Observation, Failure> {

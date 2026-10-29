@@ -253,7 +253,8 @@ fn url_without_an_http_answer_is_a_negative_answer() {
     let stderr = String::from_utf8(plain.stderr).expect("UTF-8");
     assert_eq!(stderr.lines().count(), 1, "{stderr}");
     assert!(
-        stderr.contains(&format!(":{port} pending")) && stderr.contains("never probes"),
+        stderr.contains(&format!(":{port} not probed (no instance)"))
+            && stderr.contains("never probes"),
         "{stderr}"
     );
     let json = kosse(
@@ -269,7 +270,7 @@ fn url_without_an_http_answer_is_a_negative_answer() {
     );
     assert_eq!(unknown.status.code(), Some(1));
     assert_eq!(error_of(&unknown).error, CommandErrorCode::NotFound);
-    for usage in [&["url"][..], &["port", "http"][..]] {
+    for usage in [&["url"][..], &["port", "http"][..], &["port", "0"][..]] {
         assert_eq!(
             kosse(tree.root(), usage).status.code(),
             Some(2),
@@ -313,5 +314,42 @@ fn port_is_free_only_as_far_as_this_user_can_see() {
         line.contains("as far as this user can see"),
         hidden,
         "{line}"
+    );
+}
+
+/// Already scoped, an ambiguous name lists ready commands, one per candidate port; a name no
+/// profile in scope configures is `notFound` at once, naming what is configured.
+#[test]
+fn url_names_ready_commands_for_an_ambiguity_and_rejects_unknown_names() {
+    let tree = Sandbox::new().expect("sandbox");
+    let repo = tree.dir("shop").expect("dir");
+    init_repo(&repo).expect("repo");
+    tree.file("shop/kosse.json", REPO_PROFILE).expect("file");
+    let spawn = || Fixture::spawn(&FixtureSpec::new().listen(&[V4]).cwd(&repo)).expect("fixture");
+    let (one, two) = (spawn(), spawn());
+
+    let ambiguous = kosse(
+        &repo,
+        &["url", "web", "--here", "--json", "--instance-port", "0"],
+    );
+    assert_eq!(ambiguous.status.code(), Some(1));
+    let error = error_of(&ambiguous);
+    assert_eq!(error.error, CommandErrorCode::Ambiguous);
+    for fixture in [&one, &two] {
+        let command = format!("`kosse url {}`", port_of(fixture));
+        assert!(error.message.contains(&command), "{}", error.message);
+    }
+
+    let unknown = kosse(
+        &repo,
+        &["url", "api", "--here", "--json", "--instance-port", "0"],
+    );
+    assert_eq!(unknown.status.code(), Some(1));
+    let error = error_of(&unknown);
+    assert_eq!(error.error, CommandErrorCode::NotFound);
+    assert!(
+        error.message.contains("configured: web"),
+        "{}",
+        error.message
     );
 }

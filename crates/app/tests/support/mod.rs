@@ -494,7 +494,7 @@ pub fn eventually<T>(timeout: Duration, mut condition: impl FnMut() -> Option<T>
 }
 
 /// One GFM table of a command's Markdown output: the header cells and each row's cells,
-/// unescaped (`\|`, `\\` and `` \` `` back to the character).
+/// unescaped (`\|`, `\\`, `` \` ``, `\[`, `\]`, `\<` and `\>` back to the character).
 #[derive(Debug)]
 pub struct MarkdownTable {
     pub headers: Vec<String>,
@@ -568,7 +568,7 @@ fn split_row(line: &str) -> Vec<String> {
         match character {
             _ if escaped => {
                 assert!(
-                    matches!(character, '|' | '\\' | '`'),
+                    matches!(character, '|' | '\\' | '`' | '[' | ']' | '<' | '>'),
                     "unexpected escape \\{character} in {line:?}"
                 );
                 cell.push(character);
@@ -576,6 +576,7 @@ fn split_row(line: &str) -> Vec<String> {
             }
             '\\' => escaped = true,
             '`' => panic!("unescaped backtick (a code span) in {line:?}"),
+            '[' | ']' | '<' | '>' => panic!("unescaped {character} (a link or HTML) in {line:?}"),
             '|' => cells.push(std::mem::take(&mut cell).trim().to_owned()),
             _ => cell.push(character),
         }

@@ -106,6 +106,12 @@ fn matched(id: &str) -> Option<ProfileMatch> {
     })
 }
 
+fn dir_name(path: &Path) -> &str {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .expect("UTF-8 directory name")
+}
+
 fn text(path: &Path) -> String {
     path.to_str().expect("UTF-8 path").to_owned()
 }
@@ -267,7 +273,8 @@ fn central_profile_overrides_the_repository_file_with_provenance() {
             unobserved.cell(api_row, "SOURCE"),
             unobserved.cell(api_row, "MATCH")
         ],
-        [text(&repo).as_str(), "repository", "cwd apps/api"]
+        // The project's directory name, as in the service table; `--json` has the root.
+        [dir_name(&repo), "repository", "cwd apps/api"]
     );
 
     assert_eq!(
@@ -962,7 +969,7 @@ fn moved_projects_need_explicit_reassociation() {
         "configured, not observed"
     );
     let table = list_table(&config);
-    let stale_project = format!("{} (project not observed)", text(&old));
+    let stale_project = format!("{} (project not observed)", dir_name(&old));
     assert_eq!(
         unobserved_table(&table)
             .rows_where("PROJECT", &stale_project)
