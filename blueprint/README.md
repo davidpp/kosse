@@ -22,7 +22,15 @@ A locally packaged macOS arm64 application provides tray and dashboard views (th
 
 Not required for v1: public hosting, signed/notarized distribution, Homebrew tap, Windows/Linux parity, cloud telemetry, public release. No external credentials should be necessary to complete the local artifact.
 
-## Planning decisions
+## Status
+
+v0.1.0 is delivered as a local artifact (2026-10-28): slices S01–S10 of the [implementation plan](implementation-plan.md) are implemented, with evidence in [`docs/evidence/`](../docs/evidence/) and the installed-entrypoint audit in [S10](../docs/evidence/S10.md). Two human checks remain open and are not counted as passed: the native tray/window checklist (S08) and a real login cycle (S09).
+
+Next phase, in this order unless the owner reorders it: the OpenTUI terminal client (`kosse tui`, S07t in the plan); persisted extras the product contract names but v1 does not implement (hidden identities and rules); the opt-in integrations of the [extended metadata level](project-metadata.md#three-levels); signing, notarization and a published tap or download, which stay approval-dependent.
+
+## Decisions
+
+These were planning decisions; all hold in v0.1.0.
 
 - macOS arm64 is the required v1 target; other platforms get explicit unsupported behavior, not claimed support.
 - Native tray menu plus a dashboard served on loopback are required. The dashboard opens in its own lightweight window (WKWebView child process) and in any browser. A custom graphical tray popover is deferred (Rune is the candidate to watch).

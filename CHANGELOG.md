@@ -1,0 +1,29 @@
+# Changelog
+
+All notable changes to Kossé are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## Unreleased
+
+## 0.1.0 - 2026-10-28
+
+First version: built, packaged and verified locally on macOS arm64; not signed, notarized, tagged or published. Each item links the slice evidence in [`docs/evidence/`](docs/evidence/).
+
+### Added
+
+- Rust workspace (`crates/core`, `crates/app`), embedded web UI and one non-mutating gate, `bun run check`, shared by the pre-commit hook and CI ([S01](docs/evidence/S01.md)).
+- Dashboard runtime on TanStack Redact with TanStack Query, within a 50 kB gzipped JS + CSS budget enforced by `check` ([S01b](docs/evidence/S01b.md)).
+- TCP listener discovery and process inspection (PID + start time, user, redacted command line, cwd), checked against `lsof` with an owned fixture-process harness ([S02](docs/evidence/S02.md)).
+- Project attribution (repository, linked worktree, branch or detached HEAD, nearest package) and CPU/memory sampling on a single 3 s scanner; `kosse list [--json]` ([S03](docs/evidence/S03.md)).
+- Loopback-only HTTP API with Server-Sent Events, Host/Origin/token guards and CSP; bounded HTTP probes with offline TLS verification ([S04](docs/evidence/S04.md)).
+- Identity-checked stop (`SIGTERM`) with an explicit, expiring force (`SIGKILL`) offer and honest outcomes: exited, still running, respawned, endpoint taken ([S05](docs/evidence/S05.md)).
+- Central project profiles and optional read-only repository `kosse.json`, with a JSON Schema and `kosse config schema|path|move` ([S06](docs/evidence/S06.md)).
+- Project-card dashboard: search, All listeners, Inspect sheet, Stop and Force confirmations, deep links, live/stale/disconnected states, light and dark ([S07](docs/evidence/S07.md)).
+- Native menu-bar app, a single dashboard window (WKWebView child process), `kosse open` without a resident app, and single-instance reuse verified by socket owner and API ([S08](docs/evidence/S08.md)).
+- Local release archive with checksums, third-party notices and manifest; prefix-aware `install:local`/`uninstall:local`; opt-in login startup (`kosse startup`); `kosse doctor` ([S09](docs/evidence/S09.md)).
+- The dashboard's All listeners choice is saved in Kossé's configuration (`/api/preferences`) ([preferences](docs/evidence/preferences.md)).
+- Installed-binary acceptance audit, operator documentation and threat model ([S10](docs/evidence/S10.md)).
+
+### Known limitations
+
+- The native tray/window checklist and a real login cycle await a person at a desktop.
+- macOS on Apple silicon only; unsigned; no tap or public download.

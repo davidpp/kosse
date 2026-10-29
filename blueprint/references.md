@@ -38,4 +38,4 @@ Tray Stack inspired the product concept; PortDoc/Portbook informed the earlier f
 
 The earlier research inspected PortDoc source. Accordingly this project makes no strict clean-room claim. No PortDoc source/assets/skill text are copied into Kossé; implementation agents should work from these independent requirements and licensed library documentation, not consult PortDoc implementation for translation. Obtain appropriate advice before any distribution if provenance concerns arise.
 
-The planning step selected no dependencies and verified no runtime behavior; implementation evidence lives in `docs/evidence/`. The project is MIT-licensed and published at github.com/davidpp/stackscan.
+The planning step selected no dependencies and verified no runtime behavior; implementation evidence lives in `docs/evidence/`. The project is MIT-licensed and published at github.com/davidpp/kosse.
