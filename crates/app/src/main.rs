@@ -1,6 +1,7 @@
 //! `kosse` entry point: parses the command line, picks the mode (menu-bar app, `open`, `serve`,
-//! `list`, `config`, `doctor`, `startup`, the internal `window`), maps failures to exit codes (0
-//! success, 1 runtime failure, 2 usage error via clap).
+//! `list`, `url`, `port`, `config`, `doctor`, `startup`, the internal `window`), maps failures to
+//! exit codes (0 success, 1 runtime failure, 2 usage error via clap). The read commands `list`,
+//! `url` and `port` have their own codes (see `failure.rs`).
 
 /// `eprintln!` without its panic: diagnostics to a closed stderr (`kosse … 2>&-`, or a
 /// pipe whose reader exited) are dropped instead of aborting the process.
@@ -19,18 +20,22 @@ mod cli;
 mod config;
 mod customize;
 mod doctor;
+mod failure;
 mod guard;
 mod instance;
 mod launcher;
 mod list;
+mod markdown;
 mod menu;
 mod open;
 mod opener;
 mod preferences;
 mod prober;
+mod query;
 mod route;
 mod running;
 mod scheduler;
+mod scope;
 mod server;
 mod startup;
 mod text;
@@ -46,7 +51,6 @@ use kosse_core::{contract::InstanceMode, profiles::StoreError};
 
 use crate::{
     cli::{Cli, Command, ServeArgs},
-    list::ListError,
     running::Running,
     server::ServeError,
     tray::TrayError,
@@ -58,8 +62,6 @@ enum AppError {
     Runtime(#[source] io::Error),
     #[error(transparent)]
     Serve(#[from] ServeError),
-    #[error(transparent)]
-    List(#[from] ListError),
     #[error(transparent)]
     Config(#[from] config::ConfigError),
     #[error(transparent)]
@@ -82,9 +84,14 @@ enum AppError {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    // The window reports a failure to its owner, which says why; it writes no stderr line itself.
-    if let Some(Command::Window(args)) = &cli.command {
-        return window::run(args);
+    match &cli.command {
+        // The window reports a failure to its owner, which says why; it writes no stderr line
+        // itself.
+        Some(Command::Window(args)) => return window::run(args),
+        Some(Command::List(args)) => return list::run(args),
+        Some(Command::Url(args)) => return query::url(args),
+        Some(Command::Port(args)) => return query::port(args),
+        _ => {}
     }
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
@@ -100,11 +107,10 @@ fn run(cli: Cli) -> Result<(), AppError> {
         None => tray::run(&cli.app),
         Some(Command::Open(args)) => open::run(&args),
         Some(Command::Serve(args)) => runtime()?.block_on(serve(args)),
-        Some(Command::List(args)) => Ok(list::run(&args)?),
         Some(Command::Config(command)) => Ok(config::run(&command)?),
         Some(Command::Doctor(args)) => Ok(doctor::run(&args, &runtime()?)?),
         Some(Command::Startup(command)) => Ok(startup::run(&command)?),
-        Some(Command::Window(_)) => Ok(()),
+        Some(Command::Window(_) | Command::List(_) | Command::Url(_) | Command::Port(_)) => Ok(()),
     }
 }
 

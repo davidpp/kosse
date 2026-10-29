@@ -604,3 +604,57 @@ revision: number,
  * The last successful observation; `null` only when no scan has succeeded yet.
  */
 observation: Observation | null, scanner: ScannerStatus, };
+
+/**
+ * `kosse url --json`: the one endpoint of the named service (or port) that answered HTTP.
+ */
+export type UrlAnswer = { schemaVersion: number, 
+/**
+ * `http://localhost:<port>/`, or `https://` when the answer came over verified TLS.
+ */
+url: string, port: number, identity: ProcessIdentity, 
+/**
+ * `Project.root` of the service; `null` outside a project.
+ */
+project: string | null, 
+/**
+ * The configured service ID it matched; `null` when it has none.
+ */
+service: string | null, };
+
+export type PortState = "free" | "taken";
+
+/**
+ * `kosse port <n> --json`: who listens on a TCP port.
+ */
+export type PortAnswer = { schemaVersion: number, port: number, state: PortState, 
+/**
+ * `false` when other users' listeners (system services included) are hidden from this user,
+ * so `free` means "free as far as this user can see", never a definite free.
+ */
+otherUsersVisible: boolean, 
+/**
+ * When the observation answering this was taken, in Unix milliseconds.
+ */
+scannedAtMs: number, 
+/**
+ * The services listening on the port; empty when `free`.
+ */
+services: Array<Service>, 
+/**
+ * The projects those services run in.
+ */
+projects: Array<Project>, };
+
+export type CommandErrorCode = "notFound" | "ambiguous" | "noHttp" | "notInProject" | "projectUnknown" | "scanFailed" | "configUnavailable" | "outputFailed";
+
+/**
+ * What an agent-facing command prints on stderr with `--json` when it has no answer, shaped
+ * like the API's `ApiError`. The exit code carries the class (1 negative answer, 3 refused, 4
+ * could not observe); `error` says which case.
+ */
+export type CommandError = { error: CommandErrorCode, 
+/**
+ * A human-readable explanation; not meant for parsing.
+ */
+message: string, };

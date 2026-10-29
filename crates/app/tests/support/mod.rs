@@ -492,3 +492,93 @@ pub fn eventually<T>(timeout: Duration, mut condition: impl FnMut() -> Option<T>
         thread::sleep(Duration::from_millis(100));
     }
 }
+
+/// One GFM table of a command's Markdown output: the header cells and each row's cells,
+/// unescaped (`\|`, `\\` and `` \` `` back to the character).
+#[derive(Debug)]
+pub struct MarkdownTable {
+    pub headers: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+}
+
+impl MarkdownTable {
+    /// The cells of `row` by header name.
+    pub fn cell<'a>(&self, row: &'a [String], header: &str) -> &'a str {
+        let index = self
+            .headers
+            .iter()
+            .position(|name| name == header)
+            .unwrap_or_else(|| panic!("no column {header} in {:?}", self.headers));
+        &row[index]
+    }
+
+    /// The rows whose `header` cell is `value`.
+    pub fn rows_where(&self, header: &str, value: &str) -> Vec<&Vec<String>> {
+        self.rows
+            .iter()
+            .filter(|row| self.cell(row, header) == value)
+            .collect()
+    }
+}
+
+/// Every table in `text`, checked the way a GFM parser reads them: a header line, a delimiter
+/// line of `---` cells, then rows with exactly the header's column count, each line starting
+/// and ending with an unescaped `|`. Panics on anything else that starts with `|`, and on a
+/// line between rows that is not one: a hostile cell must not end a table early or add a row.
+pub fn markdown_tables(text: &str) -> Vec<MarkdownTable> {
+    let mut tables = Vec::new();
+    let mut lines = text.lines().peekable();
+    while let Some(line) = lines.next() {
+        if !line.starts_with('|') {
+            continue;
+        }
+        let headers = split_row(line);
+        let delimiter = split_row(
+            lines
+                .next()
+                .unwrap_or_else(|| panic!("no delimiter after {line:?}")),
+        );
+        assert_eq!(delimiter.len(), headers.len(), "delimiter of {line:?}");
+        assert!(
+            delimiter
+                .iter()
+                .all(|cell| cell.len() >= 3 && cell.chars().all(|c| c == '-')),
+            "not a delimiter row under {line:?}: {delimiter:?}"
+        );
+        let mut rows = Vec::new();
+        while let Some(row) = lines.next_if(|next| !next.is_empty()) {
+            let cells = split_row(row);
+            assert_eq!(cells.len(), headers.len(), "row {row:?} under {headers:?}");
+            rows.push(cells);
+        }
+        tables.push(MarkdownTable { headers, rows });
+    }
+    tables
+}
+
+fn split_row(line: &str) -> Vec<String> {
+    assert!(
+        line.starts_with('|') && line.ends_with('|') && !line.ends_with("\\|"),
+        "not a table row: {line:?}"
+    );
+    let mut cells = Vec::new();
+    let mut cell = String::new();
+    let mut escaped = false;
+    for character in line[1..].chars() {
+        match character {
+            _ if escaped => {
+                assert!(
+                    matches!(character, '|' | '\\' | '`'),
+                    "unexpected escape \\{character} in {line:?}"
+                );
+                cell.push(character);
+                escaped = false;
+            }
+            '\\' => escaped = true,
+            '`' => panic!("unescaped backtick (a code span) in {line:?}"),
+            '|' => cells.push(std::mem::take(&mut cell).trim().to_owned()),
+            _ => cell.push(character),
+        }
+    }
+    cells
+}
