@@ -16,7 +16,7 @@ You start dev servers from terminals, scripts and coding agents. A day later the
 
 <sub>Fixture processes from the browser suite (`bun run screenshots`).</sub>
 
-> **Status: v0.1.0, macOS on Apple silicon, unsigned.** Built and verified locally from the installed binary ([audit](docs/evidence/S10.md)); no published release yet. Two checks need a person at a desktop and are **pending**: the native tray and window checklist ([S08](docs/evidence/S08.md#human-checklist-for-the-kabane-human-task)) and a real login cycle with `kosse startup enable` ([S09](docs/evidence/S09.md#unverified-deferred-approval-gates)).
+> **Status: v0.1.1, macOS on Apple silicon, unsigned** ([releases](https://github.com/davidpp/kosse/releases)). Verified from the installed binary ([audit](docs/evidence/S10.md)). Two checks need a person at a desktop and are **pending**: the native tray and window checklist ([S08](docs/evidence/S08.md#human-checklist)) and a real login cycle with `kosse startup enable` ([S09](docs/evidence/S09.md#unverified-deferred-approval-gates)).
 
 ## What it does
 
@@ -58,7 +58,7 @@ Kossé is one self-contained executable with the dashboard built in; it needs no
 - **Local release from source** (with the [development setup](#development)):
 
   ```sh
-  bun run release:local    # artifacts/kosse-0.1.0-aarch64-apple-darwin.tar.gz + .sha256 + notices + manifest
+  bun run release:local    # artifacts/kosse-<version>-aarch64-apple-darwin.tar.gz + .sha256 + notices + manifest
   bun run install:local    # verifies it, installs ~/.local/bin/kosse (--prefix <dir> elsewhere)
   bun run uninstall:local  # removes exactly what it installed; keeps your configuration unless --purge
   ```

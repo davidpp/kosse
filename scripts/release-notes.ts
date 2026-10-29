@@ -32,8 +32,32 @@ await script(() => {
   const body = (end === -1 ? rest : rest.slice(0, end)).trim();
   if (body === "") fail(`CHANGELOG.md's ${version} section is empty`);
 
+  // Release notes render outside the repository: relative links point at the tagged tree.
+  const tree = `${repository()}/blob/v${version}/`;
+  const notes = body.replaceAll(
+    /\]\((?![a-z][a-z0-9+.-]*:|#)([^)\s]+)\)/gi,
+    (_, path: string) => `](${tree}${path})`,
+  );
+
   const out = values.get("--out") ?? join(artifactsDir, "RELEASE_NOTES.md");
   mkdirSync(dirname(out), { recursive: true });
-  writeFileSync(out, `${body}\n`);
+  writeFileSync(out, `${notes}\n`);
   process.stdout.write(`${version}\n`);
 });
+
+/** `repository` from the root Cargo.toml's `[workspace.package]`. */
+function repository(): string {
+  const manifest: unknown = Bun.TOML.parse(readFileSync(join(repoRoot, "Cargo.toml"), "utf8"));
+  const workspace =
+    typeof manifest === "object" && manifest !== null
+      ? Reflect.get(manifest, "workspace")
+      : undefined;
+  const pkg =
+    typeof workspace === "object" && workspace !== null
+      ? Reflect.get(workspace, "package")
+      : undefined;
+  const url = typeof pkg === "object" && pkg !== null ? Reflect.get(pkg, "repository") : undefined;
+  if (typeof url !== "string" || !url.startsWith("https://"))
+    fail("Cargo.toml has no https workspace repository");
+  return url.replace(/\/$/, "");
+}

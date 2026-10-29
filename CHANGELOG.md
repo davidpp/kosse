@@ -4,6 +4,10 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 
 ## Unreleased
 
+## 0.1.1 - 2026-10-29
+
+First published release: a GitHub Release with checksum and build provenance (0.1.0 was built and verified locally only, never tagged).
+
 ### Fixed
 
 - Dialogs in the dashboard window (Stop, Force, Customize, the removal confirmation) drew as a 2px sliver behind the backdrop in macOS's WKWebView; service rows overflowed the window horizontally between 768 and about 820 px wide ([S11](docs/evidence/S11.md)).
