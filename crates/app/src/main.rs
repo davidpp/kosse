@@ -1,8 +1,8 @@
 //! `kosse` entry point: parses the command line, picks the mode (menu-bar app, `open`, `serve`,
-//! `list`, `url`, `port`, `stop`, `force`, `config`, `profile`, `doctor`, `startup`, the internal
-//! `window`), maps failures to exit codes (0 success, 1 runtime failure, 2 usage error via clap).
-//! The agent commands `list`, `url`, `port`, `stop`, `force` and `profile` have their own codes
-//! (see `failure.rs`).
+//! `list`, `url`, `port`, `wait`, `stop`, `force`, `config`, `profile`, `doctor`, `startup`, the
+//! internal `window`), maps failures to exit codes (0 success, 1 runtime failure, 2 usage error
+//! via clap). The agent commands `list`, `url`, `port`, `wait`, `stop`, `force` and `profile`
+//! have their own codes (see `failure.rs`).
 
 /// `eprintln!` without its panic: diagnostics to a closed stderr (`kosse … 2>&-`, or a
 /// pipe whose reader exited) are dropped instead of aborting the process.
@@ -21,6 +21,7 @@ mod cli;
 mod config;
 mod customize;
 mod doctor;
+mod events;
 mod failure;
 mod guard;
 mod instance;
@@ -43,6 +44,7 @@ mod startup;
 mod stop;
 mod text;
 mod tray;
+mod wait;
 mod window;
 #[cfg(debug_assertions)]
 mod window_control;
@@ -94,6 +96,7 @@ fn main() -> ExitCode {
         Some(Command::List(args)) => return list::run(args),
         Some(Command::Url(args)) => return query::url(args),
         Some(Command::Port(args)) => return query::port(args),
+        Some(Command::Wait(args)) => return wait::run(args),
         Some(Command::Profile(command)) => return profile::run(command),
         Some(Command::Stop(args)) => return stop::run(args, stop::Verb::Stop),
         Some(Command::Force(args)) => return stop::run(args, stop::Verb::Force),
@@ -123,6 +126,7 @@ fn run(cli: Cli) -> Result<(), AppError> {
             | Command::Port(_)
             | Command::Stop(_)
             | Command::Force(_)
+            | Command::Wait(_)
             | Command::Profile(_),
         ) => Ok(()),
     }

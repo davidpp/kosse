@@ -4,7 +4,7 @@
 //   kosse-<version>-aarch64-apple-darwin.tar.gz   kosse (embedded UI), LICENSE,
 //                                                  THIRD_PARTY_NOTICES.md, INSTALL.md, MANIFEST.json
 //   kosse-<version>-aarch64-apple-darwin.tar.gz.sha256
-//   kosse.rb                                       unpublished Homebrew formula for that archive
+//   kosse.rb                                       Homebrew formula for that archive
 import {
   cpSync,
   existsSync,
@@ -152,7 +152,7 @@ await script(() => {
   writeFileSync(`${archive}.sha256`, `${digest}  ${tarball}\n`);
   run("/usr/bin/shasum", ["-a", "256", "-c", `${tarball}.sha256`], { cwd: artifactsDir });
 
-  // 5. The unpublished Homebrew formula for exactly this archive.
+  // 5. The Homebrew formula for exactly this archive (the release workflow commits it to the tap).
   const formula = readFileSync(join(repoRoot, "packaging", "homebrew", "kosse.rb.tmpl"), "utf8")
     .replaceAll("{{url}}", url)
     .replaceAll("{{version}}", version)
@@ -167,7 +167,7 @@ await script(() => {
       "",
       `${archive}  ${size} B${dirty ? "  (built from uncommitted changes)" : ""}`,
       `${archive}.sha256  ${digest}`,
-      `${join(artifactsDir, "kosse.rb")}  unpublished Homebrew formula${values.has("--url") ? "" : " (URL placeholder; pass --url)"}`,
+      `${join(artifactsDir, "kosse.rb")}  Homebrew formula${values.has("--url") ? "" : " (URL placeholder; pass --url)"}`,
       "",
     ].join("\n"),
   );

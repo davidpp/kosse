@@ -47,6 +47,11 @@ pub enum Command {
     /// Send `SIGKILL` to a process whose `kosse stop` ended still running on the same instance,
     /// within the offer printed then (60 s, once). Exit codes as for `stop`.
     Force(ActionArgs),
+    /// Wait until a service or port listens, answers HTTP (`--http`) or is gone (`--gone`),
+    /// following the running instance's snapshots or scanning every second. Prints the last
+    /// observation either way; exits 0 when the condition holds, 1 on timeout or when it can never
+    /// hold (not HTTP), 3 when the endpoint may never be probed.
+    Wait(WaitArgs),
     /// Project profiles: the schema, the configuration file, moved projects.
     #[command(subcommand)]
     Config(ConfigCommand),
@@ -261,6 +266,41 @@ pub struct UrlArgs {
     pub target: String,
 
     /// Print the `UrlAnswer` JSON record; errors as a `CommandError` on stderr.
+    #[arg(long)]
+    pub json: bool,
+
+    #[command(flatten)]
+    pub scope: Scope,
+
+    #[command(flatten)]
+    pub instance: InstanceArgs,
+}
+
+#[derive(Debug, clap::Args)]
+#[command(group(clap::ArgGroup::new("target").required(true).args(["service", "port"])))]
+pub struct WaitArgs {
+    /// A configured service (ID or name).
+    pub service: Option<String>,
+
+    /// A TCP port.
+    #[arg(long)]
+    pub port: Option<u16>,
+
+    /// Wait for any HTTP response (404 and 500 included), asking for probes as `POST /api/probe`
+    /// does: loopback, the user's own processes, at most one a second, backing off to one every
+    /// 5 s.
+    #[arg(long, conflicts_with = "gone")]
+    pub http: bool,
+
+    /// Wait until no matching process listens.
+    #[arg(long)]
+    pub gone: bool,
+
+    /// How long to wait: `500ms`, `30s`, `2m`, or seconds.
+    #[arg(long, value_name = "DURATION", default_value = "30s", value_parser = crate::wait::parse_duration)]
+    pub timeout: std::time::Duration,
+
+    /// Print the `WaitAnswer` JSON record; errors as a `CommandError` on stderr.
     #[arg(long)]
     pub json: bool,
 

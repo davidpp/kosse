@@ -20,7 +20,7 @@ built from.
 
 ## Install
 
-Installed with Homebrew? Skip this.
+Installed with Homebrew (`brew install davidpp/tap/kosse`)? Skip this.
 
 ```sh
 tar -xzf kosse-{{version}}-aarch64-apple-darwin.tar.gz

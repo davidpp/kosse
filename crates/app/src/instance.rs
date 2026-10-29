@@ -36,7 +36,7 @@ use crate::{guard::TOKEN_HEADER, route::Route};
 
 /// Connect, request and response together, per request. A local instance answers in
 /// milliseconds; a busy one's first snapshot can take a scan.
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(6);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(6);
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 /// Snapshots of thousands of listeners stay well below this.
 const BODY_LIMIT: usize = 32 * 1024 * 1024;
@@ -124,7 +124,7 @@ pub async fn show_window(instance: &Instance, route: Route) -> Result<(), Instan
         route: route.into(),
     })
     .map_err(|error| failed(error.to_string()))?;
-    match post(instance, "/api/window", body, REQUEST_TIMEOUT).await {
+    match post(instance.addr, "/api/window", body, REQUEST_TIMEOUT).await {
         Ok((StatusCode::NO_CONTENT, _)) => Ok(()),
         Ok((status, body)) => Err(failed(format!(
             "{status} {}",
@@ -145,31 +145,26 @@ pub enum PostError {
     NoAnswer,
 }
 
-/// A same-origin JSON `POST` of `body` to `path`, as the dashboard sends it: the session token
-/// from `GET /api/session` first, then the request with the instance's exact `Host` and
-/// `Origin`, `Content-Type: application/json` and the token. `timeout` bounds the `POST`.
+/// A same-origin JSON `POST` of `body` to `path` on the verified instance at `addr`, as the
+/// dashboard sends it: the session token from `GET /api/session` first, then the request with
+/// the instance's exact `Host` and `Origin`, `Content-Type: application/json` and the token.
+/// `timeout` bounds the `POST`.
 pub async fn post(
-    instance: &Instance,
+    addr: SocketAddr,
     path: &str,
     body: Vec<u8>,
     timeout: Duration,
 ) -> Result<(StatusCode, Bytes), PostError> {
-    let (status, session) = request(
-        instance.addr,
-        Method::GET,
-        "/api/session",
-        None,
-        REQUEST_TIMEOUT,
-    )
-    .await
-    .ok_or_else(|| PostError::Session("no answer".to_owned()))?;
+    let (status, session) = request(addr, Method::GET, "/api/session", None, REQUEST_TIMEOUT)
+        .await
+        .ok_or_else(|| PostError::Session("no answer".to_owned()))?;
     if status != StatusCode::OK {
         return Err(PostError::Session(format!("answered {status}")));
     }
     let session: Session =
         serde_json::from_slice(&session).map_err(|error| PostError::Session(error.to_string()))?;
     request(
-        instance.addr,
+        addr,
         Method::POST,
         path,
         Some((&session.token, body)),

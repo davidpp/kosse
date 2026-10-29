@@ -33,7 +33,7 @@ use crate::{
     actions::FORCE_OFFER_TTL,
     cli::{ActionArgs, DEFAULT_PORT},
     failure::{self, Failure},
-    instance::{self, Found, Instance, PostError},
+    instance::{self, Found, Instance, InstanceError, PostError},
     list,
     markdown::{Table, UNKNOWN},
     scope,
@@ -192,9 +192,21 @@ impl Client {
                 ));
             }
             Found::Refused(error) => {
+                // `InstanceError`'s own text advises `--port`, for starting a server.
+                let reason = match error {
+                    InstanceError::NotKosse(port) => {
+                        format!("127.0.0.1:{port} is in use by a process that is not Kossé")
+                    }
+                    InstanceError::OtherUser(port) => format!(
+                        "127.0.0.1:{port} is held by another user's process (or one whose owner cannot be read), and Kossé never uses another user's instance"
+                    ),
+                    other => other.to_string(),
+                };
                 return Err(Failure::new(
                     CommandErrorCode::NoInstance,
-                    format!("{error}; stop and force act only through a verified Kossé instance"),
+                    format!(
+                        "{reason}; nothing was signalled: stop and force act only through a verified Kossé instance, so point --instance-port at yours (`kosse serve --no-open --port <free port>` starts one)"
+                    ),
                 ));
             }
         };
@@ -224,7 +236,7 @@ impl Client {
         let body = serde_json::to_vec(request)
             .map_err(|error| Failure::new(CommandErrorCode::ActionFailed, error.to_string()))?;
         let posted = self.runtime.block_on(instance::post(
-            &self.instance,
+            self.instance.addr,
             verb.path(),
             body,
             ACTION_TIMEOUT,
@@ -284,7 +296,7 @@ impl Client {
     /// refresh limit allows one, else the snapshot read when connecting.
     fn fresh_observation(&self) -> Observation {
         let posted = self.runtime.block_on(instance::post(
-            &self.instance,
+            self.instance.addr,
             "/api/refresh",
             b"{}".to_vec(),
             ACTION_TIMEOUT,

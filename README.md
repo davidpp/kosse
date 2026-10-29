@@ -37,7 +37,15 @@ You start dev servers from terminals, scripts and coding agents. A day later the
 
 Kossé is one self-contained executable with the dashboard built in; it needs no Bun or Node at runtime. It is **not signed or notarized** (Apple silicon's mandatory signature is the linker's ad-hoc one). A binary fetched with `curl` and extracted with `tar` carries no quarantine attribute, so it runs as is; a browser download is quarantined and macOS refuses to open it.
 
-- **From GitHub Releases** (recommended). The installer downloads the latest [release](https://github.com/davidpp/kosse/releases) with `curl`, refuses it unless its SHA-256 matches, verifies its build provenance when an authenticated [`gh`](https://cli.github.com) is available, and installs `~/.local/bin/kosse`:
+- **Homebrew** (recommended; `brew upgrade` keeps it current):
+
+  ```sh
+  brew install davidpp/tap/kosse
+  ```
+
+  The [tap](https://github.com/davidpp/homebrew-tap)'s formula is committed by this repository's release workflow and pins each release archive by SHA-256. In a `Brewfile`: `tap "davidpp/tap"` and `brew "davidpp/tap/kosse", trusted: true` (`brew bundle` refuses formulae from third-party taps it has not been told to trust).
+
+- **From GitHub Releases**, without Homebrew. The installer downloads the latest [release](https://github.com/davidpp/kosse/releases) with `curl`, refuses it unless its SHA-256 matches, verifies its build provenance when an authenticated [`gh`](https://cli.github.com) is available, and installs `~/.local/bin/kosse`:
 
   ```sh
   curl -fsSL https://github.com/davidpp/kosse/releases/latest/download/install.sh | sh
@@ -65,8 +73,6 @@ Kossé is one self-contained executable with the dashboard built in; it needs no
 
   Only for an archive whose origin and checksum you trust, `xattr -d com.apple.quarantine kosse` lifts Gatekeeper's check after a browser download.
 
-- **Homebrew (no public tap yet).** Each release attaches `kosse.rb`, a formula for exactly that release's archive (from [`packaging/homebrew/kosse.rb.tmpl`](packaging/homebrew/kosse.rb.tmpl)). To use it: `brew tap-new <you>/kosse`, copy `kosse.rb` into that tap's `Formula/`, then `brew install <you>/kosse/kosse`.
-
 If `~/.local/bin` is not on your `PATH` (it is not on a stock Mac): `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile`, then open a new terminal. `kosse doctor` checks the setup.
 
 ## Usage
@@ -79,6 +85,7 @@ If `~/.local/bin` is not on your `PATH` (it is not on a stock Mac): `echo 'expor
 | `kosse list [--json]`                                     | One Markdown table row per listening port (project, branch, configured service, port, HTTP state, process, `PID.START`, age), then configured services nothing matches. `--here` (this worktree), `--project <dir>`, `--port <n>` and `--service <name>` narrow it. Uses the running instance's snapshot when there is one, otherwise scans once. `--json` prints the `Snapshot` contract.                                                                     |
 | `kosse url <service\|port>`                               | Prints only `http(s)://localhost:<port>/` of the service that answered HTTP (`curl "$(kosse url web --here)health"`); exits 1 with the probe state otherwise.                                                                                                                                                                                                                                                                                                  |
 | `kosse port <n>`                                          | `free` (as far as this user can see) or the owning process, project and service.                                                                                                                                                                                                                                                                                                                                                                               |
+| `kosse wait --port <n> \| <service>`                      | Waits until it listens, answers HTTP (`--http`) or is gone (`--gone`), up to `--timeout` (30 s); prints the last observation and exits 0 when met, 1 otherwise.                                                                                                                                                                                                                                                                                                |
 | `kosse stop <pid>.<start> --ports <p,…>`                  | Stops one process through the running instance (`kosse serve` or the menu-bar app), as the dashboard's Stop does: the identity and every port it listens on (from `kosse list`) are the confirmation. Given a service name, port or PID, or a stale identity or port set, it signals nothing and prints the exact command that would confirm what runs now. `kosse force` (same arguments) sends `SIGKILL` only within the offer a still-running stop printed. |
 | `kosse doctor [--json]`                                   | Checks platform, binary and `PATH`, configuration, who holds the port, `git`, login startup. Changes nothing.                                                                                                                                                                                                                                                                                                                                                  |
 | `kosse startup enable\|disable\|status`                   | Opt-in login startup: a per-user LaunchAgent running this `kosse --no-open` at each login (no `KeepAlive`, so Quit stays quit). Off until enabled.                                                                                                                                                                                                                                                                                                             |
@@ -87,7 +94,7 @@ If `~/.local/bin` is not on your `PATH` (it is not on a stock Mac): `echo 'expor
 
 **Tray menu:** projects with their branch; each service as `name :port` with Open (only if it answered HTTP), Inspect and Stop… (both open the dashboard window at that service; Stop… is the dashboard's own confirmation); Open Dashboard; Quit Kossé. Quit stops Kossé only, never the services it shows. The icon switches to its attention variant only when discovery fails or stalls.
 
-Agent commands (`list`, `url`, `port`, `profile`, `stop`, `force`) exit 0 with an answer, 1 for a negative answer (for `stop`: still running, respawned or port taken), 2 on a usage error (including `--here` outside a project), 3 when refused and 4 when nothing could be observed; with `--json`, failures are a `CommandError` on stderr. Every flag and route is documented in [CONTRIBUTING.md](CONTRIBUTING.md#running-the-binary). Optional project names and links live in a central profile ("Customize this project" in the dashboard) or a read-only `kosse.json` in the repository ([schema](docs/kosse.schema.json), [format](blueprint/project-metadata.md)).
+Agent commands (`list`, `url`, `port`, `wait`, `profile`, `stop`, `force`) exit 0 with an answer, 1 for a negative answer (for `stop`: still running, respawned or port taken), 2 on a usage error (including `--here` outside a project), 3 when refused and 4 when nothing could be observed; with `--json`, failures are a `CommandError` on stderr. Every flag and route is documented in [CONTRIBUTING.md](CONTRIBUTING.md#running-the-binary). Optional project names and links live in a central profile ("Customize this project" in the dashboard) or a read-only `kosse.json` in the repository ([schema](docs/kosse.schema.json), [format](blueprint/project-metadata.md)).
 
 ## Architecture
 
