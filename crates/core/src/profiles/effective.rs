@@ -211,12 +211,7 @@ pub fn assign(
                 })
                 .map(|(index, _)| index)
                 .collect();
-            // An entry naming the process is the more specific one: it takes a child (workerd)
-            // from a directory-wide entry rather than making it ambiguous.
-            let names_process = |index: &usize| names_process(&project.services[*index]);
-            if matching.iter().any(names_process) {
-                matching.retain(names_process);
-            }
+            prefer_process_entries(&mut matching, &project.services);
             for &index in &matching {
                 project.services[index]
                     .matched
@@ -355,6 +350,30 @@ fn port_matches(entry: &ConfiguredService, service: &Service) -> bool {
             .iter()
             .any(|endpoint| endpoint.port == port),
         None => true,
+    }
+}
+
+/// An entry naming the process is the more specific one: it takes a child (workerd) from a
+/// directory-wide entry rather than making it ambiguous. Specificity never overrides precedence:
+/// when a repository entry naming the process would take it from a central entry, all stay (the
+/// process is ambiguous), so a `kosse.json` cannot silently displace the user's own profile.
+/// `process` with `port` is no more specific than `process` alone.
+fn prefer_process_entries(matching: &mut Vec<usize>, entries: &[ConfiguredService]) {
+    let (specific, general): (Vec<usize>, Vec<usize>) = matching
+        .iter()
+        .partition(|&&index| names_process(&entries[index]));
+    if specific.is_empty() || general.is_empty() {
+        return;
+    }
+    let source = |index: &usize| entries[*index].sources.matcher;
+    let displaces_central = general
+        .iter()
+        .any(|index| source(index) == Some(ProfileSource::Central))
+        && specific
+            .iter()
+            .any(|index| source(index) == Some(ProfileSource::Repository));
+    if !displaces_central {
+        *matching = specific;
     }
 }
 
@@ -768,6 +787,50 @@ mod tests {
     )]
     fn matched(id: &str) -> Option<ProfileMatch> {
         Some(ProfileMatch::Matched { service: id.into() })
+    }
+
+    #[test]
+    fn a_repository_process_entry_never_displaces_a_central_entry() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical");
+        let mut observation = stack(&root);
+        let mut central = ProjectProfile::new();
+        central.services = serde_json::from_value(serde_json::json!({
+            "web": {"match": {"cwd": "."}, "protocol": "http"}
+        }))
+        .expect("central");
+        let mut repository = ProjectProfile::new();
+        repository.services = serde_json::from_value(serde_json::json!({
+            "node": {"match": {"process": "node"}}
+        }))
+        .expect("repository");
+        let root_text = root.to_string_lossy().into_owned();
+        let mut metadata = [merge(&root_text, Some(&central), Some(&repository), true)];
+        assign(&mut observation, &mut metadata, Some(501));
+        assert_eq!(
+            observation.services[0].profile,
+            Some(ProfileMatch::Ambiguous {
+                services: vec!["node".into(), "web".into()]
+            }),
+            "a visible ambiguity, as before S21, not a silent takeover"
+        );
+        assert_eq!(
+            observation.services[1].profile,
+            matched("web"),
+            "workerd is not `node`"
+        );
+
+        // Both from the central profile: the process entry is more specific.
+        let mut both = central.clone();
+        both.services.extend(repository.services.clone());
+        let mut metadata = [merge(&root_text, Some(&both), None, true)];
+        assign(&mut observation, &mut metadata, Some(501));
+        assert_eq!(observation.services[0].profile, matched("node"));
+
+        // A central process entry may take a process from a repository directory entry.
+        let mut metadata = [merge(&root_text, Some(&repository), Some(&central), true)];
+        assign(&mut observation, &mut metadata, Some(501));
+        assert_eq!(observation.services[0].profile, matched("node"));
     }
 
     #[test]
