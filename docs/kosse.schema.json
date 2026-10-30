@@ -268,7 +268,7 @@
           ]
         },
         "probePath": {
-          "description": "Origin-relative path requested by the HTTP probe instead of `/`, only on a loopback\nendpoint of the user's own process where `GET /` already got an HTTP response.",
+          "description": "Origin-relative health path requested by the HTTP probe instead of `/` on the service's\nsummary endpoints (only the matched port, when `match` names one); an endpoint's own\n`probePath` wins. Requested only on a loopback endpoint of the user's own process where\n`GET /` already got an HTTP response.",
           "type": [
             "string",
             "null"

@@ -290,7 +290,7 @@ pub enum CpuUsage {
 }
 
 /// One port of a service, with every address it is bound to on that port.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Endpoint {
     pub protocol: TransportProtocol,
@@ -302,9 +302,38 @@ pub struct Endpoint {
     /// Bounded HTTP enrichment. Listening is a fact; this only says what an HTTP request saw.
     pub http: HttpProbe,
     /// Where views show this endpoint and what it is called. Display only: it never changes
-    /// identity, eligibility, binds or which endpoints are probed.
-    #[serde(default)]
+    /// identity, eligibility, binds or which endpoints are probed. Missing from an older
+    /// instance's snapshot, it reads as [`EndpointDisplay::inferred`] for the port, as a scan
+    /// without a profile would show it.
     pub display: EndpointDisplay,
+}
+
+/// [`Endpoint`] as read, with `display` optional.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EndpointWire {
+    protocol: TransportProtocol,
+    port: u16,
+    bind_addresses: Vec<String>,
+    exposure: Exposure,
+    http: HttpProbe,
+    display: Option<EndpointDisplay>,
+}
+
+impl<'de> Deserialize<'de> for Endpoint {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = EndpointWire::deserialize(deserializer)?;
+        Ok(Self {
+            display: wire
+                .display
+                .unwrap_or_else(|| EndpointDisplay::inferred(wire.port)),
+            protocol: wire.protocol,
+            port: wire.port,
+            bind_addresses: wire.bind_addresses,
+            exposure: wire.exposure,
+            http: wire.http,
+        })
+    }
 }
 
 /// An endpoint's name and tier, resolved from the matched profile entry or inferred.
@@ -638,4 +667,28 @@ fn write_list<T: fmt::Display>(f: &mut fmt::Formatter<'_>, items: &[T]) -> fmt::
         write!(f, "{item}")?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 0.2.1 instance's snapshot has no `display`: the CLI must still never offer its
+    /// inspector as the service's URL.
+    #[test]
+    fn an_endpoint_without_display_reads_as_the_scanner_would_infer_it() {
+        let read = |port: u16| -> Endpoint {
+            serde_json::from_value(serde_json::json!({
+                "protocol": "tcp",
+                "port": port,
+                "bindAddresses": ["127.0.0.1"],
+                "exposure": "loopback",
+                "http": {"state": "pending"}
+            }))
+            .expect("older endpoint")
+        };
+        assert_eq!(read(9229).display, EndpointDisplay::inferred(9229));
+        assert!(!read(9229).display.is_summary());
+        assert!(read(3000).display.is_summary());
+    }
 }

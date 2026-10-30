@@ -174,8 +174,10 @@ protocol?: DeclaredProtocol,
  */
 links?: Array<LinkProfile>, 
 /**
- * Origin-relative path requested by the HTTP probe instead of `/`, only on a loopback
- * endpoint of the user's own process where `GET /` already got an HTTP response.
+ * Origin-relative health path requested by the HTTP probe instead of `/` on the service's
+ * summary endpoints (only the matched port, when `match` names one); an endpoint's own
+ * `probePath` wins. Requested only on a loopback endpoint of the user's own process where
+ * `GET /` already got an HTTP response.
  */
 probePath?: string, 
 /**
@@ -462,7 +464,9 @@ bindAddresses: Array<string>, exposure: Exposure,
 http: HttpProbe, 
 /**
  * Where views show this endpoint and what it is called. Display only: it never changes
- * identity, eligibility, binds or which endpoints are probed.
+ * identity, eligibility, binds or which endpoints are probed. Missing from an older
+ * instance's snapshot, it reads as [`EndpointDisplay::inferred`] for the port, as a scan
+ * without a profile would show it.
  */
 display: EndpointDisplay, };
 

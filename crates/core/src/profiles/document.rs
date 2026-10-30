@@ -88,8 +88,10 @@ pub struct ServiceProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(length(max = 16))]
     pub links: Option<Vec<LinkProfile>>,
-    /// Origin-relative path requested by the HTTP probe instead of `/`, only on a loopback
-    /// endpoint of the user's own process where `GET /` already got an HTTP response.
+    /// Origin-relative health path requested by the HTTP probe instead of `/` on the service's
+    /// summary endpoints (only the matched port, when `match` names one); an endpoint's own
+    /// `probePath` wins. Requested only on a loopback endpoint of the user's own process where
+    /// `GET /` already got an HTTP response.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         length(max = 512),
