@@ -12,7 +12,7 @@
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { startKosseApp } from "../e2e/support/processes.ts";
+import { kosseCommand, startKosseApp } from "../e2e/support/processes.ts";
 import { createWorld, type World } from "../e2e/support/world.ts";
 import { build, control, evaluate, resize, screenLocked, writeOpener } from "./app.ts";
 
@@ -369,6 +369,55 @@ async function flows(world: World, opened: string) {
     renamed === true,
     await page(`[...document.querySelectorAll("section h2")].map((h) => h.textContent)`),
   );
+  // Customize with your agent: core's prompt, then an agent's `kosse profile set` while the
+  // window is open. An untouched draft follows it; an edited one is kept, shows the change and
+  // reloads on request. (Copy writes the person's real clipboard, so it is checked by hand.)
+  const agentSets = (name: string) =>
+    kosseCommand(
+      world.configDir,
+      [
+        "profile",
+        "set",
+        world.storefront,
+        "--file",
+        "-",
+        "--instance-port",
+        String(world.server.port),
+      ],
+      JSON.stringify({ version: 1, name, services: {} }),
+    ).status;
+  const nameField = `document.querySelector("dialog[open] input").value`;
+  await click(`section:has(${row("vite")}) button`, "Customize");
+  await dialogVisible("Customize with your agent", /^Customize /);
+  const prompt = kosseCommand(world.configDir, ["profile", "prompt", world.storefront]).stdout;
+  check(
+    "Customize shows core's prompt, as the CLI prints it",
+    (await until(`document.querySelector("dialog[open] textarea").value`)) === prompt,
+  );
+  check("an agent applies a profile", agentSets(`${NAME}-agent`) === 0);
+  check(
+    "an untouched draft follows the agent's profile",
+    (await until(`${nameField} === ${JSON.stringify(`${NAME}-agent`)}`, 15_000)) === true,
+  );
+  await click("dialog[open] input");
+  await type("x");
+  await until(`${nameField} === ${JSON.stringify(`${NAME}-agentx`)}`, 3000);
+  check("an agent applies another profile", agentSets(NAME) === 0);
+  const kept = await until(
+    `document.querySelector("dialog[open] [role=alert]") && ${nameField} === ${JSON.stringify(`${NAME}-agentx`)}`,
+    15_000,
+  );
+  check("an edited draft is kept and the outside change shown", kept === true);
+  await click("dialog[open] [role=alert] button", "Reload profile");
+  check(
+    "Reload shows the agent's profile",
+    (await until(
+      `!document.querySelector("dialog[open] [role=alert]") && ${nameField} === ${JSON.stringify(NAME)}`,
+      3000,
+    )) === true,
+  );
+  await closeDialog("Customize with your agent");
+
   // Profile writes are limited to one per second (api.rs WRITE_MIN_INTERVAL); a person never
   // removes within a second of saving, and a faster runner would only test the refusal.
   await delay(1100);

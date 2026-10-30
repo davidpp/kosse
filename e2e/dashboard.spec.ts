@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { isRunning } from "./support/processes.ts";
+import { isRunning, kosseCommand } from "./support/processes.ts";
 import { fingerprint, git } from "./support/repos.ts";
 import { createWorld, type World } from "./support/world.ts";
 
@@ -24,19 +24,28 @@ test.afterAll(async () => {
 test.beforeEach(async ({ page }) => {
   // Every CSP violation (an inline style or script, a remote asset) fails the test. WebKit's
   // automation (Playwright drives its Web Inspector) adds an empty `<style>` of its own; a
-  // violation without a source file is discounted once per such injected element.
+  // violation without a source file is discounted once per such injected element. Playwright's
+  // WebKit also reports `style-src-attr` against every `<select>` the page inserts, from the
+  // engine's own control rendering: a bare `<select>` built by a script on a page with no inline
+  // style reproduces it, so those are not the page's styles.
   await page.addInitScript(() => {
     const seen: { directive: string; source: string }[] = [];
     let automation = 0;
     Object.defineProperty(window, "cspReport", {
       value: () => seen.filter((item) => item.source !== "" || automation-- <= 0),
     });
-    document.addEventListener("securitypolicyviolation", (event) =>
+    document.addEventListener("securitypolicyviolation", (event) => {
+      if (
+        event.violatedDirective === "style-src-attr" &&
+        event.target instanceof HTMLSelectElement &&
+        !event.target.hasAttribute("style")
+      )
+        return;
       seen.push({
         directive: `${event.violatedDirective} ${event.blockedURI}`,
         source: event.sourceFile,
-      }),
-    );
+      });
+    });
     new MutationObserver((records) => {
       for (const record of records) {
         for (const node of record.addedNodes) {
@@ -385,6 +394,65 @@ test("customize a project: saved centrally, kept on reload, repository untouched
   );
   expect(await fingerprint(world.storefront)).toEqual(files);
   expect(git(world.storefront, "status", "--porcelain")).toBe(status);
+});
+
+test("customize opens on core's agent prompt and reconciles an agent's change with the draft", async ({
+  page,
+}) => {
+  const root = world.storefront;
+  const config = () => readFile(join(world.configDir, "config.json"), "utf8");
+  // An agent's apply: the stored profile (an earlier test may have saved one), renamed.
+  const agentSets = async (name: string) => {
+    const stored = JSON.parse(await config().catch(() => "{}")) as {
+      projects?: Record<string, object>;
+    };
+    const profile = { version: 1, services: {}, ...stored.projects?.[root], name };
+    const set = kosseCommand(
+      world.configDir,
+      ["profile", "set", root, "--file", "-", "--instance-port", String(world.server.port)],
+      JSON.stringify(profile),
+    );
+    expect(set.status, set.stderr).toBe(0);
+  };
+
+  await open(page);
+  await card(page, root).getByRole("button", { name: "Customize" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("heading", { name: "Customize with your agent" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Copy prompt" })).toBeFocused();
+  // The window shows the prompt core generates, exactly as the CLI prints it.
+  const cli = kosseCommand(world.configDir, ["profile", "prompt", root]);
+  expect(cli.status, cli.stderr).toBe(0);
+  await expect(dialog.getByLabel("Prompt for your coding agent")).toHaveValue(cli.stdout);
+  await expect(dialog.getByRole("heading", { name: "Or edit fields" })).toBeVisible();
+  const name = dialog.getByLabel("Project name");
+
+  // Untouched draft: the form follows the agent's profile.
+  await agentSets("Storefront (agent)");
+  await expect(name).toHaveValue("Storefront (agent)", { timeout: 15_000 });
+  await expect(dialog.getByText("Updated: the profile was changed outside")).toBeVisible();
+
+  // Edited draft: kept, the change is shown, and saving it would overwrite, so it is refused.
+  await name.fill("Mine");
+  await agentSets("Storefront (agent 2)");
+  const changed = dialog.getByRole("alert");
+  await expect(changed).toContainText("changed outside this window", { timeout: 15_000 });
+  await expect(name).toHaveValue("Mine");
+  const refused = page.waitForResponse(
+    (response) => response.url().endsWith("/api/profile") && response.request().method() === "POST",
+  );
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  expect((await refused).status()).toBe(409);
+  await expect(changed).toContainText("Your edits are kept and were not saved");
+  await expect(dialog).toBeVisible();
+  expect(await config()).toContain('"name": "Storefront (agent 2)"');
+  expect(await config()).not.toContain('"Mine"');
+
+  await dialog.getByRole("button", { name: "Reload profile" }).click();
+  await expect(name).toHaveValue("Storefront (agent 2)");
+  await expect(changed).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
 });
 
 test("All listeners is saved centrally and kept on reload, repository untouched", async ({
