@@ -9,7 +9,7 @@ use ts_rs::TS;
 
 use crate::{
     model::ProcessIdentity,
-    profiles::document::{DeclaredProtocol, LinkKind, ServiceMatch},
+    profiles::document::{DeclaredProtocol, EndpointShow, LinkKind, ServiceMatch},
 };
 
 /// Where an effective value came from. Precedence: central over repository over inference; a
@@ -52,6 +52,14 @@ pub struct ConfiguredService {
     pub matcher: Option<ServiceMatch>,
     pub protocol: Option<DeclaredProtocol>,
     pub probe_path: Option<String>,
+    /// Listed endpoints, ordered by port; empty when none are configured. Each observed
+    /// endpoint's resolved display is on `Endpoint.display`. (Defaults keep an older instance's
+    /// snapshot of the same schema version readable.)
+    #[serde(default)]
+    pub endpoints: Vec<ConfiguredEndpoint>,
+    /// How endpoints `endpoints` does not list are shown; `null` when not configured.
+    #[serde(default)]
+    pub other_endpoints: Option<EndpointShow>,
     /// Empty when none are configured.
     pub links: Vec<EffectiveLink>,
     /// Suppressed: it matches nothing and only shows that an entry was turned off.
@@ -73,8 +81,23 @@ pub struct ServiceSources {
     pub matcher: Option<ProfileSource>,
     pub protocol: Option<ProfileSource>,
     pub probe_path: Option<ProfileSource>,
+    #[serde(default)]
+    pub endpoints: Option<ProfileSource>,
+    #[serde(default)]
+    pub other_endpoints: Option<ProfileSource>,
     pub links: Option<ProfileSource>,
     pub disabled: Option<ProfileSource>,
+}
+
+/// One endpoint as a profile lists it: unset fields stay `null` (a listed endpoint without
+/// `show` is shown in the summary).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfiguredEndpoint {
+    pub port: u16,
+    pub name: Option<String>,
+    pub show: Option<EndpointShow>,
+    pub probe_path: Option<String>,
 }
 
 /// A configured link, validated: `http(s)`, no credentials, host shown separately.

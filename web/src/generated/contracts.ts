@@ -88,6 +88,28 @@ export type LinkKind = "local" | "external" | "tunnel";
 export type DeclaredProtocol = "http" | "https" | "tcp";
 
 /**
+ * Where an endpoint is shown. Display only: it never changes identity, eligibility or binds.
+ */
+export type EndpointShow = "summary" | "details";
+
+/**
+ * One listed endpoint of a service. At least one field is set.
+ */
+export type EndpointProfile = { 
+/**
+ * Shown with the port: `Site`, `Inspector`.
+ */
+name?: string, 
+/**
+ * `summary` (the default for a listed endpoint) or `details`.
+ */
+show?: EndpointShow, 
+/**
+ * The health path of this endpoint, on either tier; wins over the service's `probePath`.
+ */
+probePath?: string, };
+
+/**
  * A link shown with the service, opened only on user action.
  */
 export type LinkProfile = { label: string, 
@@ -102,7 +124,12 @@ url: string,
 kind?: LinkKind, };
 
 /**
- * Narrows the project's processes to this service. Both criteria must hold. A port alone
+ * The default for endpoints `endpoints` does not list.
+ */
+export type OtherEndpoints = { show: EndpointShow, };
+
+/**
+ * Narrows the project's processes to this service. Every criterion given must hold. A port alone
  * matches only processes of this project: it never attributes another project's process.
  * Unknown criteria are refused rather than ignored, since ignoring one would widen the match.
  */
@@ -116,7 +143,12 @@ cwd?: string,
 /**
  * The process must listen on this port.
  */
-port?: number, };
+port?: number, 
+/**
+ * The OS process name, exactly as the PROCESS column shows it (`workerd`, `node`): for a
+ * child whose ports change on every start. Never the command line.
+ */
+process?: string, };
 
 /**
  * One service of a project: usually one dev server, possibly several processes.
@@ -146,6 +178,17 @@ links?: Array<LinkProfile>,
  * endpoint of the user's own process where `GET /` already got an HTTP response.
  */
 probePath?: string, 
+/**
+ * Endpoints of the matched processes by port (decimal, `1`–`65535`): a name, whether a
+ * person opens it (`summary`) or it is shown for diagnostics only (`details`), and its own
+ * health path. Replaces (never extends) the other source's object.
+ */
+endpoints?: { [key in string]: EndpointProfile }, 
+/**
+ * How the matched processes' endpoints that `endpoints` does not list are shown: for a
+ * process whose ports change on every start.
+ */
+otherEndpoints?: OtherEndpoints, 
 /**
  * `true` suppresses an entry with this ID from the other source (and this one).
  */
@@ -248,6 +291,12 @@ linked: boolean, head: GitHead, };
 export type LinkReach = "loopback" | "declared";
 
 /**
+ * One endpoint as a profile lists it: unset fields stay `null` (a listed endpoint without
+ * `show` is shown in the summary).
+ */
+export type ConfiguredEndpoint = { port: number, name: string | null, show: EndpointShow | null, probePath: string | null, };
+
+/**
  * A configured link, validated: `http(s)`, no credentials, host shown separately.
  */
 export type EffectiveLink = { label: string, 
@@ -275,12 +324,22 @@ export type ProfileSource = "central" | "repository";
 /**
  * Which source set each field of a [`ConfiguredService`]; `null` when no source set it.
  */
-export type ServiceSources = { name: ProfileSource | null, match: ProfileSource | null, protocol: ProfileSource | null, probePath: ProfileSource | null, links: ProfileSource | null, disabled: ProfileSource | null, };
+export type ServiceSources = { name: ProfileSource | null, match: ProfileSource | null, protocol: ProfileSource | null, probePath: ProfileSource | null, endpoints: ProfileSource | null, otherEndpoints: ProfileSource | null, links: ProfileSource | null, disabled: ProfileSource | null, };
 
 /**
  * One configured service after merging its central and repository entries field by field.
  */
 export type ConfiguredService = { id: string, name: string | null, match: ServiceMatch | null, protocol: DeclaredProtocol | null, probePath: string | null, 
+/**
+ * Listed endpoints, ordered by port; empty when none are configured. Each observed
+ * endpoint's resolved display is on `Endpoint.display`. (Defaults keep an older instance's
+ * snapshot of the same schema version readable.)
+ */
+endpoints: Array<ConfiguredEndpoint>, 
+/**
+ * How endpoints `endpoints` does not list are shown; `null` when not configured.
+ */
+otherEndpoints: EndpointShow | null, 
 /**
  * Empty when none are configured.
  */
@@ -304,6 +363,28 @@ export type ProcessField = "name" | "startTime" | "user" | "command" | "cwd" | "
  * Why a profile source is not (or no longer) in use.
  */
 export type ProfileProblem = { "kind": "unreadable", reason: string, } | { "kind": "notAFile" } | { "kind": "tooLarge", limitBytes: number, } | { "kind": "invalid", reason: string, } | { "kind": "newerVersion", version: string, };
+
+/**
+ * Why an endpoint is shown where it is, in precedence order.
+ */
+export type DisplayBasis = "endpoint" | "otherEndpoints" | "inspectorPort" | "default";
+
+/**
+ * An endpoint's name and tier, resolved from the matched profile entry or inferred.
+ */
+export type EndpointDisplay = { 
+/**
+ * The profile's (or the inference's) name for the endpoint; `null` shows the port alone.
+ */
+name: string | null, 
+/**
+ * `summary` endpoints are a service's launch targets; `details` ones are diagnostics only.
+ */
+show: EndpointShow, basis: DisplayBasis, 
+/**
+ * The profile source of `endpoint` and `otherEndpoints`; `null` otherwise.
+ */
+source: ProfileSource | null, };
 
 /**
  * Who can reach an endpoint, judged from its bind addresses alone (no firewall knowledge).
@@ -378,7 +459,12 @@ bindAddresses: Array<string>, exposure: Exposure,
 /**
  * Bounded HTTP enrichment. Listening is a fact; this only says what an HTTP request saw.
  */
-http: HttpProbe, };
+http: HttpProbe, 
+/**
+ * Where views show this endpoint and what it is called. Display only: it never changes
+ * identity, eligibility, binds or which endpoints are probed.
+ */
+display: EndpointDisplay, };
 
 /**
  * Recognised package manifests. Only their presence is checked; contents are never read.
@@ -840,9 +926,18 @@ schemaCommand: string, matchingRules: Array<string>, };
 export type ProfileShow = { schemaVersion: number, root: string, central: StoredProfile, effective: ProjectMetadata | null, };
 
 /**
+ * One port of a [`PredictedMatch`] and its display under the proposed profile.
+ */
+export type PredictedDisplay = { port: number, display: EndpointDisplay, };
+
+/**
  * Which entry a process would match.
  */
-export type PredictedMatch = { identity: ProcessIdentity, name: string | null, cwd: string | null, ports: Array<number>, profile: ProfileMatch | null, };
+export type PredictedMatch = { identity: ProcessIdentity, name: string | null, cwd: string | null, ports: Array<number>, 
+/**
+ * How each port would be shown under the proposed profile, ordered by port.
+ */
+displays: Array<PredictedDisplay>, profile: ProfileMatch | null, };
 
 /**
  * One changed value between the stored and the proposed profile, by path

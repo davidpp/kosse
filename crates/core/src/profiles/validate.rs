@@ -7,6 +7,8 @@
 //!   `127.0.0.0/8`, `::1`) or declared. Nothing here resolves or contacts a host.
 //! - Probe paths are origin-relative (`/…`, never `//…`), visible ASCII, without `\` or `#`.
 //! - Match directories are relative, `/`-separated, without `..`.
+//! - Endpoint keys are ports written in decimal (`1`–`65535`, no sign or leading zero), so one
+//!   port has one spelling and one entry.
 
 use std::{
     fmt,
@@ -15,8 +17,9 @@ use std::{
 
 use crate::profiles::{
     document::{
-        LinkKind, MAX_LABEL_CHARS, MAX_LINKS, MAX_PATH_BYTES, MAX_SERVICES, MAX_URL_BYTES,
-        PROFILE_VERSION, ProjectProfile, ServiceMatch, ServiceProfile,
+        EndpointProfile, LinkKind, MAX_ENDPOINTS, MAX_LABEL_CHARS, MAX_LINKS, MAX_PATH_BYTES,
+        MAX_PROCESS_NAME_CHARS, MAX_SERVICES, MAX_URL_BYTES, PROFILE_VERSION, ProjectProfile,
+        ServiceMatch, ServiceProfile,
     },
     view::LinkReach,
 };
@@ -107,6 +110,19 @@ fn service_profile(
     if let Some(path) = &service.probe_path {
         check(&format!("{at}.probePath"), probe_path(path));
     }
+    if let Some(endpoints) = &service.endpoints {
+        if endpoints.len() > MAX_ENDPOINTS {
+            check(
+                &format!("{at}.endpoints"),
+                Err(format!("at most {MAX_ENDPOINTS} endpoints")),
+            );
+        }
+        for (key, endpoint) in endpoints {
+            let at = format!("{at}.endpoints.{key}");
+            check(&at, port_key(key).map(|_| ()));
+            endpoint_profile(endpoint, &at, check);
+        }
+    }
     if let Some(links) = &service.links {
         if links.len() > MAX_LINKS {
             check(
@@ -122,13 +138,53 @@ fn service_profile(
     }
 }
 
+fn endpoint_profile(
+    endpoint: &EndpointProfile,
+    at: &str,
+    check: &mut impl FnMut(&str, Result<(), String>),
+) {
+    if endpoint.name.is_none() && endpoint.show.is_none() && endpoint.probe_path.is_none() {
+        check(at, Err("needs `name`, `show` or `probePath`".into()));
+    }
+    if let Some(name) = &endpoint.name {
+        check(&format!("{at}.name"), label(name));
+    }
+    if let Some(path) = &endpoint.probe_path {
+        check(&format!("{at}.probePath"), probe_path(path));
+    }
+}
+
+/// An `endpoints` key: a port in its one decimal spelling.
+pub fn port_key(key: &str) -> Result<u16, String> {
+    let canonical = !key.starts_with('0') && key.bytes().all(|byte| byte.is_ascii_digit());
+    match key.parse::<u16>() {
+        Ok(port @ 1..) if canonical => Ok(port),
+        _ => Err(
+            "an endpoint key is a port, 1–65535, in decimal without a sign or leading zero".into(),
+        ),
+    }
+}
+
 fn service_match(
     matcher: &ServiceMatch,
     at: &str,
     check: &mut impl FnMut(&str, Result<(), String>),
 ) {
-    if matcher.cwd.is_none() && matcher.port.is_none() {
-        check(at, Err("needs `cwd`, `port` or both".into()));
+    if matcher.cwd.is_none() && matcher.port.is_none() && matcher.process.is_none() {
+        check(
+            at,
+            Err("needs at least one of `cwd`, `port` and `process`".into()),
+        );
+    }
+    if let Some(process) = &matcher.process {
+        let at = format!("{at}.process");
+        check(&at, label(process));
+        if process.chars().count() > MAX_PROCESS_NAME_CHARS {
+            check(
+                &at,
+                Err(format!("at most {MAX_PROCESS_NAME_CHARS} characters")),
+            );
+        }
     }
     if matcher.port == Some(0) {
         check(&format!("{at}.port"), Err("must be 1–65535".into()));
@@ -502,5 +558,84 @@ mod tests {
         let bad_id = r#"{"version":1,"services":{"-web":{}}}"#;
         let parsed: ProjectProfile = serde_json::from_str(bad_id).expect("shape");
         assert_eq!(profile(&parsed).expect_err("id").at, "services.-web");
+    }
+
+    fn refusal(text: &str) -> String {
+        let parsed: ProjectProfile = serde_json::from_str(text).expect("shape is fine");
+        profile(&parsed).expect_err("a rule is broken").at
+    }
+
+    #[test]
+    fn endpoint_keys_have_one_spelling_per_port() {
+        assert_eq!(port_key("1"), Ok(1));
+        assert_eq!(port_key("65535"), Ok(65535));
+        for bad in [
+            "0", "03000", "+1", "-1", "70000", "65536", "", " 3000", "3e3", "0x10",
+        ] {
+            assert!(port_key(bad).is_err(), "{bad:?}");
+            let text = format!(
+                r#"{{"version":1,"services":{{"web":{{"endpoints":{{"{bad}":{{"show":"details"}}}}}}}}}}"#
+            );
+            assert_eq!(refusal(&text), format!("services.web.endpoints.{bad}"));
+        }
+    }
+
+    #[test]
+    fn endpoint_entries_say_something_valid() {
+        assert_eq!(
+            refusal(r#"{"version":1,"services":{"web":{"endpoints":{"3000":{}}}}}"#),
+            "services.web.endpoints.3000",
+            "an empty entry would read as a choice that was never made"
+        );
+        assert_eq!(
+            refusal(
+                r#"{"version":1,"services":{"web":{"endpoints":{"3000":{"name":"a\u202eb"}}}}}"#
+            ),
+            "services.web.endpoints.3000.name"
+        );
+        assert_eq!(
+            refusal(
+                r#"{"version":1,"services":{"web":{"endpoints":{"3000":{"probePath":"//evil.example/"}}}}}"#
+            ),
+            "services.web.endpoints.3000.probePath"
+        );
+        for unknown_show in [
+            r#"{"version":1,"services":{"web":{"endpoints":{"3000":{"show":"hidden"}}}}}"#,
+            r#"{"version":1,"services":{"web":{"otherEndpoints":{"show":"hidden"}}}}"#,
+            r#"{"version":1,"services":{"web":{"otherEndpoints":{}}}}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<ProjectProfile>(unknown_show).is_err(),
+                "{unknown_show}"
+            );
+        }
+        let many: Vec<String> = (1..=65)
+            .map(|port| format!(r#""{port}":{{"name":"x"}}"#))
+            .collect();
+        let text = format!(
+            r#"{{"version":1,"services":{{"web":{{"endpoints":{{{}}}}}}}}}"#,
+            many.join(",")
+        );
+        assert_eq!(refusal(&text), "services.web.endpoints");
+        let duplicate = r#"{"version":1,"services":{"web":{"endpoints":{"3000":{"name":"a"},"3000":{"name":"b"}}}}}"#;
+        assert!(serde_json::from_str::<ProjectProfile>(duplicate).is_err());
+    }
+
+    #[test]
+    fn process_names_follow_the_label_rules() {
+        let with = |process: &str| {
+            let text = serde_json::json!({"version": 1, "services": {"w": {"match": {"process": process}}}});
+            let parsed: ProjectProfile = serde_json::from_value(text).expect("shape");
+            profile(&parsed)
+        };
+        assert_eq!(with("workerd"), Ok(()), "a process name alone is a match");
+        for bad in ["", " ", "work\u{202E}erd", "a\nb"] {
+            assert_eq!(
+                with(bad).expect_err("refused").at,
+                "services.w.match.process",
+                "{bad:?}"
+            );
+        }
+        assert!(with(&"x".repeat(65)).is_err());
     }
 }

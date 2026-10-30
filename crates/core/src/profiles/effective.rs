@@ -7,7 +7,8 @@
 //! out of it matches nothing, with a warning. A
 //! process matching several entries is ambiguous and gets none. Profiles never change PIDs,
 //! owners, binds or eligibility; they can only label, add links and name a probe path (used only
-//! once `GET /` has verified the endpoint as HTTP). Only the user's own central profile can make an
+//! once `GET /` has verified the endpoint as HTTP) and set each endpoint's display ([`display`]).
+//! Only the user's own central profile can make an
 //! own loopback endpoint an HTTP probe candidate by declaring `http`/`https`; a repository's
 //! `protocol` is a hint shown to the user, never a probe trigger.
 
@@ -19,14 +20,14 @@ use std::{
 };
 
 use crate::{
-    model::{Observation, ScanWarning, Service},
+    model::{DisplayBasis, EndpointDisplay, Observation, ScanWarning, Service},
     probe,
     profiles::{
-        document::{DeclaredProtocol, LinkProfile, ProjectProfile, ServiceProfile},
+        document::{DeclaredProtocol, EndpointShow, LinkProfile, ProjectProfile, ServiceProfile},
         validate,
         view::{
-            ConfiguredService, EffectiveLink, ProfileMatch, ProfileSource, ProjectMetadata,
-            ServiceSources,
+            ConfiguredEndpoint, ConfiguredService, EffectiveLink, ProfileMatch, ProfileSource,
+            ProjectMetadata, ServiceSources,
         },
     },
 };
@@ -92,14 +93,32 @@ fn merge_service(
     let (matcher, matcher_source) = field!(matcher);
     let (protocol, protocol_source) = field!(protocol);
     let (probe_path, probe_path_source) = field!(probe_path);
+    let (endpoints, endpoints_source) = field!(endpoints);
+    let (other_endpoints, other_endpoints_source) = field!(other_endpoints);
     let (links, links_source) = field!(links);
     let (disabled, disabled_source) = field!(disabled);
+    // Profiles are validated when loaded, so every key is a port; one that was not would be dropped.
+    let mut endpoints: Vec<ConfiguredEndpoint> = endpoints
+        .iter()
+        .flatten()
+        .filter_map(|(key, endpoint)| {
+            Some(ConfiguredEndpoint {
+                port: validate::port_key(key).ok()?,
+                name: endpoint.name.clone(),
+                show: endpoint.show,
+                probe_path: endpoint.probe_path.clone(),
+            })
+        })
+        .collect();
+    endpoints.sort_by_key(|endpoint| endpoint.port);
     ConfiguredService {
         id: id.to_owned(),
         name,
         matcher,
         protocol,
         probe_path,
+        endpoints,
+        other_endpoints: other_endpoints.map(|other| other.show),
         links: links.iter().flatten().filter_map(effective_link).collect(),
         disabled: disabled.unwrap_or(false),
         sources: ServiceSources {
@@ -107,6 +126,8 @@ fn merge_service(
             matcher: matcher_source,
             protocol: protocol_source,
             probe_path: probe_path_source,
+            endpoints: endpoints_source,
+            other_endpoints: other_endpoints_source,
             links: links_source,
             disabled: disabled_source,
         },
@@ -169,25 +190,44 @@ pub fn assign(
             if service.project.as_deref() != Some(project.root.as_str()) {
                 continue;
             }
+            // A preview re-matches services an earlier match already displayed.
+            for endpoint in &mut service.endpoints {
+                endpoint.display = EndpointDisplay::inferred(endpoint.port);
+            }
             let Some(cwd) = canonical_cwd(&mut cwds, service) else {
                 continue;
             };
-            let matching: Vec<usize> = project
+            let mut matching: Vec<usize> = project
                 .services
                 .iter()
                 .zip(&targets)
                 .enumerate()
                 .filter(|(_, (entry, target))| {
                     target.as_ref().is_some_and(|target| {
-                        cwd.starts_with(target) && port_matches(entry, service)
+                        cwd.starts_with(target)
+                            && port_matches(entry, service)
+                            && process_matches(entry, service)
                     })
                 })
                 .map(|(index, _)| index)
                 .collect();
+            // An entry naming the process is the more specific one: it takes a child (workerd)
+            // from a directory-wide entry rather than making it ambiguous.
+            let names_process = |index: &usize| names_process(&project.services[*index]);
+            if matching.iter().any(names_process) {
+                matching.retain(names_process);
+            }
             for &index in &matching {
                 project.services[index]
                     .matched
                     .push(service.process.identity);
+            }
+            let entry = match matching[..] {
+                [only] => Some(&project.services[only]),
+                _ => None,
+            };
+            for endpoint in &mut service.endpoints {
+                endpoint.display = display(entry, endpoint.port);
             }
             service.profile = match matching[..] {
                 [] => None,
@@ -318,6 +358,50 @@ fn port_matches(entry: &ConfiguredService, service: &Service) -> bool {
     }
 }
 
+fn names_process(entry: &ConfiguredService) -> bool {
+    entry
+        .matcher
+        .as_ref()
+        .is_some_and(|matcher| matcher.process.is_some())
+}
+
+fn process_matches(entry: &ConfiguredService, service: &Service) -> bool {
+    match entry
+        .matcher
+        .as_ref()
+        .and_then(|matcher| matcher.process.as_deref())
+    {
+        Some(name) => service.process.name.as_deref() == Some(name),
+        None => true,
+    }
+}
+
+/// How the endpoint on `port` of a process is shown: by the entry that matched it alone (`None`
+/// for an unmatched or ambiguous process): its `endpoints` entry, else its `otherEndpoints`, else
+/// the inference for the inspector port, else the summary.
+#[must_use]
+pub fn display(entry: Option<&ConfiguredService>, port: u16) -> EndpointDisplay {
+    if let Some(entry) = entry {
+        if let Some(listed) = entry.endpoints.iter().find(|listed| listed.port == port) {
+            return EndpointDisplay {
+                name: listed.name.clone(),
+                show: listed.show.unwrap_or_default(),
+                basis: DisplayBasis::Endpoint,
+                source: entry.sources.endpoints,
+            };
+        }
+        if let Some(show) = entry.other_endpoints {
+            return EndpointDisplay {
+                name: None,
+                show,
+                basis: DisplayBasis::OtherEndpoints,
+                source: entry.sources.other_endpoints,
+            };
+        }
+    }
+    EndpointDisplay::inferred(port)
+}
+
 fn canonical_cwd<'a>(
     cache: &'a mut HashMap<String, Option<PathBuf>>,
     service: &Service,
@@ -341,7 +425,9 @@ fn declare_http(service: &mut Service, port: Option<u16>, own_user: Option<u32>)
     }
 }
 
-/// The probe path configured for this service's endpoint on `port`, if any.
+/// The probe path configured for this service's endpoint on `port`, if any: the endpoint's own
+/// `probePath` on either tier, else the service's, which is the health path of its summary
+/// endpoints only (and only of the matched port, when the match names one).
 #[must_use]
 pub fn probe_path<'a>(
     observation: &'a Observation,
@@ -359,8 +445,22 @@ pub fn probe_path<'a>(
         .services
         .iter()
         .find(|entry| &entry.id == id)?;
+    entry_probe_path(entry, port)
+}
+
+fn entry_probe_path(entry: &ConfiguredService, port: u16) -> Option<&str> {
+    if let Some(path) = entry
+        .endpoints
+        .iter()
+        .find(|listed| listed.port == port)
+        .and_then(|listed| listed.probe_path.as_deref())
+    {
+        return Some(path);
+    }
     let narrowed = entry.matcher.as_ref().and_then(|matcher| matcher.port);
-    if narrowed.is_some_and(|narrowed| narrowed != port) {
+    if narrowed.is_some_and(|narrowed| narrowed != port)
+        || display(Some(entry), port).show != EndpointShow::Summary
+    {
         return None;
     }
     entry.probe_path.as_deref()
@@ -381,14 +481,20 @@ pub(crate) fn roots<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profiles::document::{LinkKind, ServiceMatch};
+    use crate::{
+        model::{
+            CpuUsage, Endpoint, Exposure, HttpProbe, ProcessIdentity, ProcessMetrics,
+            ProcessRecord, TransportProtocol,
+        },
+        profiles::document::{LinkKind, ServiceMatch},
+    };
 
     fn service(name: Option<&str>, cwd: Option<&str>) -> ServiceProfile {
         ServiceProfile {
             name: name.map(str::to_owned),
             matcher: cwd.map(|cwd| ServiceMatch {
                 cwd: Some(cwd.to_owned()),
-                port: None,
+                ..Default::default()
             }),
             ..Default::default()
         }
@@ -490,5 +596,298 @@ mod tests {
         let link = &repo_only.services[0].links[0];
         assert_eq!(link.url, "http://localhost:3001/docs");
         assert_eq!(link.kind, LinkKind::Local);
+    }
+
+    /// One merged entry from a central profile written as JSON.
+    fn entry(json: serde_json::Value) -> ConfiguredService {
+        let service: ServiceProfile = serde_json::from_value(json).expect("service profile");
+        let mut central = ProjectProfile::new();
+        central.services.insert("web".into(), service);
+        merge("/r", Some(&central), None, true).services.remove(0)
+    }
+
+    fn shown(display: &EndpointDisplay) -> (Option<&str>, EndpointShow, DisplayBasis) {
+        (display.name.as_deref(), display.show, display.basis)
+    }
+
+    #[test]
+    fn display_follows_the_endpoint_entry_then_other_endpoints_then_the_inspector_port() {
+        use DisplayBasis::{Default, Endpoint, InspectorPort, OtherEndpoints};
+        use EndpointShow::{Details, Summary};
+        let web = entry(serde_json::json!({
+            "endpoints": {
+                "3000": {"name": "Site"},
+                "4000": {"show": "details"},
+                "9229": {"name": "Debugger", "show": "summary"}
+            },
+            "otherEndpoints": {"show": "details"}
+        }));
+        let at = |port| display(Some(&web), port);
+        assert_eq!(
+            shown(&at(3000)),
+            (Some("Site"), Summary, Endpoint),
+            "listed means summary"
+        );
+        assert_eq!(shown(&at(4000)), (None, Details, Endpoint));
+        assert_eq!(
+            shown(&at(9229)),
+            (Some("Debugger"), Summary, Endpoint),
+            "a listing beats the inference"
+        );
+        assert_eq!(
+            shown(&at(51234)),
+            (None, Details, OtherEndpoints),
+            "a changing port needs no entry"
+        );
+        assert_eq!(at(3000).source, Some(ProfileSource::Central));
+        assert_eq!(at(51234).source, Some(ProfileSource::Central));
+
+        let summary_rest = entry(serde_json::json!({"otherEndpoints": {"show": "summary"}}));
+        assert_eq!(
+            shown(&display(Some(&summary_rest), 9229)),
+            (None, Summary, OtherEndpoints),
+            "the profile's default beats the inference"
+        );
+
+        let plain = entry(serde_json::json!({"name": "Web"}));
+        for described in [Some(&plain), None] {
+            assert_eq!(
+                shown(&display(described, 9229)),
+                (Some("Inspector"), Details, InspectorPort)
+            );
+            assert_eq!(display(described, 9229).source, None);
+            assert_eq!(shown(&display(described, 3000)), (None, Summary, Default));
+        }
+    }
+
+    #[test]
+    fn a_service_probe_path_checks_only_its_summary_endpoints() {
+        let web = entry(serde_json::json!({
+            "probePath": "/health",
+            "endpoints": {
+                "3000": {"name": "Site"},
+                "4000": {"show": "details", "probePath": "/ready"},
+                "5000": {"show": "details"},
+                "6000": {"probePath": "/own"}
+            },
+            "otherEndpoints": {"show": "details"}
+        }));
+        assert_eq!(entry_probe_path(&web, 3000), Some("/health"));
+        assert_eq!(
+            entry_probe_path(&web, 4000),
+            Some("/ready"),
+            "an endpoint's own path, on any tier"
+        );
+        assert_eq!(
+            entry_probe_path(&web, 5000),
+            None,
+            "a details endpoint is not the service's health"
+        );
+        assert_eq!(entry_probe_path(&web, 6000), Some("/own"));
+        assert_eq!(
+            entry_probe_path(&web, 7000),
+            None,
+            "otherEndpoints puts it in details"
+        );
+
+        let narrowed = entry(serde_json::json!({
+            "match": {"cwd": ".", "port": 3000},
+            "probePath": "/health",
+            "endpoints": {"3001": {"name": "Admin"}, "3002": {"probePath": "/admin"}}
+        }));
+        assert_eq!(entry_probe_path(&narrowed, 3000), Some("/health"));
+        assert_eq!(
+            entry_probe_path(&narrowed, 3001),
+            None,
+            "match.port still narrows the service path"
+        );
+        assert_eq!(entry_probe_path(&narrowed, 3002), Some("/admin"));
+    }
+
+    fn listener(pid: u32, name: &str, cwd: &Path, ports: &[u16]) -> Service {
+        Service {
+            process: ProcessRecord {
+                identity: ProcessIdentity {
+                    pid,
+                    started_at_secs: Some(1),
+                },
+                name: Some(name.to_owned()),
+                executable: None,
+                command: None,
+                cwd: Some(cwd.to_string_lossy().into_owned()),
+                parent_pid: None,
+                user_id: Some(501),
+                age_secs: None,
+                metrics: ProcessMetrics {
+                    cpu: CpuUsage::WarmingUp,
+                    memory_bytes: None,
+                },
+            },
+            endpoints: ports
+                .iter()
+                .map(|&port| Endpoint {
+                    protocol: TransportProtocol::Tcp,
+                    port,
+                    bind_addresses: vec!["127.0.0.1".to_owned()],
+                    exposure: Exposure::Loopback,
+                    http: HttpProbe::Pending,
+                    display: EndpointDisplay::inferred(port),
+                })
+                .collect(),
+            project: Some(cwd.to_string_lossy().into_owned()),
+            package: None,
+            profile: None,
+        }
+    }
+
+    #[test]
+    fn a_process_criterion_separates_a_child_from_its_parent_and_picks_launch_targets() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical");
+        let mut central = ProjectProfile::new();
+        for (id, json) in [
+            (
+                "site",
+                serde_json::json!({
+                    "match": {"cwd": ".", "port": 3000},
+                    "endpoints": {"3000": {"name": "Site"}},
+                    "otherEndpoints": {"show": "details"}
+                }),
+            ),
+            (
+                "worker",
+                serde_json::json!({
+                    "match": {"cwd": ".", "process": "workerd"},
+                    "otherEndpoints": {"show": "details"}
+                }),
+            ),
+            (
+                "anything",
+                serde_json::json!({"match": {"process": "other"}}),
+            ),
+        ] {
+            central
+                .services
+                .insert(id.into(), serde_json::from_value(json).expect("entry"));
+        }
+        let root_text = root.to_string_lossy().into_owned();
+        let mut observation = Observation {
+            scanned_at_ms: 0,
+            scan_duration_ms: 0.0,
+            services: vec![
+                listener(10, "node", &root, &[3000, 9229, 40123]),
+                listener(11, "workerd", &root, &[51001, 51002]),
+            ],
+            projects: Vec::new(),
+            warnings: Vec::new(),
+            profiles: Vec::new(),
+        };
+        let mut metadata = [merge(&root_text, Some(&central), None, true)];
+        assert!(assign(&mut observation, &mut metadata, Some(501)).is_empty());
+
+        let [vite, workerd] = &observation.services[..] else {
+            panic!("two services");
+        };
+        assert_eq!(
+            vite.profile,
+            Some(ProfileMatch::Matched {
+                service: "site".into()
+            })
+        );
+        assert_eq!(
+            workerd.profile,
+            Some(ProfileMatch::Matched {
+                service: "worker".into()
+            })
+        );
+        let launch = |service: &Service| -> Vec<u16> {
+            service
+                .launch_endpoints()
+                .map(|endpoint| endpoint.port)
+                .collect()
+        };
+        assert_eq!(
+            launch(vite),
+            [3000],
+            "the inspector and the internal port are details"
+        );
+        assert!(
+            launch(workerd).is_empty(),
+            "a service of details endpoints has no launch target"
+        );
+
+        // A directory-wide entry beside a process entry: the process entry is more specific, so
+        // each process still has exactly one match.
+        let mut loose = ProjectProfile::new();
+        for (id, json) in [
+            ("all", serde_json::json!({"match": {"cwd": "."}})),
+            (
+                "worker",
+                serde_json::json!({"match": {"process": "workerd"}}),
+            ),
+            (
+                "other",
+                serde_json::json!({"match": {"process": "workerd", "port": 1}}),
+            ),
+        ] {
+            loose
+                .services
+                .insert(id.into(), serde_json::from_value(json).expect("entry"));
+        }
+        let mut metadata = [merge(&root_text, Some(&loose), None, true)];
+        assign(&mut observation, &mut metadata, Some(501));
+        assert_eq!(
+            observation.services[0].profile,
+            Some(ProfileMatch::Matched {
+                service: "all".into()
+            })
+        );
+        assert_eq!(
+            observation.services[1].profile,
+            Some(ProfileMatch::Matched {
+                service: "worker".into()
+            })
+        );
+        assert_eq!(
+            shown(&observation.services[1].endpoints[0].display),
+            (None, EndpointShow::Summary, DisplayBasis::Default),
+            "a re-match starts again from the inference"
+        );
+
+        loose.services.insert(
+            "worker-too".into(),
+            serde_json::from_value(serde_json::json!({"match": {"process": "workerd"}}))
+                .expect("entry"),
+        );
+        loose.services.insert(
+            "site".into(),
+            serde_json::from_value(serde_json::json!({"match": {"cwd": ".", "port": 3000}, "endpoints": {"3000": {"name": "Site"}}})).expect("entry"),
+        );
+        let mut metadata = [merge(&root_text, Some(&loose), None, true)];
+        assign(&mut observation, &mut metadata, Some(501));
+        assert_eq!(
+            observation.services[1].profile,
+            Some(ProfileMatch::Ambiguous {
+                services: vec!["worker".into(), "worker-too".into()]
+            }),
+            "two equally specific entries stay ambiguous"
+        );
+        assert!(
+            matches!(
+                observation.services[0].profile,
+                Some(ProfileMatch::Ambiguous { .. })
+            ),
+            "two directory entries stay ambiguous"
+        );
+        assert_eq!(
+            shown(&observation.services[0].endpoints[0].display),
+            (None, EndpointShow::Summary, DisplayBasis::Default),
+            "an ambiguous process gets only the inference"
+        );
+        assert_eq!(
+            observation.services[0].endpoints[1].display.basis,
+            DisplayBasis::InspectorPort,
+            "a re-match starts again from the inference"
+        );
     }
 }
