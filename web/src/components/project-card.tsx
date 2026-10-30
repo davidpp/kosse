@@ -291,7 +291,7 @@ function EndpointLine({
         {isTarget ? probe.text : probe.brief}
       </span>
       {probe.url !== null && !ended && !isTarget ? (
-        <OutLink url={probe.url} className="shrink-0" withPort={false} tone="quiet">
+        <OutLink url={probe.url} className="shrink-0" tone="quiet">
           Open
         </OutLink>
       ) : null}
@@ -325,7 +325,7 @@ function DetailsLine({
           const probe = summarizeProbe(probeFor(endpoint, tried));
           return (
             <span key={endpoint.port} title={probe.text}>
-              {index === 0 ? null : <span aria-hidden> · </span>}
+              {index === 0 ? null : ", "}
               <span className={mono}>:{endpoint.port}</span>
               {endpoint.display.name === null ? null : ` ${endpoint.display.name}`}
               {/* Page titles stay in Inspect: a details endpoint often serves the app's page. */}

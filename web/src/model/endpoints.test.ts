@@ -90,14 +90,37 @@ const item = (port: number, http: HttpProbe) => ({
 });
 
 describe("open target", () => {
-  it("leads with the endpoint that served a page, then a non-error status, then the lowest port", () => {
+  it("prefers a non-error status, then a page title, then the lowest port", () => {
     // The owner's Wrangler stack: a 404 on a low port must not outrank the page on :3000.
     const page = item(3000, response(3000, 200, "Site"));
     expect(openTarget([item(2999, response(2999, 404, null)), page])).toBe(page);
     const ok = item(60560, response(60560, 200, null));
     expect(openTarget([item(60559, response(60559, 500, null)), ok])).toBe(ok);
+    // A titled error page never beats an untitled 200.
+    const plain = item(3001, response(3001, 200, null));
+    expect(openTarget([item(3000, response(3000, 404, "Not Found")), plain])).toBe(plain);
+    // Two pages: the lowest port.
+    const first = item(3000, response(3000, 200, "Site"));
+    expect(openTarget([item(4000, response(4000, 200, "Docs")), first])).toBe(first);
+    // Only errors answered: the lowest is still the target (its status stays visible).
     const low = item(3000, response(3000, 404, null));
     expect(openTarget([low, item(3001, response(3001, 404, null))])).toBe(low);
+  });
+
+  it("treats a Try HTTP answer and HTTPS like any other response", () => {
+    const requested = { ...response(5432, 200, null), requested: true };
+    const tried = item(5432, requested);
+    expect(openTarget([item(5431, { state: "skipped", reason: "knownNonHttpPort" }), tried])).toBe(
+      tried,
+    );
+    const tls = (port: number): HttpProbe => {
+      const http = response(port, 200, null);
+      return http.state === "probed" && http.result.kind === "response"
+        ? { ...http, result: { ...http.result, tls: true, url: `https://localhost:${port}/` } }
+        : http;
+    };
+    const https = item(8443, tls(8443));
+    expect(openTarget([item(8444, response(8444, 200, null)), https])).toBe(https);
   });
 
   it("is nothing when no summary endpoint answered HTTP", () => {
@@ -110,10 +133,11 @@ describe("open target", () => {
 });
 
 describe("not-HTTP cue", () => {
-  it("rules HTTP out only on a known non-HTTP listener or a non-HTTP answer", () => {
-    expect(summarizeProbe({ state: "skipped", reason: "knownNonHttpPort" }).notHttp).toBe(true);
-    expect(summarizeProbe({ state: "skipped", reason: "knownNonHttpProcess" }).notHttp).toBe(true);
+  it("rules HTTP out only on an observed non-HTTP answer", () => {
     expect(summarizeProbe({ ...answered, result: { kind: "notHttp" } }).notHttp).toBe(true);
+    // A port or process-name convention is not an observation: it keeps its "not probed" text.
+    expect(summarizeProbe({ state: "skipped", reason: "knownNonHttpPort" }).notHttp).toBe(false);
+    expect(summarizeProbe({ state: "skipped", reason: "knownNonHttpProcess" }).notHttp).toBe(false);
     // Unknown stays unknown: unchecked, failed or merely unprobed listeners are not called TCP.
     expect(summarizeProbe({ state: "pending" }).notHttp).toBe(false);
     expect(summarizeProbe({ ...answered, result: { kind: "closed" } }).notHttp).toBe(false);

@@ -20,9 +20,12 @@ export const rowDanger = `${control} border border-transparent px-2 text-ink-mut
 /** Row-height buttons (20px of layout, 24px drawn), so a row's columns share one first line. */
 export const rowButton = "-my-0.5 h-6";
 
-/** A small bordered button inside a line of text ("Try HTTP"). */
+/**
+ * A quiet button inside a line of text ("Try HTTP"): underlined muted text like a quiet Open, so
+ * an offer never outweighs what was observed. Keyboard focus draws the global ring.
+ */
 export const small =
-  "inline-flex h-5 shrink-0 items-center rounded-[4px] border border-line-strong bg-surface px-1.5 text-small font-medium text-ink transition-colors duration-150 ease-out hover:bg-canvas";
+  "inline-flex h-5 shrink-0 items-center rounded-[4px] text-ink-muted underline decoration-line underline-offset-3 transition-colors duration-150 ease-out hover:text-ink hover:decoration-ink";
 
 /** Solid accent (Québec blue): the primary action of a dialog (Save). */
 export const primary = `${control} bg-accent text-on-accent not-disabled:hover:bg-accent/90 not-disabled:active:translate-y-px`;

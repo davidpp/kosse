@@ -21,8 +21,9 @@ export type ProbeSummary = {
   /** The user may ask for one probe ("Try HTTP"). */
   canTry: boolean;
   /**
-   * HTTP is ruled out: a known non-HTTP port or process, or a probe that got something other
-   * than HTTP. Unchecked and failed endpoints are not ruled out (unknown stays unknown).
+   * A probe got an answer that is not HTTP: observed, not inferred. A known non-HTTP port or
+   * process name is a convention and keeps its "not probed" text; unchecked and failed endpoints
+   * are unknown.
    */
   notHttp: boolean;
 };
@@ -46,10 +47,7 @@ export function summarizeProbe(http: HttpProbe): ProbeSummary {
     response === null || response.title === null || response.title === ""
       ? seen.text
       : seen.text.replace(` · ${response.title}`, "");
-  const notHttp =
-    (http.state === "skipped" &&
-      (http.reason === "knownNonHttpPort" || http.reason === "knownNonHttpProcess")) ||
-    (http.state === "probed" && http.result.kind === "notHttp");
+  const notHttp = http.state === "probed" && http.result.kind === "notHttp";
   return { ...seen, brief, notHttp };
 }
 
