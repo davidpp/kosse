@@ -12,12 +12,20 @@ export type Marker =
 
 export type ProbeSummary = {
   marker: Marker;
-  /** Short text for the row. */
+  /** What was seen, with the page title when one was served (the open target, tooltips, Inspect). */
   text: string;
+  /** `text` without the page title, for lines where the title would only repeat. */
+  brief: string;
   /** A loopback URL that answered over HTTP: the only automatic Open target. */
   url: string | null;
   /** The user may ask for one probe ("Try HTTP"). */
   canTry: boolean;
+  /**
+   * A probe got an answer that is not HTTP: observed, not inferred. A known non-HTTP port or
+   * process name is a convention and keeps its "not probed" text; unchecked and failed endpoints
+   * are unknown.
+   */
+  notHttp: boolean;
 };
 
 const SKIPPED: Record<ProbeSkip, { text: string; canTry: boolean }> = {
@@ -33,6 +41,17 @@ const SKIPPED: Record<ProbeSkip, { text: string; canTry: boolean }> = {
  * endpoint is reachable over HTTP; a timeout, refusal or TLS failure is shown as that failure.
  */
 export function summarizeProbe(http: HttpProbe): ProbeSummary {
+  const seen = describe(http);
+  const response = http.state === "probed" && http.result.kind === "response" ? http.result : null;
+  const brief =
+    response === null || response.title === null || response.title === ""
+      ? seen.text
+      : seen.text.replace(` · ${response.title}`, "");
+  const notHttp = http.state === "probed" && http.result.kind === "notHttp";
+  return { ...seen, brief, notHttp };
+}
+
+function describe(http: HttpProbe): Omit<ProbeSummary, "brief" | "notHttp"> {
   switch (http.state) {
     case "skipped":
       return { marker: "listening", url: null, ...SKIPPED[http.reason] };

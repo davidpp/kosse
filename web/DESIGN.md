@@ -135,12 +135,13 @@ saturated colour on screen.
   card, rows are separated by the derived `hairline`, which is decorative.
 - `line-strong` bounds interactive controls (inputs, secondary buttons).
 - `ink` carries text; `ink-muted` secondary text (≥ 4.5:1 on canvas and surface).
-- `accent` (Québec blue, #003DA5 / #91B3FF) marks the mark, primary actions (Save) and native control tint. `focus` is the
+- `accent` (Québec blue, #003DA5 / #91B3FF) marks the mark, primary actions (Save), a service's open target and native control tint. `focus` is the
   2px keyboard ring with a 2px background gap; on service rows it is drawn inset (`row` wash plus
   the ring), because rows are focused with j/k.
-- `danger` (Stop red) names the Stop action: red text on row buttons; a solid red fill only on the
-  final Stop and Force confirmations. Solid buttons use `on-accent` / `on-danger` text (surface in
-  light, canvas in dark).
+- `danger` (Stop red) names the Stop action: red text on the row's Stop on hover and keyboard
+  focus (muted at rest, see Buttons), and in Inspect; a solid red fill only on the final Stop and
+  Force confirmations. Solid buttons use `on-accent` / `on-danger` text (surface in light, canvas
+  in dark).
 - Derived roles mix in OKLab (an OKLCH mix with a near-achromatic surface interpolates hue and
   shifted the row wash off-hue in WebKit): `hairline`, `row`, `failed-wash`, `stale-wash`.
 
@@ -170,7 +171,8 @@ is a decision recorded here and in brand/tokens.json first.
 
 **The Declared Rule.** Anything a profile declares (a name, a link) carries its provenance: the
 tag "Kossé profile" (central) or "kosse.json" (repository). Declared links always show their host
-and the tag "declared, local" or "declared, not verified"; they are never probed.
+and the tag "declared, local" or "declared, not verified"; they are never probed. A declared link
+to the same URL as an endpoint's Open is not repeated on the row; Inspect lists every link.
 
 ## Typography
 
@@ -190,12 +192,34 @@ metric labels, tags and hints. No web fonts ship (`bun run budget` fails on font
 - Card: header row (title, provenance, branch with the worktree tag and repository name when it
   differs, short path, Customize), then rows. Short paths keep the last two segments
   (`…/worktrees/storefront`); the full path is in Inspect.
-- Row (≥ 768px): a three-column grid: identity (name, provenance, process and package), endpoints
-  (marker, `:port`, exposure when not loopback-only, HTTP result, Open, Try HTTP, declared links),
-  then metrics (`up`, `cpu`, `mem`) and the Inspect / Stop actions. Every column starts on the same
-  20px first line: row buttons draw 24px but take 20px of layout. An endpoint line never wraps;
-  its HTTP text truncates (full text in its tooltip) so Open and Try HTTP stay on the line. Narrow
-  widths stack the three columns.
+- Row (≥ 768px): a three-column grid: identity (name, provenance, process and package), endpoints,
+  then metrics (`up`, `cpu`, `mem`, values in `ink-muted`) and the Inspect / Stop actions. Every
+  column starts on the same 20px first line: row buttons draw 24px but take 20px of layout. An
+  endpoint line never wraps; its HTTP text truncates (full text in its tooltip) so Open and Try
+  HTTP stay on the line. Narrow widths stack the three columns. The endpoint column is ordered by
+  what a person does with it:
+  1. the **open target** first: of the summary endpoints that answered HTTP (automatically or on
+     request), a status below 400 with a page title, else a status below 400, else a title, else
+     any response; the lowest port breaks ties. When nothing better answered it is a 4xx or 5xx,
+     and its status stays on the line. Marker, the accent `Open` with the full `localhost:<port>`
+     in ink, name, then the HTTP result with the page title. Order and emphasis only: every
+     answering summary endpoint keeps an Open, as in the tray.
+  2. other summary endpoints: marker, `:port`, name, exposure when not loopback-only, the HTTP
+     result without the title (it repeats; the tooltip and Inspect have it), a quiet Open, Try
+     HTTP. A failure here keeps the failed marker: it is a launch target.
+  3. the muted `details` line (no marker, no Open, never the failed marker; endpoints separated by
+     commas, since `·` separates a status from its title), then declared links.
+
+  The tag `TCP` marks an endpoint whose probe got an answer that is not HTTP: observed, never a
+  guess at "database". A known non-HTTP port or process name is a convention, not an observation:
+  it keeps its "not probed: non-HTTP port/server" text and no tag. Unchecked and failed endpoints
+  get none.
+
+  There is no project-level lead: no observed fact makes one service a project's entry point.
+  When two services serve the same app (an unconfigured Wrangler and its workerd both answer), the
+  fix is a profile (`otherEndpoints: details`, `match.process`), which the prompt-first Customize
+  window helps set up.
+
 - Keyboard: `/` focuses search; `j`/`k` or the arrow keys move between rows (the arrows also from
   the search field); Enter on a row opens Inspect; Escape closes a dialog or clears search.
 - Inspect is a right-docked sheet 34rem wide (full width below 640px); Stop and Customize are
@@ -212,14 +236,20 @@ is `canvas` at 55%, with no blur.
 
 ## Components
 
-- **Buttons.** Secondary: `surface` fill, `line-strong` border. Light: a `hairline` border at rest
-  (stronger on hover), for row actions (Inspect; Stop in `danger` text) and Customize. Small: a
-  20px bordered button inside a line of text ("Try HTTP"). Primary: solid `accent` (Save). Danger: solid `danger`, only on
-  the final confirmation. While a request runs a button is `aria-disabled` (still focusable) and
-  says what it is doing ("Stopping…").
+- **Buttons.** Secondary: `surface` fill, `line-strong` border. Row action: borderless and
+  `ink-muted` at rest, a border on hover, for Inspect, Stop (`danger` on hover and keyboard focus)
+  and Customize. This is a deliberate trade-off: at rest Stop looks like Inspect, so it never
+  outweighs the open target; the confirmation dialog, not the row's colour, is the safety cue.
+  Light: a `hairline` border at rest (stronger on hover), in dialogs. Small: a quiet underlined
+  text button inside a line of text ("Try HTTP"), `ink-muted` like a quiet Open, so an offer
+  never outweighs what was observed. Primary: solid `accent` (Save). Danger: solid `danger`, only
+  on the final confirmation. While a request runs a button is `aria-disabled` (still focusable)
+  and says what it is doing ("Stopping…").
 - **Open link.** The only `href` from data goes through `safeLink` (http/https, no credentials):
-  the underlined label, then the host in mono, then an arrow. On an endpoint line the host omits
-  the port, which is printed right before it. Anything else renders as plain text.
+  the underlined label, then the host in mono, then an arrow. The open target's is `accent`
+  (semibold label, `localhost:<port>` in ink). Another summary endpoint's is quiet: `Open ↗` in
+  `ink-muted` with a `line` underline at rest, and `Open localhost:<port>` as its accessible name.
+  Anything else renders as plain text.
 - **Notices.** `failed-wash` + `failed` border (disconnected, refresh failed, scan error, no such
   process) or `stale-wash` + `stale` border (stale snapshot, failing scanner with last good data).
 - **Dialogs.** Native modal `<dialog>`; focus starts on the safe button (Cancel, Done, Close) at

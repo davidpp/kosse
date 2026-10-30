@@ -10,12 +10,22 @@ export const button = `${control} border border-line-strong bg-surface text-ink 
 export const quiet = `${control} border border-hairline px-2 text-ink not-disabled:hover:border-line not-disabled:hover:bg-canvas`;
 export const quietDanger = `${control} border border-hairline px-2 text-danger not-disabled:hover:border-danger not-disabled:hover:bg-failed-wash`;
 
+/**
+ * A service row's Inspect and Stop: muted and borderless at rest, so they never compete with the
+ * row's open target; hover and keyboard focus bring back the border, and Stop's `danger` text.
+ */
+export const rowAction = `${control} border border-transparent px-2 text-ink-muted not-disabled:hover:border-line not-disabled:hover:bg-canvas not-disabled:hover:text-ink focus-visible:text-ink`;
+export const rowDanger = `${control} border border-transparent px-2 text-ink-muted not-disabled:hover:border-danger not-disabled:hover:bg-failed-wash not-disabled:hover:text-danger focus-visible:text-danger`;
+
 /** Row-height buttons (20px of layout, 24px drawn), so a row's columns share one first line. */
 export const rowButton = "-my-0.5 h-6";
 
-/** A small bordered button inside a line of text ("Try HTTP"). */
+/**
+ * A quiet button inside a line of text ("Try HTTP"): underlined muted text like a quiet Open, so
+ * an offer never outweighs what was observed. Keyboard focus draws the global ring.
+ */
 export const small =
-  "inline-flex h-5 shrink-0 items-center rounded-[4px] border border-line-strong bg-surface px-1.5 text-small font-medium text-ink transition-colors duration-150 ease-out hover:bg-canvas";
+  "inline-flex h-5 shrink-0 items-center rounded-[4px] text-ink-muted underline decoration-line underline-offset-3 transition-colors duration-150 ease-out hover:text-ink hover:decoration-ink";
 
 /** Solid accent (Québec blue): the primary action of a dialog (Save). */
 export const primary = `${control} bg-accent text-on-accent not-disabled:hover:bg-accent/90 not-disabled:active:translate-y-px`;

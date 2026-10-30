@@ -144,10 +144,14 @@ test("groups fixtures by worktree and reports what HTTP probes saw", async ({ pa
   const dbRow = row(page, db.ports[0] ?? 0);
   await expect(dbRow).toContainText("not probed: non-HTTP server");
   await expect(dbRow.getByRole("link")).toHaveCount(0);
+  // A port convention is not an observation: no TCP tag until something answered.
+  await expect(dbRow.getByText("TCP", { exact: true })).toHaveCount(0);
+  await expect(row(page, gateway.ports[0] ?? 0).getByText("TCP", { exact: true })).toHaveCount(0);
 
   // "Try HTTP" asks for one probe; the banner fixture speaks first, so it is not HTTP.
   await dbRow.getByRole("button", { name: "Try HTTP" }).click();
   await expect(dbRow).toContainText("not HTTP (on request)");
+  await expect(dbRow.getByText("TCP", { exact: true })).toBeVisible();
   await dbRow.getByRole("button", { name: "Inspect" }).click();
   await expect(page.getByRole("dialog")).toContainText("not HTTP (on request)");
   await page.keyboard.press("Escape");
@@ -191,8 +195,24 @@ test("search narrows by port, project and command; all listeners reveals the res
 });
 
 test("Open goes to the probed loopback URL", async ({ page }) => {
-  const { web } = world.fixtures;
+  const { web, api } = world.fixtures;
   await open(page);
+  // One open target per service, drawn first: of two ports that both answered 404, the lowest;
+  // the other keeps its own Open on its quieter line.
+  const apiRow = row(page, api.ports[0] ?? 0);
+  await expect(apiRow.getByRole("link")).toHaveCount(2, { timeout: 30_000 });
+  const target = apiRow.locator("[data-target]");
+  await expect(target).toHaveCount(1);
+  await expect(target.getByRole("link")).toHaveAttribute(
+    "href",
+    `http://localhost:${api.ports[0]}/`,
+  );
+  await expect(apiRow.locator("li").first()).toHaveAttribute("data-target", "true");
+  // The quiet Open shows no host, but its accessible name says where it goes.
+  await expect(
+    apiRow.getByRole("link", { name: `Open localhost:${api.ports[1]}`, exact: true }),
+  ).toHaveAttribute("href", `http://localhost:${api.ports[1]}/`);
+
   const link = row(page, web.ports[0] ?? 0).getByRole("link", { name: /Open/ });
   await expect(link).toHaveAttribute("href", `http://localhost:${web.ports[0]}/`);
   const [popup] = await Promise.all([page.waitForEvent("popup"), link.click()]);
@@ -553,20 +573,23 @@ test("details endpoints stay visible and muted, are never opened, and Inspect sa
   // The site row: Open for the summary endpoint only; the inspector on the muted details line.
   const siteRow = project.locator("li[data-row]", { hasText: "Marketing site" });
   await expect(siteRow.getByText("HTTP 200").first()).toBeVisible({ timeout: 30_000 });
-  await expect(siteRow).toContainText(`:${sitePort}Site`);
+  await expect(siteRow.locator("[data-target]")).toContainText(`localhost:${sitePort}`);
+  await expect(siteRow.locator("[data-target]")).toContainText("Site");
   const siteDetails = siteRow.locator("[data-details]");
   await expect(siteDetails).toContainText(`:${inspectorPort} Inspector`);
   await expect(siteDetails).toContainText("HTTP 200", { timeout: 30_000 });
   await expect(siteDetails, "page titles stay in Inspect").not.toContainText("Fixture");
+  // The declared "Local site" link is the same URL as the Site's Open: one Open, not two.
   await expect(siteRow.getByRole("link")).toHaveCount(1);
   await expect(siteRow.getByRole("link")).toHaveAttribute("href", `http://localhost:${sitePort}/`);
+  await expect(siteRow).not.toContainText("Local site");
 
   // workerd: matched by its process name, every (changing) port in details; its 500s are
   // reachable HTTP, not a failure, and there is nothing to open.
   const workerRow = project.locator("li[data-row]", { hasText: "Worker runtime" });
   const workerDetails = workerRow.locator("[data-details]");
   await expect(workerDetails).toContainText(
-    workerd.ports.map((port) => `:${port}`).join(" HTTP 500 · "),
+    workerd.ports.map((port) => `:${port}`).join(" HTTP 500, "),
     {
       timeout: 30_000,
     },
@@ -583,12 +606,49 @@ test("details endpoints stay visible and muted, are never opened, and Inspect sa
   await expect(inspector).toContainText("not a launch target");
   await expect(inspector).toContainText("Kossé profile: endpoints");
   await expect(sheet.locator(`[data-endpoint="${sitePort}"]`)).toContainText("summary");
+  await expect(sheet, "the folded declared link stays reachable").toContainText("Local site");
   await page.keyboard.press("Escape");
   await workerRow.getByRole("button", { name: "Inspect" }).click();
   await expect(sheet.locator(`[data-endpoint="${workerd.ports[0]}"]`)).toContainText(
     "Kossé profile: other endpoints",
   );
   await page.keyboard.press("Escape");
+});
+
+test("the open target carries the page title; other summary lines do not repeat it", async ({
+  page,
+}) => {
+  const [sitePort = 0, inspectorPort = 0] = world.fixtures.site.ports;
+  const [first, second] =
+    sitePort < inspectorPort ? [sitePort, inspectorPort] : [inspectorPort, sitePort];
+  // Both of the site's ports in the summary: two titled 200s, so the lower port is the target.
+  const config = join(world.configDir, "config.json");
+  const good = await readFile(config, "utf8");
+  const profile = JSON.parse(good) as {
+    projects: Record<string, { services: { site: { endpoints: Record<string, object> } } }>;
+  };
+  const site = profile.projects[world.marketing]?.services.site;
+  if (site === undefined) throw new Error("the marketing profile has no site entry");
+  site.endpoints[String(inspectorPort)] = { name: "Inspector" };
+  await writeFile(config, `${JSON.stringify(profile)}\n`);
+  try {
+    await open(page);
+    const siteRow = card(page, world.marketing).locator("li[data-row]", {
+      hasText: "Marketing site",
+    });
+    await expect(siteRow.locator("[data-details]")).toHaveCount(0, { timeout: 30_000 });
+    const target = siteRow.locator("[data-target]");
+    await expect(target).toContainText(`localhost:${first}`, { timeout: 30_000 });
+    await expect(target).toContainText("HTTP 200 · Fixture & <Title>");
+    const other = siteRow.locator("li:not([data-target])", { hasText: `:${second}` });
+    await expect(other).toContainText("HTTP 200");
+    await expect(other).not.toContainText("Fixture");
+    await expect(
+      other.getByRole("link", { name: `Open localhost:${second}`, exact: true }),
+    ).toBeVisible();
+  } finally {
+    await writeFile(config, good);
+  }
 });
 
 test("losing the server is visible; a restarted instance is picked up and old confirmations are stale", async ({

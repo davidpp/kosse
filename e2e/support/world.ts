@@ -190,6 +190,10 @@ export async function createWorld(
               site: {
                 name: "Marketing site",
                 match: { cwd: ".", process: "vite" },
+                // The same URL as the Site endpoint's Open: the row does not repeat it.
+                links: [
+                  { label: "Local site", url: `http://localhost:${sitePort}`, kind: "local" },
+                ],
                 endpoints: {
                   [String(sitePort)]: { name: "Site" },
                   [String(inspectorPort)]: { name: "Inspector", show: "details" },

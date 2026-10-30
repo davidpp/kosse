@@ -1,6 +1,11 @@
 import { GitBranch, Globe, Settings2 } from "lucide-react";
 
-import type { ConfiguredService, Endpoint, ProcessIdentity } from "@/generated/contracts";
+import type {
+  ConfiguredService,
+  Endpoint,
+  HttpProbe,
+  ProcessIdentity,
+} from "@/generated/contracts";
 import {
   formatBytes,
   formatClock,
@@ -10,14 +15,15 @@ import {
   identityKey,
   shortPath,
 } from "@/model/format";
-import { splitEndpoints } from "@/model/endpoints";
+import { openTarget, splitEndpoints } from "@/model/endpoints";
+import { sameLink } from "@/model/links";
 import { summarizeProbe } from "@/model/probe";
 import type { ConfiguredRow, ProjectGroup, Row, ServiceRow } from "@/model/services";
 
 import { OutLink } from "./link";
 import { Marker } from "./marker";
 import { probeFor, TryHttp, type Tried } from "./try-http";
-import { mono, quiet, quietDanger, rowButton } from "./ui";
+import { mono, rowAction, rowButton, rowDanger } from "./ui";
 
 export type RowActions = {
   inspect: (identity: ProcessIdentity) => void;
@@ -61,7 +67,7 @@ export function ProjectCard({ group, actions }: { group: ProjectGroup; actions: 
         {group.root === null ? null : (
           <button
             type="button"
-            className={`${quiet} ${rowButton} ml-auto text-ink-muted`}
+            className={`${rowAction} ${rowButton} ml-auto`}
             onClick={() => group.root !== null && actions.customize(group.root)}
           >
             <Settings2 className="size-3.5" aria-hidden />
@@ -94,6 +100,23 @@ function ServiceLine({ row, actions }: { row: ServiceRow; actions: RowActions })
   const identity = service.process.identity;
   const ended = row.kind === "ended";
   const { summary, details } = splitEndpoints(service);
+  const probed = summary.map((endpoint) => {
+    const tried = actions.tried.get(`${identityKey(identity)}:${endpoint.port}`);
+    return { endpoint, tried, http: probeFor(endpoint, tried) };
+  });
+  // An ended row offers no Open, so it has no target either.
+  const target = ended ? null : openTarget(probed);
+  const lines = target === null ? probed : [target, ...probed.filter((item) => item !== target)];
+  const opened = ended
+    ? []
+    : probed.flatMap(({ http }) => {
+        const url = summarizeProbe(http).url;
+        return url === null ? [] : [url];
+      });
+  // A declared link to a URL that already has its Open is not repeated; Inspect lists it.
+  const links = (row.configured?.links ?? []).filter(
+    (link) => !opened.some((url) => sameLink(link.url, url)),
+  );
   return (
     <li
       data-row
@@ -126,30 +149,33 @@ function ServiceLine({ row, actions }: { row: ServiceRow; actions: RowActions })
         </div>
       </div>
       <ul className="min-w-0 space-y-1">
-        {summary.map((endpoint) => (
+        {lines.map((item) => (
           <EndpointLine
-            key={endpoint.port}
-            endpoint={endpoint}
-            identity={identity}
+            key={item.endpoint.port}
+            endpoint={item.endpoint}
+            http={item.http}
+            tried={item.tried}
+            isTarget={item === target}
             ended={ended}
-            actions={actions}
+            onTry={() => actions.tryHttp(identity, item.endpoint.port)}
           />
         ))}
         {details.length === 0 ? null : (
           <DetailsLine endpoints={details} identity={identity} actions={actions} />
         )}
-        {row.configured === null
-          ? null
-          : row.configured.links.map((link) => <DeclaredLink key={link.url} link={link} />)}
+        {links.map((link) => (
+          <DeclaredLink key={link.url} link={link} />
+        ))}
       </ul>
       {/* Wraps at every width: in the md grid this column is `auto`, so a nowrap line here would
           push the row past the window (S11). */}
       <div className="flex min-h-5 flex-wrap items-center justify-between gap-x-4 gap-y-2 md:justify-end">
         {ended ? null : <Metrics row={row} />}
-        <div className="flex items-center gap-1.5">
+        {/* Borderless at rest: pull the first label onto the column edge when the row stacks. */}
+        <div className="-ml-2 flex items-center gap-1.5 md:ml-0">
           <button
             type="button"
-            className={`${quiet} ${rowButton}`}
+            className={`${rowAction} ${rowButton}`}
             data-inspect
             onClick={() => actions.inspect(identity)}
           >
@@ -158,7 +184,7 @@ function ServiceLine({ row, actions }: { row: ServiceRow; actions: RowActions })
           {ended ? null : identity.pid === actions.kossePid ? (
             <button
               type="button"
-              className={`${quietDanger} ${rowButton}`}
+              className={`${rowDanger} ${rowButton}`}
               disabled
               title="This is Kossé itself. Quit it from its menu-bar icon instead."
             >
@@ -171,7 +197,7 @@ function ServiceLine({ row, actions }: { row: ServiceRow; actions: RowActions })
           ) : (
             <button
               type="button"
-              className={`${quietDanger} ${rowButton}`}
+              className={`${rowDanger} ${rowButton}`}
               onClick={() => actions.stop(identity)}
             >
               Stop
@@ -208,30 +234,44 @@ function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline gap-1">
       <dt className="text-small">{label}</dt>
-      <dd className={`${mono} text-ink`}>{value}</dd>
+      <dd className={mono}>{value}</dd>
     </div>
   );
 }
 
+/**
+ * One summary endpoint. The open target leads with its Open and full `localhost:<port>`, then
+ * what was seen with the page title; other endpoints lead with `:port`, show the status without
+ * the title (it repeats) and a quiet Open when they answered.
+ */
 function EndpointLine({
   endpoint,
-  identity,
+  http,
+  tried,
+  isTarget,
   ended,
-  actions,
+  onTry,
 }: {
   endpoint: Endpoint;
-  identity: ProcessIdentity;
+  http: HttpProbe;
+  tried: Tried | undefined;
+  isTarget: boolean;
   ended: boolean;
-  actions: RowActions;
+  onTry: () => void;
 }) {
-  const tried = actions.tried.get(`${identityKey(identity)}:${endpoint.port}`);
-  const probe = summarizeProbe(probeFor(endpoint, tried));
+  const probe = summarizeProbe(http);
   return (
-    <li className="flex min-h-5 min-w-0 items-center gap-x-2">
+    <li className="flex min-h-5 min-w-0 items-center gap-x-2" data-target={isTarget || undefined}>
       <Marker kind={ended ? "ended" : probe.marker} />
-      <span className={`${mono} shrink-0 font-medium ${ended ? "" : "text-ink"}`}>
-        :{endpoint.port}
-      </span>
+      {isTarget && probe.url !== null ? (
+        <OutLink url={probe.url} className="shrink-0" tone="target">
+          Open
+        </OutLink>
+      ) : (
+        <span className={`${mono} shrink-0 font-medium ${ended ? "" : "text-ink"}`}>
+          :{endpoint.port}
+        </span>
+      )}
       {endpoint.display.name === null ? null : (
         <span className={`shrink-0 font-medium ${ended ? "" : "text-ink"}`}>
           {endpoint.display.name}
@@ -246,16 +286,17 @@ function EndpointLine({
           {endpoint.exposure === "allInterfaces" ? "all interfaces" : "network interface"}
         </span>
       )}
+      {probe.notHttp ? <Tag>TCP</Tag> : null}
       <span className="min-w-0 truncate text-ink-muted" title={probe.text}>
-        {probe.text}
+        {isTarget ? probe.text : probe.brief}
       </span>
-      {probe.url !== null && !ended ? (
-        <OutLink url={probe.url} className="shrink-0" withPort={false}>
+      {probe.url !== null && !ended && !isTarget ? (
+        <OutLink url={probe.url} className="shrink-0" tone="quiet">
           Open
         </OutLink>
       ) : null}
       {probe.canTry && !ended && endpoint.http.state === "skipped" ? (
-        <TryHttp tried={tried} onTry={() => actions.tryHttp(identity, endpoint.port)} />
+        <TryHttp tried={tried} onTry={onTry} />
       ) : null}
     </li>
   );
@@ -284,11 +325,11 @@ function DetailsLine({
           const probe = summarizeProbe(probeFor(endpoint, tried));
           return (
             <span key={endpoint.port} title={probe.text}>
-              {index === 0 ? null : <span aria-hidden> · </span>}
+              {index === 0 ? null : ", "}
               <span className={mono}>:{endpoint.port}</span>
               {endpoint.display.name === null ? null : ` ${endpoint.display.name}`}
               {/* Page titles stay in Inspect: a details endpoint often serves the app's page. */}
-              {` ${probe.text.split(" · ")[0] ?? ""}`}
+              {` ${probe.brief}`}
             </span>
           );
         })}
