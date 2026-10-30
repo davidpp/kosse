@@ -72,6 +72,7 @@ pub fn merge(
         sources,
         name,
         name_source,
+        central_revision: crate::profiles::central::revision(central),
         services,
     }
 }

@@ -104,6 +104,7 @@ describe("customize form", () => {
       sources: ["central", "repository"],
       name: "Shop",
       nameSource: "central",
+      centralRevision: "0123456789abcdef",
       services: [
         entry("legacy", { disabled: true, sources: { ...none, disabled: "central" } }),
         entry("web", {

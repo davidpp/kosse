@@ -51,7 +51,7 @@ S04 outcome: policy in `crates/core/src/probe.rs`, I/O in `crates/app/src/prober
 
 One endpoint, default `127.0.0.1:47831`; configurable explicitly. Refuse accidental non-loopback binding. Fail clearly on collision; do not assume an unrelated occupant is Kossé.
 
-Read endpoints: health/version, session (the action token), snapshot, SSE. Write endpoints: refresh, requested probe, stop, central project profile (S06), the resident app's window (S08), dashboard preferences (`/api/preferences`). All API responses redact before leaving core; do not expose environment variables.
+Read endpoints: health/version, session (the action token), snapshot, SSE, the customization prompt for a known project root (`GET /api/profile/prompt`, S16). Write endpoints: refresh, requested probe, stop, central project profile (S06), the resident app's window (S08), dashboard preferences (`/api/preferences`). All API responses redact before leaving core; do not expose environment variables.
 
 Validate Host against configured loopback authority on every route; `localhost:<port>` is admitted alongside `127.0.0.1:<port>`. For unsafe methods require exact same-origin Origin (reject missing/null/mismatch, and `Sec-Fetch-Site: none`), JSON content type, bounded payload, and a per-instance random action token obtained only through same-origin API. No wildcard CORS. Token is not embedded in URL/logs/persisted config. These defenses target websites/DNS rebinding, not malicious local processes.
 

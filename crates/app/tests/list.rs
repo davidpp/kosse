@@ -442,7 +442,11 @@ fn list_here_lists_only_the_callers_worktree() {
         error.error,
         kosse_core::agent::CommandErrorCode::NotInProject
     );
-    let plain = kosse_at(&outside, config, &here[..2]);
+    let plain = kosse_at(
+        &outside,
+        config,
+        &["list", "--here", "--instance-port", "0"],
+    );
     assert_eq!(plain.status.code(), Some(2));
     let stderr = String::from_utf8(plain.stderr).expect("UTF-8");
     assert_eq!(stderr.lines().count(), 1, "one plain line: {stderr}");

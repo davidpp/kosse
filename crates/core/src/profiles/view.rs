@@ -37,6 +37,9 @@ pub struct ProjectMetadata {
     /// Display name; `null` keeps the observed directory name.
     pub name: Option<String>,
     pub name_source: Option<ProfileSource>,
+    /// The stored central profile's revision (`"none"` without one): what a change made from this
+    /// metadata sends as `expectedRevision`, and how a view notices another writer's change.
+    pub central_revision: String,
     /// Ordered by ID.
     pub services: Vec<ConfiguredService>,
 }

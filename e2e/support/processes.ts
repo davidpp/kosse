@@ -1,7 +1,7 @@
 // Processes the browser suite starts and owns: the real `kosse` debug binary and
 // `kosse-fixture` listeners (crates/fixtures). Each is signalled only through the handle of the
 // child this module spawned (Node never signals a reaped child), never by name or bare PID.
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { constants } from "node:fs";
 import { copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -162,6 +162,24 @@ export type ServerOptions = {
   act: number[];
   port?: number;
 };
+
+/**
+ * A one-shot `kosse` command (an agent's `kosse profile set`, say) against the world's
+ * configuration; `input` is its standard input.
+ */
+export function kosseCommand(
+  configDir: string,
+  args: string[],
+  input = "",
+): { status: number | null; stdout: string; stderr: string } {
+  const run = spawnSync(join(targetDir, "kosse"), args, {
+    env: { ...process.env, KOSSE_CONFIG_DIR: configDir },
+    input,
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  return { status: run.status, stdout: run.stdout, stderr: run.stderr };
+}
 
 /** `kosse serve` scoped to the given fixtures: nothing else is probed or can be signalled. */
 export async function startKosse(options: ServerOptions): Promise<Server> {
