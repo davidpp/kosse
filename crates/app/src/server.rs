@@ -1,6 +1,6 @@
 //! HTTP surface of a running instance.
 //!
-//! Routes: the API (see [`api`]); any other `/api` path is 404; everything else is the embedded
+//! Routes: the API (see [`api`], [`customize`] for profiles); any other `/api` path is 404; everything else is the embedded
 //! web bundle (see [`assets`]). Every route, the bundle included, passes [`guard::enforce`].
 //! [`bind`] claims the loopback endpoint and refuses ports another process already serves; [`run`]
 //! serves until SIGINT/SIGTERM or the owner quits, ends open event streams, then drains for a
@@ -67,6 +67,10 @@ pub fn router(state: AppState, customize: Customize) -> Router {
             get(preferences::read)
                 .post(preferences::save)
                 .with_state(PreferencesApi::new(customize.store())),
+        )
+        .route(
+            "/api/profile/prompt",
+            get(customize::prompt).with_state(customize.clone()),
         )
         .route("/api/profile", post(customize::save).with_state(customize))
         .route("/api", any(StatusCode::NOT_FOUND))

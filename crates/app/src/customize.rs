@@ -8,19 +8,24 @@
 //! scanner picks the change up on the scan this triggers, and every view sees it in the next
 //! snapshot. A request naming an `expectedRevision` is refused (`409 revisionConflict`) when
 //! another writer, such as an agent's `kosse profile set`, changed the profile first.
+//!
+//! `GET /api/profile/prompt?root=<root>` returns the customization prompt for a known root, the
+//! same text `kosse profile prompt` prints (core generates both). It is a read: it writes nothing
+//! and passes the guard like every route.
 
 use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::{State, rejection::JsonRejection},
+    extract::{Query, State, rejection::JsonRejection},
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use kosse_core::{
-    contract::{ApiError, ApiErrorCode, SaveProfileRequest, SavedProfile},
-    profiles::{CentralStore, StoreError, central, view::ProfileSource},
+    contract::{ApiError, ApiErrorCode, ProfilePrompt, SaveProfileRequest, SavedProfile},
+    profiles::{CentralStore, StoreError, central, prompt, view::ProfileSource},
 };
+use serde::Deserialize;
 
 use crate::{api::RateLimit, scheduler::SchedulerHandle};
 
@@ -61,6 +66,43 @@ impl Customize {
     }
 }
 
+#[derive(Deserialize)]
+pub struct PromptQuery {
+    root: String,
+}
+
+pub async fn prompt(
+    State(customize): State<Customize>,
+    query: Result<Query<PromptQuery>, axum::extract::rejection::QueryRejection>,
+) -> Response {
+    let Ok(Query(PromptQuery { root })) = query else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            ApiErrorCode::InvalidPayload,
+            "expected ?root=<project root>".into(),
+        );
+    };
+    if !customize.knows(&root) {
+        return unknown_project();
+    }
+    match prompt::customization(&root) {
+        Ok(prompt) => Json(ProfilePrompt { root, prompt }).into_response(),
+        Err(refused) => error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiErrorCode::UnsafeRoot,
+            refused.to_string(),
+        ),
+    }
+}
+
+fn unknown_project() -> Response {
+    error(
+        StatusCode::NOT_FOUND,
+        ApiErrorCode::UnknownProject,
+        "not a project in the current snapshot, and no profile is saved for it".into(),
+    )
+}
+
 pub async fn save(
     State(customize): State<Customize>,
     body: Result<Json<SaveProfileRequest>, JsonRejection>,
@@ -84,11 +126,7 @@ pub async fn save(
         }
     };
     if !customize.knows(&request.root) {
-        return error(
-            StatusCode::NOT_FOUND,
-            ApiErrorCode::UnknownProject,
-            "not a project in the current snapshot, and no profile is saved for it".into(),
-        );
+        return unknown_project();
     }
     if !customize.limit.try_acquire() {
         let mut response = error(

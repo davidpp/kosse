@@ -49,11 +49,18 @@ const USAGE: i32 = 2;
 const REFUSED: i32 = 3;
 const UNOBSERVED: i32 = 4;
 
+/// `kosse` with `config` as its configuration. A command that asks a running instance and names
+/// none asks no one (`--instance-port 0`): a test never reads the machine's own Kossé.
 fn kosse(config: &Path, cwd: &Path, args: &[&str], stdin: Option<&str>) -> Output {
+    let asks_instance = matches!(args, ["profile", "context" | "show" | "set", ..]);
+    let mut args = args.to_vec();
+    if asks_instance && !args.contains(&"--instance-port") {
+        args.extend(["--instance-port", "0"]);
+    }
     let mut child = Command::new(env!("CARGO_BIN_EXE_kosse"))
         .env("KOSSE_CONFIG_DIR", config)
         .current_dir(cwd)
-        .args(args)
+        .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -318,6 +325,60 @@ fn a_dry_run_predicts_what_the_running_instance_applies() {
     );
     let (status, _) = server.terminate();
     assert!(status.success());
+}
+
+/// The revision a dry run reports, in its JSON (`currentRevision` and the metadata's
+/// `centralRevision`) and in its Markdown, is the one the following `set --expect` accepts: the
+/// prompt tells agents to apply with it.
+#[test]
+fn a_dry_runs_revision_is_the_one_to_expect() {
+    let world = world();
+    let first = world
+        .tree
+        .file("first.json", &world.proposed())
+        .expect("file");
+    let set = |file: &Path, extra: &[&str]| {
+        let mut args = vec!["profile", "set", "--file", file.to_str().expect("UTF-8")];
+        args.extend_from_slice(extra);
+        world.kosse(&args)
+    };
+    let saved: ProfileApplied = json_of(&set(&first, &["--json"]));
+    let renamed = world
+        .tree
+        .file(
+            "renamed.json",
+            &world.proposed().replace("\"Acme\"", "\"Acme 2\""),
+        )
+        .expect("file");
+
+    let preview: ProfilePreview = json_of(&set(&renamed, &["--json", "--dry-run"]));
+    assert_eq!(preview.current_revision, saved.saved.revision);
+    assert_eq!(preview.effective.central_revision, saved.saved.revision);
+    let markdown = String::from_utf8(set(&renamed, &["--dry-run"]).stdout).expect("UTF-8");
+    assert!(
+        markdown.contains(&format!("current revision: {}", saved.saved.revision)),
+        "{markdown}"
+    );
+
+    let applied = set(
+        &renamed,
+        &["--json", "--expect", &preview.effective.central_revision],
+    );
+    assert_eq!(
+        code(&applied),
+        NEGATIVE,
+        "saved, with its ambiguous process: {}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    let applied: ProfileApplied = json_of(&applied);
+    assert_eq!(
+        applied
+            .saved
+            .profile
+            .and_then(|profile| profile.name)
+            .as_deref(),
+        Some("Acme 2")
+    );
 }
 
 /// The window (API) and an agent (CLI) share one profile: a write made from a revision that

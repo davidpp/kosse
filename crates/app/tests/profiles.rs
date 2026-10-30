@@ -22,7 +22,7 @@ use std::{
 };
 
 use kosse_core::{
-    contract::SavedProfile,
+    contract::{ProfilePrompt, SavedProfile},
     model::{
         HttpProbe, Observation, ProbeResult, ProbeSkip, ProcessIdentity, ScanWarning, Service,
         Snapshot,
@@ -620,9 +620,11 @@ fn customizing_writes_only_the_central_configuration() {
     eventually(APPLIED_WITHIN, || {
         let observation = server.snapshot().observation?;
         let metadata = metadata_of(&observation, &repo)?;
+        // The revision views compare a draft against is the one the save returned.
         (service_of(&observation, &fixture).profile == matched("web")
-            && metadata.sources == [ProfileSource::Central])
-        .then_some(())
+            && metadata.sources == [ProfileSource::Central]
+            && metadata.central_revision == saved.revision)
+            .then_some(())
     })
     .expect("the next snapshot applies the saved profile");
     let file = config.join("config.json");
@@ -665,6 +667,86 @@ fn customizing_writes_only_the_central_configuration() {
         status_before
     );
     assert_eq!(listing(&repo), files_before, "the repository is untouched");
+    let (status, _) = server.terminate();
+    assert!(status.success());
+}
+
+/// `root` as a query value: everything but unreserved characters percent-encoded.
+fn query_value(root: &str) -> String {
+    root.bytes()
+        .map(|byte| {
+            if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+                char::from(byte).to_string()
+            } else {
+                format!("%{byte:02X}")
+            }
+        })
+        .collect()
+}
+
+/// The window shows core's prompt: the text `kosse profile prompt` prints for the same root,
+/// behind the same guard and the same known-root rule as saving, and never for a root it cannot
+/// quote safely.
+#[test]
+fn the_window_prompt_is_the_cli_prompt() {
+    let tree = Sandbox::new().expect("sandbox");
+    let repo = tree.dir("work/it's here").expect("dir");
+    init_repo(&repo).expect("repo");
+    let fixture = spawn(&repo);
+    let config = tree.root().join("config");
+    let root = text(&repo);
+    let hostile = format!("{}/a`b", text(tree.root()));
+    write_central(
+        &config,
+        &json!({ hostile.clone(): { "version": 1, "services": {} } }),
+    );
+    let server = Server::start_configured(&config, &[]);
+    eventually(APPLIED_WITHIN, || {
+        let observation = server.snapshot().observation?;
+        (service_of(&observation, &fixture).project.as_deref() == Some(root.as_str())
+            && observation
+                .profiles
+                .iter()
+                .any(|metadata| metadata.root == hostile))
+        .then_some(())
+    })
+    .expect("fixture attributed, hostile root known from its profile");
+    let path = format!("/api/profile/prompt?root={}", query_value(&root));
+
+    let cli = kosse(&config, &["profile", "prompt", &root]);
+    assert!(
+        cli.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cli.stderr)
+    );
+    let answer = server.get(&path);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    let window: ProfilePrompt = serde_json::from_slice(&answer.body).expect("prompt");
+    assert_eq!(window.root, root);
+    assert_eq!(window.prompt, String::from_utf8(cli.stdout).expect("UTF-8"));
+
+    // The guard applies: another site cannot read it, and the Host must be this instance's.
+    let cross_site = server.send(
+        &RawRequest::new("GET", &path)
+            .host(&server.authority())
+            .header("Sec-Fetch-Site", "cross-site"),
+    );
+    assert_eq!(cross_site.status, 403, "{}", cross_site.text());
+    let rebound = server.send(&RawRequest::new("GET", &path).host("attacker.example"));
+    assert_eq!(rebound.status, 421, "{}", rebound.text());
+    assert_eq!(rebound.error_code(), "hostNotAllowed");
+
+    let unknown = server.get("/api/profile/prompt?root=%2Fnowhere%2Felse");
+    assert_eq!(unknown.status, 404, "{}", unknown.text());
+    assert_eq!(unknown.error_code(), "unknownProject");
+    let unsafe_root = server.get(&format!(
+        "/api/profile/prompt?root={}",
+        query_value(&hostile)
+    ));
+    assert_eq!(unsafe_root.status, 422, "{}", unsafe_root.text());
+    assert_eq!(unsafe_root.error_code(), "unsafeRoot");
+    let missing = server.get("/api/profile/prompt");
+    assert_eq!(missing.status, 400, "{}", missing.text());
     let (status, _) = server.terminate();
     assert!(status.success());
 }

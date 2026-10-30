@@ -72,6 +72,7 @@ describe("profiles", () => {
     sources: ["central"],
     name: "Shop",
     nameSource: "central",
+    centralRevision: "0123456789abcdef",
     services: [
       {
         id: "api",

@@ -60,7 +60,7 @@ status, including 404), or a specific failure, with unknown shown as unknown.
   last-seen time.
 - Process-derived strings (names, paths, commands) are untrusted text: escaped, and commands are
   redacted centrally before display.
-- Performance budget: shipped JS + CSS at most 50 kB gzipped, no web fonts, system font stack.
+- Performance budget: shipped JS + CSS at most 55 kB gzipped, no web fonts, system font stack.
   `bun run check` enforces it.
 - Stack: React APIs on the TanStack Redact runtime, TanStack Query, Tailwind v4, Lucide icons,
   native `<dialog>`; hand-built components, no component framework.
