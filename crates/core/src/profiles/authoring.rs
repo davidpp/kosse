@@ -319,7 +319,7 @@ pub fn preview(
     let mut metadata = [effective::merge(root, proposed, repository, observed)];
     // `own_user` only decides declared HTTP probing, which a preview does not report.
     let warnings = effective::assign(&mut scoped, &mut metadata, None);
-    let [effective] = metadata;
+    let [mut effective] = metadata;
     let matches = scoped
         .services
         .into_iter()
@@ -349,6 +349,8 @@ pub fn preview(
     if let (Some(proposed), Some(stored)) = (&mut proposed_stored, stored) {
         proposed.keep_unknown_from(stored);
     }
+    // What the applied profile's revision will be, kept fields included.
+    effective.central_revision = crate::profiles::central::revision(proposed_stored.as_ref());
     ProfilePreview {
         schema_version: crate::agent::AGENT_SCHEMA_VERSION,
         root: root.to_owned(),
