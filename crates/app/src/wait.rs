@@ -11,7 +11,9 @@
 //! `--http` asks for probes exactly as the dashboard's "try HTTP" does, so there is one probe
 //! policy: through the instance's `POST /api/probe` (session token, same origin, its rate
 //! limit), or in process through [`Probes::request`] after the same
-//! [`probe::requested_target`] check. Only the endpoints of the one matching service are probed,
+//! [`probe::requested_target`] check. Only the endpoints of the one matching service are probed
+//! (its summary endpoints, its launch targets, unless `--port` names one; a service whose
+//! endpoints are all details is a negative answer at once, exit 1),
 //! first at once, then after 1 s, doubling to at most [`PROBE_BACKOFF_MAX`]; a rate-limited or
 //! stale request is retried after a second. Any HTTP response counts (404 and 500 included). An
 //! endpoint that may never be probed (another user's, not on loopback) fails at once (exit 3),
@@ -249,11 +251,20 @@ fn judge(
         WaitCondition::Http => match services {
             [] => Verdict::Waiting { probe: Vec::new() },
             [service] => {
-                let endpoints: Vec<&Endpoint> = service
-                    .endpoints
-                    .iter()
-                    .filter(|endpoint| port.is_none_or(|port| endpoint.port == port))
-                    .collect();
+                let endpoints: Vec<&Endpoint> = match port {
+                    Some(port) => service
+                        .endpoints
+                        .iter()
+                        .filter(|endpoint| endpoint.port == port)
+                        .collect(),
+                    None => service.launch_endpoints().collect(),
+                };
+                if endpoints.is_empty() && port.is_none() {
+                    return Verdict::Never(Failure::new(
+                        CommandErrorCode::NoHttp,
+                        crate::query::details_only(what, service, "kosse wait --http --port"),
+                    ));
+                }
                 if let Some(url) = endpoints
                     .iter()
                     .find_map(|endpoint| list::reachable_url(endpoint))

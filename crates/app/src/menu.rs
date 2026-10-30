@@ -3,14 +3,15 @@
 //!
 //! Layout (blueprint/product.md, Tray surface): a status line when the tray needs attention,
 //! one section per project (name and branch) listing its services as `name :port[, :port]`, each
-//! with Open (only for endpoints that answered HTTP), Inspect and Stop…; then the listeners
+//! with Open (only for summary endpoints, the launch targets, that answered HTTP), Inspect and
+//! Stop…; then the listeners
 //! outside any project; then Open Dashboard and Quit Kossé. Inspect and Stop… open dashboard
 //! routes; Stop… opens the dashboard's own confirmation, so the menu never signals anything.
 
 use std::collections::HashMap;
 
 use kosse_core::{
-    model::{GitHead, HttpProbe, Observation, ProbeResult, Project, Service, Snapshot},
+    model::{Endpoint, GitHead, HttpProbe, Observation, ProbeResult, Project, Service, Snapshot},
     profiles::view::{ProfileMatch, ProjectMetadata},
 };
 
@@ -227,7 +228,7 @@ fn heading(project: &Project, metadata: Option<&ProjectMetadata>) -> String {
     })
 }
 
-/// `name :port[, :port]` with Open per HTTP endpoint, Inspect and Stop….
+/// `name :port[, :port]` with Open per summary endpoint that answered HTTP, Inspect and Stop….
 fn service_item(service: &Service, observation: &Observation, kosse: u32) -> Item {
     let name = service_name(service, observation);
     let ports: Vec<String> = service
@@ -236,16 +237,15 @@ fn service_item(service: &Service, observation: &Observation, kosse: u32) -> Ite
         .map(|endpoint| format!(":{}", endpoint.port))
         .collect();
     let mut items = Vec::new();
-    let reachable: Vec<(u16, &str)> = service
-        .endpoints
-        .iter()
-        .filter_map(|endpoint| open_url(&endpoint.http).map(|url| (endpoint.port, url)))
+    let reachable: Vec<(&Endpoint, &str)> = service
+        .launch_endpoints()
+        .filter_map(|endpoint| open_url(&endpoint.http).map(|url| (endpoint, url)))
         .collect();
-    for (port, url) in &reachable {
-        let label = if reachable.len() == 1 {
-            "Open".to_owned()
-        } else {
-            format!("Open :{port}")
+    for (endpoint, url) in &reachable {
+        let label = match &endpoint.display.name {
+            _ if reachable.len() == 1 => "Open".to_owned(),
+            Some(name) => printable(&format!("Open {name}")),
+            None => format!("Open :{}", endpoint.port),
         };
         items.push(Item::Action {
             label,
@@ -335,6 +335,7 @@ mod tests {
             bind_addresses: vec!["127.0.0.1".to_owned()],
             exposure: Exposure::Loopback,
             http,
+            display: Default::default(),
         }
     }
 
@@ -565,6 +566,58 @@ mod tests {
                 ),
                 title: launcher::title_for("node"),
             })
+        );
+    }
+
+    #[test]
+    fn open_is_offered_only_for_summary_endpoints() {
+        use kosse_core::{
+            model::{DisplayBasis, EndpointDisplay},
+            profiles::document::EndpointShow,
+        };
+        let shown = |port: u16, name: Option<&str>, show: EndpointShow| {
+            let mut endpoint = endpoint(port, answered(port));
+            endpoint.display = EndpointDisplay {
+                name: name.map(str::to_owned),
+                show,
+                basis: DisplayBasis::Endpoint,
+                source: None,
+            };
+            endpoint
+        };
+        let snapshot = snapshot(
+            vec![
+                service(
+                    20,
+                    "node",
+                    Some("/src/shop"),
+                    vec![
+                        shown(3000, Some("Site"), EndpointShow::Summary),
+                        shown(3001, None, EndpointShow::Summary),
+                        shown(9229, Some("Inspector"), EndpointShow::Details),
+                    ],
+                ),
+                service(
+                    21,
+                    "workerd",
+                    Some("/src/shop"),
+                    vec![
+                        shown(51001, None, EndpointShow::Details),
+                        shown(51002, None, EndpointShow::Details),
+                    ],
+                ),
+            ],
+            vec![project("/src/shop", "shop", None)],
+        );
+        let model = Model::of(Some(&snapshot), NOW);
+        assert_eq!(
+            labels(submenu(&model, "node :3000, :3001, :9229")),
+            ["Open Site", "Open :3001", "Inspect", "Stop…"],
+            "a details endpoint that answered HTTP is no launch target"
+        );
+        assert_eq!(
+            labels(submenu(&model, "workerd :51001, :51002")),
+            ["Inspect", "Stop…"]
         );
     }
 
