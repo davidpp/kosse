@@ -455,6 +455,54 @@ test("All listeners is saved centrally and kept on reload, repository untouched"
   }
 });
 
+test("details endpoints stay visible and muted, are never opened, and Inspect says why", async ({
+  page,
+}) => {
+  const { site, workerd } = world.fixtures;
+  const [sitePort = 0, inspectorPort = 0] = site.ports;
+  await open(page);
+  const project = card(page, world.marketing);
+
+  // The site row: Open for the summary endpoint only; the inspector on the muted details line.
+  const siteRow = project.locator("li[data-row]", { hasText: "Marketing site" });
+  await expect(siteRow.getByText("HTTP 200").first()).toBeVisible({ timeout: 30_000 });
+  await expect(siteRow).toContainText(`:${sitePort}Site`);
+  const siteDetails = siteRow.locator("[data-details]");
+  await expect(siteDetails).toContainText(`:${inspectorPort} Inspector`);
+  await expect(siteDetails).toContainText("HTTP 200", { timeout: 30_000 });
+  await expect(siteRow.getByRole("link")).toHaveCount(1);
+  await expect(siteRow.getByRole("link")).toHaveAttribute("href", `http://localhost:${sitePort}/`);
+
+  // workerd: matched by its process name, every (changing) port in details; its 500s are
+  // reachable HTTP, not a failure, and there is nothing to open.
+  const workerRow = project.locator("li[data-row]", { hasText: "Worker runtime" });
+  const workerDetails = workerRow.locator("[data-details]");
+  await expect(workerDetails).toContainText(
+    workerd.ports.map((port) => `:${port}`).join(" HTTP 500 · "),
+    {
+      timeout: 30_000,
+    },
+  );
+  await expect(workerDetails).toContainText("HTTP 500", { timeout: 30_000 });
+  await expect(workerRow.getByRole("link")).toHaveCount(0);
+  await expect(workerRow.locator("svg.text-failed")).toHaveCount(0);
+
+  // Inspect lists every endpoint with its tier and where that came from.
+  await siteRow.getByRole("button", { name: "Inspect" }).click();
+  const sheet = page.getByRole("dialog");
+  const inspector = sheet.locator(`[data-endpoint="${inspectorPort}"]`);
+  await expect(inspector).toContainText("details");
+  await expect(inspector).toContainText("never a launch target");
+  await expect(inspector).toContainText("Kossé profile: endpoints");
+  await expect(sheet.locator(`[data-endpoint="${sitePort}"]`)).toContainText("in the summary");
+  await page.keyboard.press("Escape");
+  await workerRow.getByRole("button", { name: "Inspect" }).click();
+  await expect(sheet.locator(`[data-endpoint="${workerd.ports[0]}"]`)).toContainText(
+    "Kossé profile: other endpoints",
+  );
+  await page.keyboard.press("Escape");
+});
+
 test("losing the server is visible; a restarted instance is picked up and old confirmations are stale", async ({
   page,
 }) => {

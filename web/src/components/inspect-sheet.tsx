@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import type { Endpoint, Observation, ProfileSource, ScanWarning } from "@/generated/contracts";
 import { formatBytes, formatClock, formatCpu, formatDuration, formatHead } from "@/model/format";
+import { displayReason } from "@/model/endpoints";
 import { EXPOSURE, summarizeProbe } from "@/model/probe";
 import type { ServiceRow } from "@/model/services";
 
@@ -247,15 +248,27 @@ function EndpointDetail({
 }) {
   const http = probeFor(endpoint, tried);
   const probe = summarizeProbe(http);
+  const details = endpoint.display.show === "details";
   return (
-    <li className="rounded-control border border-hairline px-3 py-2">
+    <li className="rounded-control border border-hairline px-3 py-2" data-endpoint={endpoint.port}>
       <div className="flex flex-wrap items-center gap-2">
-        <Marker kind={ended ? "ended" : probe.marker} />
+        <Marker
+          kind={ended ? "ended" : details && probe.marker === "failed" ? "listening" : probe.marker}
+        />
         <span className={`${mono} font-medium`}>:{endpoint.port}</span>
+        {endpoint.display.name === null ? null : (
+          <span className="font-medium">{endpoint.display.name}</span>
+        )}
+        <Tag>{details ? "details" : "summary"}</Tag>
         <span className="text-ink-muted">{endpoint.protocol.toUpperCase()}</span>
         <span className="text-ink-muted">· reachable from {EXPOSURE[endpoint.exposure]}</span>
       </div>
       <dl className="mt-1.5 grid grid-cols-[7rem_1fr] gap-x-3 gap-y-0.5">
+        <dt className="text-ink-muted">Shown</dt>
+        <dd>
+          {details ? "in details, never a launch target" : "in the summary"} ·{" "}
+          <span className="text-ink-muted">{displayReason(endpoint.display)}</span>
+        </dd>
         <dt className="text-ink-muted">Bound to</dt>
         <dd className={mono}>{endpoint.bindAddresses.join(", ")}</dd>
         <dt className="text-ink-muted">HTTP</dt>

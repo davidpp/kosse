@@ -10,6 +10,7 @@ import {
   identityKey,
   shortPath,
 } from "@/model/format";
+import { splitEndpoints } from "@/model/endpoints";
 import { summarizeProbe } from "@/model/probe";
 import type { ConfiguredRow, ProjectGroup, Row, ServiceRow } from "@/model/services";
 
@@ -92,12 +93,13 @@ function ServiceLine({ row, actions }: { row: ServiceRow; actions: RowActions })
   const { service } = row;
   const identity = service.process.identity;
   const ended = row.kind === "ended";
+  const { summary, details } = splitEndpoints(service);
   return (
     <li
       data-row
       tabIndex={-1}
       className={`${rowClass} ${ended ? "text-ink-muted" : ""}`}
-      aria-label={`${row.name}, ${service.endpoints.map((endpoint) => `port ${endpoint.port}`).join(", ")}${ended ? ", ended" : ""}`}
+      aria-label={`${row.name}, ${service.endpoints.map((endpoint) => `port ${endpoint.port}${endpoint.display.show === "details" ? " (details)" : ""}`).join(", ")}${ended ? ", ended" : ""}`}
     >
       <div className="flex min-w-0 items-start gap-2">
         <div className="min-w-0">
@@ -124,7 +126,7 @@ function ServiceLine({ row, actions }: { row: ServiceRow; actions: RowActions })
         </div>
       </div>
       <ul className="min-w-0 space-y-1">
-        {service.endpoints.map((endpoint) => (
+        {summary.map((endpoint) => (
           <EndpointLine
             key={endpoint.port}
             endpoint={endpoint}
@@ -133,6 +135,9 @@ function ServiceLine({ row, actions }: { row: ServiceRow; actions: RowActions })
             actions={actions}
           />
         ))}
+        {details.length === 0 ? null : (
+          <DetailsLine endpoints={details} identity={identity} actions={actions} />
+        )}
         {row.configured === null
           ? null
           : row.configured.links.map((link) => <DeclaredLink key={link.url} link={link} />)}
@@ -227,6 +232,11 @@ function EndpointLine({
       <span className={`${mono} shrink-0 font-medium ${ended ? "" : "text-ink"}`}>
         :{endpoint.port}
       </span>
+      {endpoint.display.name === null ? null : (
+        <span className={`shrink-0 font-medium ${ended ? "" : "text-ink"}`}>
+          {endpoint.display.name}
+        </span>
+      )}
       {endpoint.exposure === "loopback" ? null : (
         <span
           className="inline-flex shrink-0 items-center gap-1 text-ink-muted"
@@ -247,6 +257,41 @@ function EndpointLine({
       {probe.canTry && !ended && endpoint.http.state === "skipped" ? (
         <TryHttp tried={tried} onTry={() => actions.tryHttp(identity, endpoint.port)} />
       ) : null}
+    </li>
+  );
+}
+
+/**
+ * Details endpoints (inspectors, internal ports) on one muted line: visible, never a launch
+ * target, and their HTTP errors never mark the service failed. Inspect has each in full.
+ */
+function DetailsLine({
+  endpoints,
+  identity,
+  actions,
+}: {
+  endpoints: Endpoint[];
+  identity: ProcessIdentity;
+  actions: RowActions;
+}) {
+  return (
+    <li className="flex min-h-5 min-w-0 items-center gap-x-2 text-ink-muted" data-details>
+      <span className="w-3.5 shrink-0" aria-hidden />
+      <span className="shrink-0 text-small">details</span>
+      <span className="min-w-0 truncate">
+        {endpoints.map((endpoint, index) => {
+          const tried = actions.tried.get(`${identityKey(identity)}:${endpoint.port}`);
+          const probe = summarizeProbe(probeFor(endpoint, tried));
+          return (
+            <span key={endpoint.port} title={probe.text}>
+              {index === 0 ? null : <span aria-hidden> · </span>}
+              <span className={mono}>:{endpoint.port}</span>
+              {endpoint.display.name === null ? null : ` ${endpoint.display.name}`}
+              {` ${probe.text}`}
+            </span>
+          );
+        })}
+      </span>
     </li>
   );
 }

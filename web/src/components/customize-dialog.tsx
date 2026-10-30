@@ -6,6 +6,8 @@ import { failureOf, saveProfile } from "@/api/client";
 import type {
   ConfiguredService,
   DeclaredProtocol,
+  EndpointProfile,
+  EndpointShow,
   LinkKind,
   ProjectMetadata,
   ProjectProfile,
@@ -19,6 +21,14 @@ import { button, input, label, mono, primary, quiet } from "./ui";
 
 /** `kind` round-trips an existing link's kind (the snapshot shows the effective one). */
 type LinkDraft = { uid: number; label: string; url: string; kind?: LinkKind };
+/** `show: ""` leaves `show` unset: a listed endpoint is then in the summary. */
+type EndpointDraft = {
+  uid: number;
+  port: string;
+  name: string;
+  show: EndpointShow | "";
+  probePath: string;
+};
 type ServiceDraft = {
   /** Stable key for the form row while its ID is being edited. */
   uid: number;
@@ -26,8 +36,13 @@ type ServiceDraft = {
   name: string;
   cwd: string;
   port: string;
+  process: string;
   protocol: DeclaredProtocol | "";
   probePath: string;
+  endpoints: EndpointDraft[];
+  /** The central profile sets `endpoints` (an empty object then hides kosse.json's). */
+  endpointsSet: boolean;
+  otherEndpoints: EndpointShow | "";
   links: LinkDraft[];
   /** The central profile sets `links` (an empty list then hides kosse.json's links). */
   linksSet: boolean;
@@ -173,6 +188,21 @@ export function CustomizeDialog({
                     onInput={(event) => update(index, { port: event.currentTarget.value })}
                   />
                 </Field>
+                <Field label="Process name">
+                  <input
+                    className={`${input} ${mono}`}
+                    value={draft.process}
+                    placeholder="any"
+                    onInput={(event) => update(index, { process: event.currentTarget.value })}
+                  />
+                </Field>
+                <Field label="Other endpoints">
+                  <ShowSelect
+                    value={draft.otherEndpoints}
+                    unset="not set"
+                    onChange={(otherEndpoints) => update(index, { otherEndpoints })}
+                  />
+                </Field>
                 <Field
                   label="Protocol (hint)"
                   hint={repoHint(draft, "protocol", draft.effective?.protocol)}
@@ -202,6 +232,10 @@ export function CustomizeDialog({
                   />
                 </Field>
               </div>
+              <EndpointsEditor
+                draft={draft}
+                onChange={(endpoints) => update(index, { endpoints, endpointsSet: true })}
+              />
               <div className="space-y-1.5">
                 <span className={label}>Links</span>
                 {draft.links.map((link, at) => (
@@ -372,6 +406,103 @@ function Field({
   );
 }
 
+const ENDPOINT_FIELDS = [
+  ["port", "Port"],
+  ["name", "Name"],
+  ["probePath", "Probe path"],
+] as const;
+
+/** Rows of port, name, probe path and tier; a listed endpoint is in the summary unless set to details. */
+function EndpointsEditor({
+  draft,
+  onChange,
+}: {
+  draft: ServiceDraft;
+  onChange: (endpoints: EndpointDraft[]) => void;
+}) {
+  return (
+    <div className="space-y-1.5" data-endpoints-editor>
+      <span className={`${label} block`}>Endpoints</span>
+      {draft.endpoints.map((endpoint, at) => {
+        const set = (change: Partial<EndpointDraft>) =>
+          onChange(replaceAt(draft.endpoints, at, { ...endpoint, ...change }));
+        return (
+          <div
+            key={endpoint.uid}
+            className="grid grid-cols-[4.5rem_1fr_1fr_6.5rem_auto] gap-2 max-sm:grid-cols-[4.5rem_1fr_6.5rem_auto]"
+          >
+            {ENDPOINT_FIELDS.map(([field, text]) => (
+              <input
+                key={field}
+                className={`${input} ${field === "name" ? "" : mono} ${field === "probePath" ? "max-sm:order-last max-sm:col-span-3" : ""}`}
+                aria-label={`Endpoint ${text.toLowerCase()}`}
+                placeholder={text}
+                value={endpoint[field]}
+                onInput={(event) => set({ [field]: event.currentTarget.value })}
+              />
+            ))}
+            <ShowSelect
+              value={endpoint.show === "details" ? "details" : ""}
+              unset="summary"
+              onChange={(show) => set({ show })}
+            />
+            <button
+              type="button"
+              className={quiet}
+              aria-label="Remove endpoint"
+              onClick={() => onChange(draft.endpoints.filter((_, i) => i !== at))}
+            >
+              <Trash2 className="size-3.5" aria-hidden />
+            </button>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        className={quiet}
+        onClick={() =>
+          onChange([
+            ...draft.endpoints,
+            { uid: nextUid(), port: "", name: "", show: "", probePath: "" },
+          ])
+        }
+      >
+        <Plus className="size-3.5" aria-hidden /> Add endpoint
+      </button>
+      <p className="text-small text-ink-muted">
+        Summary: what you open. Details: inspectors and internal ports, never opened.
+      </p>
+    </div>
+  );
+}
+
+/** `unset` labels the empty choice: "not set", or "summary" where that is what unset means. */
+function ShowSelect({
+  value,
+  unset,
+  onChange,
+}: {
+  value: EndpointShow | "";
+  unset: string;
+  onChange: (show: EndpointShow | "") => void;
+}) {
+  return (
+    <select
+      className={input}
+      aria-label="Shown in"
+      value={value}
+      onChange={(event) => {
+        const next = event.currentTarget.value;
+        onChange(next === "summary" || next === "details" ? next : "");
+      }}
+    >
+      <option value="">{unset}</option>
+      {unset === "summary" ? null : <option value="summary">summary</option>}
+      <option value="details">details</option>
+    </select>
+  );
+}
+
 function repoHint(
   draft: ServiceDraft,
   field: "name" | "match" | "protocol" | "probePath",
@@ -403,6 +534,18 @@ export function initialDrafts(metadata: ProjectMetadata | null): ServiceDraft[] 
         name: central("name") ? (entry.name ?? "") : "",
         cwd: central("match") ? (entry.match?.cwd ?? "") : "",
         port: central("match") && entry.match?.port !== undefined ? String(entry.match.port) : "",
+        process: central("match") ? (entry.match?.process ?? "") : "",
+        endpoints: central("endpoints")
+          ? entry.endpoints.map((listed) => ({
+              uid: nextUid(),
+              port: String(listed.port),
+              name: listed.name ?? "",
+              show: listed.show ?? "",
+              probePath: listed.probePath ?? "",
+            }))
+          : [],
+        endpointsSet: central("endpoints"),
+        otherEndpoints: central("otherEndpoints") ? (entry.otherEndpoints ?? "") : "",
         protocol: central("protocol") ? (entry.protocol ?? "") : "",
         probePath: central("probePath") ? (entry.probePath ?? "") : "",
         links: central("links")
@@ -440,17 +583,10 @@ function uniqueId(base: string, taken: ServiceDraft[]): string {
 function draftFor(service: Service, taken: ServiceDraft[]): ServiceDraft {
   const base = service.package?.name ?? service.process.name ?? "service";
   return {
-    uid: nextUid(),
+    ...emptyDraft(0),
     id: uniqueId(base, taken),
-    name: "",
     cwd: service.package?.path || ".",
     port: String(service.endpoints[0]?.port ?? ""),
-    protocol: "",
-    probePath: "",
-    links: [],
-    linksSet: false,
-    disabled: false,
-    effective: null,
   };
 }
 
@@ -465,8 +601,12 @@ function emptyDraft(count: number): ServiceDraft {
     name: "",
     cwd: "",
     port: "",
+    process: "",
     protocol: "",
     probePath: "",
+    endpoints: [],
+    endpointsSet: false,
+    otherEndpoints: "",
     links: [],
     linksSet: false,
     disabled: false,
@@ -489,14 +629,36 @@ export function buildProfile(name: string, drafts: ServiceDraft[]): ProjectProfi
     const port = portText === "" ? undefined : Number(portText);
     if (port !== undefined && (port < 1 || port > 65535))
       return `${id}: the port must be between 1 and 65535`;
-    if (cwd !== "" || port !== undefined)
-      entry.match = { ...(cwd === "" ? {} : { cwd }), ...(port === undefined ? {} : { port }) };
+    const process = draft.process.trim();
+    if (cwd !== "" || port !== undefined || process !== "")
+      entry.match = {
+        ...(cwd === "" ? {} : { cwd }),
+        ...(port === undefined ? {} : { port }),
+        ...(process === "" ? {} : { process }),
+      };
     if (draft.protocol !== "") entry.protocol = draft.protocol;
     const probePath = draft.probePath.trim();
     if (probePath !== "") {
       if (!probePath.startsWith("/")) return `${id}: the probe path must start with /`;
       entry.probePath = probePath;
     }
+    const endpoints: Record<string, EndpointProfile> = {};
+    for (const endpoint of draft.endpoints) {
+      const key = endpoint.port.trim();
+      const title = endpoint.name.trim();
+      const path = endpoint.probePath.trim();
+      if (key === "" && title === "" && path === "" && endpoint.show === "") continue;
+      // The server checks ports and paths; a repeated port would silently drop a row.
+      if (key in endpoints) return `${id}: endpoint :${key} is listed twice`;
+      const listed: EndpointProfile = {};
+      if (title !== "") listed.name = title;
+      if (endpoint.show !== "") listed.show = endpoint.show;
+      if (path !== "") listed.probePath = path;
+      // Listing a port alone says "in the summary", which is what an unset `show` means.
+      endpoints[key] = Object.keys(listed).length === 0 ? { show: "summary" } : listed;
+    }
+    if (Object.keys(endpoints).length > 0 || draft.endpointsSet) entry.endpoints = endpoints;
+    if (draft.otherEndpoints !== "") entry.otherEndpoints = { show: draft.otherEndpoints };
     const links = draft.links.filter((link) => link.label.trim() !== "" || link.url.trim() !== "");
     for (const link of links) {
       if (link.label.trim() === "") return `${id}: every link needs a label`;

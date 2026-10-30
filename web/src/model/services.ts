@@ -240,6 +240,7 @@ function rowText(row: Row, group: ProjectGroup): string[] {
     service.package?.name,
     service.package?.path,
     service.process.command?.args.join(" "),
+    ...service.endpoints.map((endpoint) => endpoint.display.name ?? undefined),
   ]).concat(service.endpoints.map((endpoint) => `:${endpoint.port}`));
 }
 

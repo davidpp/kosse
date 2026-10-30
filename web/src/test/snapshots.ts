@@ -1,8 +1,26 @@
 // Minimal contract values for unit tests of pure dashboard logic.
-import type { Endpoint, HttpProbe, Observation, Service, Snapshot } from "@/generated/contracts";
+import type {
+  Endpoint,
+  EndpointDisplay,
+  HttpProbe,
+  Observation,
+  Service,
+  Snapshot,
+} from "@/generated/contracts";
 
-export function endpoint(port: number, http: HttpProbe = { state: "pending" }): Endpoint {
-  return { protocol: "tcp", port, bindAddresses: ["127.0.0.1"], exposure: "loopback", http };
+export function endpoint(
+  port: number,
+  http: HttpProbe = { state: "pending" },
+  display: EndpointDisplay = { name: null, show: "summary", basis: "default", source: null },
+): Endpoint {
+  return {
+    protocol: "tcp",
+    port,
+    bindAddresses: ["127.0.0.1"],
+    exposure: "loopback",
+    http,
+    display,
+  };
 }
 
 export function service(

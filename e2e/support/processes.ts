@@ -2,6 +2,7 @@
 // `kosse-fixture` listeners (crates/fixtures). Each is signalled only through the handle of the
 // child this module spawned (Node never signals a reaped child), never by name or bare PID.
 import { spawn, type ChildProcess } from "node:child_process";
+import { constants } from "node:fs";
 import { copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -91,7 +92,9 @@ export type Fixture = Owned & { name: string; ports: number[] };
 export async function startFixture(binDir: string, options: FixtureOptions): Promise<Fixture> {
   await mkdir(binDir, { recursive: true });
   const executable = join(binDir, options.name);
-  await copyFile(join(targetDir, "kosse-fixture"), executable).catch(
+  // Two fixtures may share a name: reuse the copy, since overwriting a running executable gets
+  // it killed by macOS.
+  await copyFile(join(targetDir, "kosse-fixture"), executable, constants.COPYFILE_EXCL).catch(
     (error: NodeJS.ErrnoException) => {
       if (error.code !== "EEXIST") throw error;
     },
