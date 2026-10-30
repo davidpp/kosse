@@ -740,66 +740,62 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_process_criterion_separates_a_child_from_its_parent_and_picks_launch_targets() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root = dir.path().canonicalize().expect("canonical");
-        let mut central = ProjectProfile::new();
-        for (id, json) in [
-            (
-                "site",
-                serde_json::json!({
-                    "match": {"cwd": ".", "port": 3000},
-                    "endpoints": {"3000": {"name": "Site"}},
-                    "otherEndpoints": {"show": "details"}
-                }),
-            ),
-            (
-                "worker",
-                serde_json::json!({
-                    "match": {"cwd": ".", "process": "workerd"},
-                    "otherEndpoints": {"show": "details"}
-                }),
-            ),
-            (
-                "anything",
-                serde_json::json!({"match": {"process": "other"}}),
-            ),
-        ] {
-            central
-                .services
-                .insert(id.into(), serde_json::from_value(json).expect("entry"));
-        }
-        let root_text = root.to_string_lossy().into_owned();
-        let mut observation = Observation {
+    /// A Vite-like `node` (site, inspector, internal port) and its `workerd` child in `root`.
+    fn stack(root: &Path) -> Observation {
+        Observation {
             scanned_at_ms: 0,
             scan_duration_ms: 0.0,
             services: vec![
-                listener(10, "node", &root, &[3000, 9229, 40123]),
-                listener(11, "workerd", &root, &[51001, 51002]),
+                listener(10, "node", root, &[3000, 9229, 40123]),
+                listener(11, "workerd", root, &[51001, 51002]),
             ],
             projects: Vec::new(),
             warnings: Vec::new(),
             profiles: Vec::new(),
-        };
-        let mut metadata = [merge(&root_text, Some(&central), None, true)];
-        assert!(assign(&mut observation, &mut metadata, Some(501)).is_empty());
+        }
+    }
 
+    fn assign_profile(observation: &mut Observation, root: &Path, entries: &serde_json::Value) {
+        let mut profile = ProjectProfile::new();
+        profile.services = serde_json::from_value(entries.clone()).expect("entries");
+        let mut metadata = [merge(&root.to_string_lossy(), Some(&profile), None, true)];
+        assert_eq!(assign(observation, &mut metadata, Some(501)), []);
+    }
+
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "compared with `Service::profile` as is"
+    )]
+    fn matched(id: &str) -> Option<ProfileMatch> {
+        Some(ProfileMatch::Matched { service: id.into() })
+    }
+
+    #[test]
+    fn launch_targets_are_the_summary_endpoints() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical");
+        let mut observation = stack(&root);
+        assign_profile(
+            &mut observation,
+            &root,
+            &serde_json::json!({
+                "site": {
+                    "match": {"cwd": ".", "port": 3000},
+                    "endpoints": {"3000": {"name": "Site"}},
+                    "otherEndpoints": {"show": "details"}
+                },
+                "worker": {
+                    "match": {"cwd": ".", "process": "workerd"},
+                    "otherEndpoints": {"show": "details"}
+                },
+                "anything": {"match": {"process": "other"}}
+            }),
+        );
         let [vite, workerd] = &observation.services[..] else {
             panic!("two services");
         };
-        assert_eq!(
-            vite.profile,
-            Some(ProfileMatch::Matched {
-                service: "site".into()
-            })
-        );
-        assert_eq!(
-            workerd.profile,
-            Some(ProfileMatch::Matched {
-                service: "worker".into()
-            })
-        );
+        assert_eq!(vite.profile, matched("site"));
+        assert_eq!(workerd.profile, matched("worker"));
         let launch = |service: &Service| -> Vec<u16> {
             service
                 .launch_endpoints()
@@ -811,60 +807,41 @@ mod tests {
             [3000],
             "the inspector and the internal port are details"
         );
-        assert!(
-            launch(workerd).is_empty(),
+        assert_eq!(
+            launch(workerd),
+            [0_u16; 0],
             "a service of details endpoints has no launch target"
         );
+    }
 
-        // A directory-wide entry beside a process entry: the process entry is more specific, so
-        // each process still has exactly one match.
-        let mut loose = ProjectProfile::new();
-        for (id, json) in [
-            ("all", serde_json::json!({"match": {"cwd": "."}})),
-            (
-                "worker",
-                serde_json::json!({"match": {"process": "workerd"}}),
-            ),
-            (
-                "other",
-                serde_json::json!({"match": {"process": "workerd", "port": 1}}),
-            ),
-        ] {
-            loose
-                .services
-                .insert(id.into(), serde_json::from_value(json).expect("entry"));
-        }
-        let mut metadata = [merge(&root_text, Some(&loose), None, true)];
-        assign(&mut observation, &mut metadata, Some(501));
-        assert_eq!(
-            observation.services[0].profile,
-            Some(ProfileMatch::Matched {
-                service: "all".into()
-            })
+    #[test]
+    fn a_process_entry_is_more_specific_than_a_directory_entry() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical");
+        let mut observation = stack(&root);
+        assign_profile(
+            &mut observation,
+            &root,
+            &serde_json::json!({"worker": {"match": {"process": "workerd"}, "otherEndpoints": {"show": "details"}}}),
         );
-        assert_eq!(
-            observation.services[1].profile,
-            Some(ProfileMatch::Matched {
-                service: "worker".into()
-            })
-        );
+        let loose = serde_json::json!({
+            "all": {"match": {"cwd": "."}},
+            "worker": {"match": {"process": "workerd"}},
+            "other": {"match": {"process": "workerd", "port": 1}}
+        });
+        assign_profile(&mut observation, &root, &loose);
+        assert_eq!(observation.services[0].profile, matched("all"));
+        assert_eq!(observation.services[1].profile, matched("worker"));
         assert_eq!(
             shown(&observation.services[1].endpoints[0].display),
             (None, EndpointShow::Summary, DisplayBasis::Default),
             "a re-match starts again from the inference"
         );
 
-        loose.services.insert(
-            "worker-too".into(),
-            serde_json::from_value(serde_json::json!({"match": {"process": "workerd"}}))
-                .expect("entry"),
-        );
-        loose.services.insert(
-            "site".into(),
-            serde_json::from_value(serde_json::json!({"match": {"cwd": ".", "port": 3000}, "endpoints": {"3000": {"name": "Site"}}})).expect("entry"),
-        );
-        let mut metadata = [merge(&root_text, Some(&loose), None, true)];
-        assign(&mut observation, &mut metadata, Some(501));
+        let mut crowded = loose;
+        crowded["worker-too"] = serde_json::json!({"match": {"process": "workerd"}});
+        crowded["site"] = serde_json::json!({"match": {"cwd": ".", "port": 3000}, "endpoints": {"3000": {"name": "Site"}}});
+        assign_profile(&mut observation, &root, &crowded);
         assert_eq!(
             observation.services[1].profile,
             Some(ProfileMatch::Ambiguous {
@@ -886,8 +863,7 @@ mod tests {
         );
         assert_eq!(
             observation.services[0].endpoints[1].display.basis,
-            DisplayBasis::InspectorPort,
-            "a re-match starts again from the inference"
+            DisplayBasis::InspectorPort
         );
     }
 }

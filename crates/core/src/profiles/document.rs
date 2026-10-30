@@ -387,9 +387,9 @@ mod tests {
             links[0].unknown.clear();
         }
         if let Some(endpoints) = &mut service.endpoints {
-            endpoints
-                .values_mut()
-                .for_each(|endpoint| endpoint.unknown.clear());
+            for endpoint in endpoints.values_mut() {
+                endpoint.unknown.clear();
+            }
         }
         if let Some(other) = &mut service.other_endpoints {
             other.unknown.clear();

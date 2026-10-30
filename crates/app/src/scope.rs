@@ -447,7 +447,7 @@ mod tests {
                 bind_addresses: vec!["127.0.0.1".to_owned()],
                 exposure: Exposure::Loopback,
                 http: HttpProbe::Pending,
-                display: Default::default(),
+                display: kosse_core::model::EndpointDisplay::default(),
             }],
             project: project.map(str::to_owned),
             package: None,

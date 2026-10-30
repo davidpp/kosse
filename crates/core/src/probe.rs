@@ -150,7 +150,7 @@ mod tests {
             bind_addresses: binds.iter().map(|&b| b.to_owned()).collect(),
             exposure: Exposure::Loopback,
             http: initial_state(port, &ips(binds), name),
-            display: Default::default(),
+            display: crate::model::EndpointDisplay::default(),
         }
     }
 

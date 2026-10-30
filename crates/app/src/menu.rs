@@ -335,7 +335,7 @@ mod tests {
             bind_addresses: vec!["127.0.0.1".to_owned()],
             exposure: Exposure::Loopback,
             http,
-            display: Default::default(),
+            display: kosse_core::model::EndpointDisplay::default(),
         }
     }
 

@@ -75,7 +75,7 @@ fn ports(fixture: &Fixture) -> Vec<u16> {
         .record()
         .endpoints
         .iter()
-        .map(|endpoint| endpoint.port())
+        .map(std::net::SocketAddr::port)
         .collect();
     ports.sort_unstable();
     ports
@@ -224,7 +224,7 @@ fn a_process_match_keeps_changing_ports_in_details() {
 
     let url = kosse(&config, &["url", "worker", "--instance-port", &instance]);
     assert_eq!(url.status.code(), Some(1), "{}", stderr(&url));
-    assert!(stdout(&url).is_empty());
+    assert_eq!(stdout(&url), "");
     for port in ports(&first) {
         assert!(
             stderr(&url).contains(&format!(":{port}")),

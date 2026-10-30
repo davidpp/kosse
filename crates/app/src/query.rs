@@ -171,8 +171,7 @@ fn reachable(
 }
 
 /// Why a service without summary endpoints has no launch target, naming its ports so a caller can
-/// ask for one: `service "worker" shows every endpoint in details (:51001, :51002); name a port:
-/// `kosse url 51001``.
+/// ask for one, with `command` and the first port as the suggestion.
 pub fn details_only(what: &str, service: &Service, command: &str) -> String {
     let ports: Vec<String> = service
         .endpoints
