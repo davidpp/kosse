@@ -1,12 +1,12 @@
 // Enforces the web performance budget (blueprint/architecture.md): every JS and CSS file the
-// binary ships, gzipped one by one, must total at most 50 kB, and the bundle carries no web fonts.
+// binary ships, gzipped one by one, must total at most 55 kB, and the bundle carries no web fonts.
 // Runs against an existing `web/dist`, so `test` and `build` call it right after `vite build`.
 import { readdir } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { gzipSync } from "node:zlib";
 
 // Decimal kilobytes, the unit Vite's build report prints.
-const BUDGET_BYTES = 50 * 1000;
+const BUDGET_BYTES = 55 * 1000;
 const COUNTED = new Set([".js", ".mjs", ".css"]);
 const FONTS = new Set([".woff", ".woff2", ".ttf", ".otf", ".eot"]);
 

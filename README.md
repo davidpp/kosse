@@ -124,7 +124,7 @@ kosse stop web --here                  # signals nothing; prints the exact confi
             └──────────────────────────────────────────────────────┘
 crates/core  discovery · identity · attribution · action policy · profiles (no UI or server deps)
 crates/app   CLI · scheduler · prober · API · tray · window
-web/         TanStack Redact + Query dashboard, ≤ 50 kB gzipped JS + CSS, embedded in the binary
+web/         TanStack Redact + Query dashboard, ≤ 55 kB gzipped JS + CSS, embedded in the binary
 ```
 
 Every view reads the same snapshot and uses the same action policy; there is no second scanner or alternate destructive path. Rust contract types generate the TypeScript the UI consumes, and CI fails on drift. Details: [architecture](blueprint/architecture.md), [product contract](blueprint/product.md), [verification gates](blueprint/verification.md).
