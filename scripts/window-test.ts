@@ -264,7 +264,9 @@ async function main() {
       }),
   });
   for (const fixture of Object.values(world.fixtures)) {
-    if (fixture.ports[0] !== undefined) firstPort.set(fixture.name, fixture.ports[0]);
+    // The first fixture of a name: the marketing site is a second, profiled `vite`.
+    if (fixture.ports[0] !== undefined && !firstPort.has(fixture.name))
+      firstPort.set(fixture.name, fixture.ports[0]);
   }
   try {
     // The window process starts after the app listens; its socket appears when it is ready.
