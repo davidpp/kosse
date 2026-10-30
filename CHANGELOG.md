@@ -11,6 +11,7 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 
 ### Changed
 
+- Dashboard hierarchy ([evidence](docs/evidence/ui-hierarchy.md)): each service leads with one open target, the summary endpoint that answered HTTP best (a status below 400, then a page title, then the lowest port), shown as `Open localhost:<port>`. Its other summary endpoints keep a quieter `Open` without the repeated page title; metrics, Inspect, Stop and Try HTTP recede until hovered or focused. A declared link to the same URL as an Open is folded into it on the row (Inspect still lists it), and a `TCP` tag marks an endpoint only after it answered with something other than HTTP.
 - A service's `probePath` is the health path of its summary endpoints only; an endpoint's own `probePath` wins on either tier.
 - Kossé builds before this one refuse a profile that uses `match.process` (as a whole, like any profile with an unknown criterion); `endpoints` and `otherEndpoints` are kept and ignored by them.
 
