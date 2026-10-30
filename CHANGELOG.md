@@ -4,6 +4,15 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 
 ## Unreleased
 
+### Added
+
+- Endpoint names and display tiers ([S21](docs/evidence/S21.md), issue #9): a profile's `endpoints` (keyed by port) names endpoints, shows each in the `summary` (what a person opens) or in `details` (inspectors, internal ports: visible, never a launch target, their HTTP errors never mark the service failed) and gives it its own `probePath`; `otherEndpoints` sets the tier of the rest, and `match.process` matches a child whose ports change on every start (workerd) by its OS process name. Port 9229 is `Inspector`, in details, unless a profile says otherwise. Tray Open, dashboard Open, `kosse url <service>` and `kosse wait <service> --http` use summary endpoints only; `kosse url <port>` still answers for any. The dashboard shows details endpoints on one muted line and Inspect says why; Customize edits them; `list`, `port`, `wait` and `profile context` gain a `SHOW` column after `PORT`, and `--json` carries `Endpoint.display`.
+
+### Changed
+
+- A service's `probePath` is the health path of its summary endpoints only; an endpoint's own `probePath` wins on either tier.
+- Kossé builds before this one refuse a profile that uses `match.process` (as a whole, like any profile with an unknown criterion); `endpoints` and `otherEndpoints` are kept and ignored by them.
+
 ## 0.2.1 - 2026-10-29
 
 ### Fixed

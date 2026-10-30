@@ -40,6 +40,31 @@ The JSON Schema is generated (`kosse config schema`, committed as `docs/kosse.sc
 }
 ```
 
+A Vite dev server with the Cloudflare plugin (S21): node listens on the site's port, its inspector and an internal port; its workerd child listens on ports that change on every start.
+
+```json
+{
+  "version": 1,
+  "services": {
+    "web": {
+      "name": "Storefront",
+      "match": { "cwd": ".", "port": 3000 },
+      "protocol": "http",
+      "endpoints": {
+        "3000": { "name": "Site", "probePath": "/" },
+        "9229": { "name": "Inspector", "show": "details" }
+      },
+      "otherEndpoints": { "show": "details" }
+    },
+    "worker": {
+      "name": "Worker runtime",
+      "match": { "cwd": ".", "process": "workerd" },
+      "otherEndpoints": { "show": "details" }
+    }
+  }
+}
+```
+
 Ship schema with the application and `kosse config schema` to emit it; do not require network access for schema resolution. Users choose where to save the emitted file. A schema URL/path is editor metadata only, never fetched by the daemon.
 
 ## Matching and precedence
@@ -55,7 +80,20 @@ Ship schema with the application and `kosse config schema` to emit it; do not re
 - Reload metadata on bounded periodic mtime checks; invalid updates retain last-good config with clear invalid/stale warning. Test delete/recreate and schema-version mismatch.
 - S06 outcome: the schema is generated from the parser's types (`kosse config schema`, committed as `docs/kosse.schema.json`); the validator in `crates/core/src/profiles/validate.rs` is the authority. `match` needs `cwd`, `port` or both and refuses unknown criteria (ignoring one would widen the match); `cwd` may not contain `..`. `match` merges as one value (mixing a central port with a repository directory would describe neither entry). Unknown fields elsewhere are kept on rewrite. Link `kind` defaults to `local` for loopback/`.localhost` hosts and `external` otherwise; every link carries its host and a `reach` of `loopback` or `declared`.
 - S15 outcome: the coding agent in a repository authors the central profile (`kosse profile context|show|set|remove|check|prompt`, [agent surface](agent-surface.md)); Kossé validates, previews with the scanner's own matching and writes only through `CentralStore`. Each root's stored profile has a revision (a content hash; `none` without one). `kosse profile set|remove --expect <revision>` and `SaveProfileRequest.expectedRevision` are compared and swapped under the store's lock and refused with a typed conflict when another writer changed the profile; requests without one apply unconditionally, as before.
+- S21 outcome (endpoints, issue #9): profiles still match whole processes; `endpoints` and `otherEndpoints` then describe each matched endpoint. See [Endpoints](#endpoints-names-and-display-tiers-s21).
 - v1 does not recursively discover configs in inactive repos. Saved central profiles can remain in a separate configured-projects view without a running listener; label them “not observed.” Repo-only absent-service rows exist while the project is known from active/briefly retained observations.
+
+## Endpoints: names and display tiers (S21)
+
+A dev stack's process listens on more than what a person opens (an inspector, internal ports), and a child such as workerd listens on ports that change on every start. Every endpoint stays visible; a profile says which ones are the service's launch targets.
+
+- `endpoints`: an object keyed by port (decimal `1`–`65535`, no sign or leading zero, at most 64), each entry with at least one of `name` (label rules), `show` (`summary` | `details`; a listed endpoint without it is `summary`) and `probePath` (the service's rules). It merges central over repository as one value, like `match`; unknown entry fields are kept on rewrite.
+- `otherEndpoints`: `{ "show": "summary" | "details" }` for the matched processes' endpoints that `endpoints` does not list; one value, unknown fields kept. Nothing demotes an unlisted endpoint implicitly (as in Aspire and VS Code).
+- `match.process`: the exact OS process name, as `ProcessRecord.name` and the PROCESS column show it (label rules, at most 64 characters; the kernel keeps 31 bytes). Never the command line, which is redacted and untrusted. `match` needs at least one of `cwd`, `port` and `process`, and every one given must hold; matching still never crosses projects. Among the entries matching one process, those naming its `process` take it from those that do not, so a directory-wide entry and a `workerd` entry do not make the child ambiguous; equally specific entries stay ambiguous. Builds before S21 refuse a profile with `process` (the safe direction).
+- Display, per observed endpoint (`effective::display`): for a process matched to one entry, its `endpoints` entry (basis `endpoint`), else its `otherEndpoints` (basis `otherEndpoints`), each with that field's source; otherwise, and for unmatched or ambiguous processes, port 9229 is `Inspector` in details (basis `inspectorPort`, the default of Node `--inspect`, Wrangler `dev.inspector_port` and the Cloudflare Vite plugin's `inspectorPort`: the only inference); anything else is `summary` (basis `default`). The result is `Endpoint.display`. Display never changes identity, eligibility, binds or which endpoints are probed.
+- Launch targets are a service's summary endpoints (`Service::launch_endpoints`, mirrored by `web/src/model/endpoints.ts`): tray Open, dashboard Open, `kosse url <service>` and `kosse wait <service> --http` choose only among them. An explicit port (`kosse url 9229`, `wait --port`) answers for any endpoint. A service whose endpoints are all details has no launch target: `kosse url <service>` exits 1 and names its ports.
+- Health: an endpoint's own `probePath` applies to it on either tier; the service's `probePath` is the health path of its summary endpoints only (still narrowed by `match.port`). A details endpoint's HTTP errors never mark the service failed in the dashboard.
+- Not adopted: command-line patterns, port ranges, protocol fingerprinting (more probes), a hidden or `ignore` tier (issue #9 requires these endpoints to stay visible), and the issue's proposed app/internal/debug roles.
 
 ## Security
 
@@ -67,6 +105,19 @@ Destructive actions still require observed process identity and confirmation. Me
 ## Existing tools and future adapter boundary
 
 [Portless](https://github.com/vercel-labs/portless) documents named .localhost URLs, port allocation at launch, optional portless.json and HTTPS. Current default HTTPS setup can install a CA and elevate for privileged ports: never trigger automatically during discovery or tests. [LocalCan](https://www.localcan.com/docs/configuration/projects) describes declarative service targets/local domains, but its documented files are central under ~/.localcan/projects, not repo-local by default.
+
+Endpoint labels and tiers (public documentation, compared 2026-10-30 for S21):
+
+| Need | Tilt | Aspire | VS Code / Dev Containers | Compose / Kubernetes |
+|---|---|---|---|---|
+| What you open | `links`, `port_forward(name=)` | resource URL shown `SummaryAndDetails` | `portsAttributes.onAutoForward: openBrowser` | — |
+| Visible but secondary | none (undeclared ports do not appear) | URL `DetailsOnly` | `silent` | — |
+| Debug port | a link named "Debugger" | none | a `label` | a port `name` (`debug` by convention) |
+| Health | `readiness_probe` on one port and path | `WithHttpHealthCheck(path, endpointName)` | — | a probe on a named port |
+| Per-port label | `name` | endpoint `name` | `label` | `name` |
+| Ports that change | Tilt allocates them | named endpoints, port allocated | command-line pattern, ranges, `otherPortsAttributes` | named ports |
+
+No tool has a debug category: it is a name. Primary versus secondary is a display tier (Aspire's summary/details, VS Code's open/silent), which maps to Kossé's row versus Inspect. Health belongs to one endpoint, so `probePath` moved onto it. Kossé observes rather than allocates, which puts it where VS Code is: identify the process (by its OS name) and give unlisted endpoints one default (`otherEndpoints`, after `otherPortsAttributes`).
 
 v1 can display an explicit friendly URL regardless of who manages it. Do not guess Portless's private registry format or shell out to activate it. A future read-only adapter must verify a supported API/CLI, retain provenance, degrade when absent, reconcile stale routes, and test dynamic target-port changes. Kossé must remain fully functional without it.
 
