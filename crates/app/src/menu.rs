@@ -242,8 +242,16 @@ fn service_item(service: &Service, observation: &Observation, kosse: u32) -> Ite
         .filter_map(|endpoint| open_url(&endpoint.http).map(|url| (endpoint, url)))
         .collect();
     for (endpoint, url) in &reachable {
-        let label = match &endpoint.display.name {
+        let name = endpoint.display.name.as_deref();
+        // Two endpoints of one name (an unlikely profile) still get distinct items.
+        let shared = reachable
+            .iter()
+            .filter(|(other, _)| other.display.name.as_deref() == name)
+            .count()
+            > 1;
+        let label = match name {
             _ if reachable.len() == 1 => "Open".to_owned(),
+            Some(name) if shared => printable(&format!("Open {name} :{}", endpoint.port)),
             Some(name) => printable(&format!("Open {name}")),
             None => format!("Open :{}", endpoint.port),
         };
@@ -615,9 +623,39 @@ mod tests {
             ["Open Site", "Open :3001", "Inspect", "Stop…"],
             "a details endpoint that answered HTTP is no launch target"
         );
+
         assert_eq!(
             labels(submenu(&model, "workerd :51001, :51002")),
             ["Inspect", "Stop…"]
+        );
+    }
+
+    #[test]
+    fn open_items_of_one_name_name_their_ports() {
+        use kosse_core::{model::DisplayBasis, profiles::document::EndpointShow};
+        let named = |port: u16| {
+            let mut endpoint = endpoint(port, answered(port));
+            endpoint.display = kosse_core::model::EndpointDisplay {
+                name: Some("Site".into()),
+                show: EndpointShow::Summary,
+                basis: DisplayBasis::Endpoint,
+                source: None,
+            };
+            endpoint
+        };
+        let snapshot = snapshot(
+            vec![service(
+                20,
+                "node",
+                Some("/src/shop"),
+                vec![named(3000), named(3001)],
+            )],
+            vec![project("/src/shop", "shop", None)],
+        );
+        let model = Model::of(Some(&snapshot), NOW);
+        assert_eq!(
+            labels(submenu(&model, "node :3000, :3001")),
+            ["Open Site :3000", "Open Site :3001", "Inspect", "Stop…"]
         );
     }
 

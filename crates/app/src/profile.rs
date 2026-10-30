@@ -927,8 +927,8 @@ fn shows_label<'a>(displays: impl Iterator<Item = (u16, &'a EndpointDisplay)>) -
         .join(", ")
 }
 
-/// A configured entry's `endpoints` and `otherEndpoints`: `3000 Site, 9229 details; others
-/// details`.
+/// A configured entry's `endpoints` and `otherEndpoints`: `3000 Site summary probe /, 9229
+/// Inspector details, others details`.
 fn endpoints_label(entry: &ConfiguredService) -> String {
     let mut parts: Vec<String> = entry
         .endpoints
@@ -939,12 +939,10 @@ fn endpoints_label(entry: &ConfiguredService) -> String {
                 part.push(' ');
                 part.push_str(name);
             }
-            if let Some(show) = endpoint.show {
-                part.push(' ');
-                part.push_str(&name_of(&show));
-            }
+            part.push(' ');
+            part.push_str(&name_of(&endpoint.show.unwrap_or_default()));
             if let Some(path) = &endpoint.probe_path {
-                part.push(' ');
+                part.push_str(" probe ");
                 part.push_str(path);
             }
             part
