@@ -10,6 +10,13 @@ export const button = `${control} border border-line-strong bg-surface text-ink 
 export const quiet = `${control} border border-hairline px-2 text-ink not-disabled:hover:border-line not-disabled:hover:bg-canvas`;
 export const quietDanger = `${control} border border-hairline px-2 text-danger not-disabled:hover:border-danger not-disabled:hover:bg-failed-wash`;
 
+/**
+ * A service row's Inspect and Stop: muted and borderless at rest, so they never compete with the
+ * row's open target; hover and keyboard focus bring back the border, and Stop's `danger` text.
+ */
+export const rowAction = `${control} border border-transparent px-2 text-ink-muted not-disabled:hover:border-line not-disabled:hover:bg-canvas not-disabled:hover:text-ink focus-visible:text-ink`;
+export const rowDanger = `${control} border border-transparent px-2 text-ink-muted not-disabled:hover:border-danger not-disabled:hover:bg-failed-wash not-disabled:hover:text-danger focus-visible:text-danger`;
+
 /** Row-height buttons (20px of layout, 24px drawn), so a row's columns share one first line. */
 export const rowButton = "-my-0.5 h-6";
 

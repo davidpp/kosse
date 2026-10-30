@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { safeLink } from "./links";
+import { safeLink, sameLink } from "./links";
 
 describe("safeLink", () => {
   it("keeps http and https URLs and exposes their host", () => {
@@ -28,5 +28,15 @@ describe("safeLink", () => {
     "",
   ])("refuses %j (other schemes, credentials, relative URLs)", (url) => {
     expect(safeLink(url)).toBeNull();
+  });
+});
+
+describe("sameLink", () => {
+  it("matches a declared link to the probed URL it duplicates, and nothing else", () => {
+    expect(sameLink("http://localhost:3000", "http://localhost:3000/")).toBe(true);
+    expect(sameLink("http://LOCALHOST:3000/", "http://localhost:3000/")).toBe(true);
+    expect(sameLink("http://localhost:3000/docs", "http://localhost:3000/")).toBe(false);
+    expect(sameLink("http://127.0.0.1:3000/", "http://localhost:3000/")).toBe(false);
+    expect(sameLink("javascript:alert(1)", "javascript:alert(1)")).toBe(false);
   });
 });

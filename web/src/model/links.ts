@@ -18,3 +18,9 @@ export function safeLink(raw: string): SafeLink | null {
   if (url.username !== "" || url.password !== "" || url.hostname === "") return null;
   return { href: url.href, host: url.host, hostname: url.hostname };
 }
+
+/** Whether two URLs are the same link once parsed (`http://localhost:3000` is `…:3000/`). */
+export function sameLink(a: string, b: string): boolean {
+  const left = safeLink(a);
+  return left !== null && left.href === safeLink(b)?.href;
+}
