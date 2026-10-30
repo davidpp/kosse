@@ -242,7 +242,6 @@ fn a_process_match_keeps_changing_ports_in_details() {
 
     first.stop().expect("stop the first fixture");
     let second = spawn(&root, 2, Serve::Title, Some("workerd"));
-    assert_ne!(ports(&second), ports(&first), "new ephemeral ports");
     let restarted = eventually(PROBED_WITHIN, || {
         let snapshot = server.snapshot();
         let service = service_of(snapshot.observation.as_ref()?, &second)?.clone();
@@ -254,6 +253,16 @@ fn a_process_match_keeps_changing_ports_in_details() {
         Some(ProfileMatch::Matched {
             service: "worker".into()
         })
+    );
+    let observed: Vec<u16> = restarted
+        .endpoints
+        .iter()
+        .map(|endpoint| endpoint.port)
+        .collect();
+    assert_eq!(
+        observed,
+        ports(&second),
+        "the restarted process's own ports"
     );
     for endpoint in &restarted.endpoints {
         assert_eq!(endpoint.display.show, EndpointShow::Details, "{endpoint:?}");
@@ -397,4 +406,77 @@ fn health_paths_follow_the_endpoint_they_check() {
     assert_eq!(second_request(plain), "GET /service-health HTTP/1.1");
     let (status, _) = server.terminate();
     assert!(status.success());
+}
+
+/// `node --inspect` binds its inspector before the app's port: while a service has only details
+/// endpoints, `kosse wait <service> --http` keeps waiting (where `url` answers at once), and
+/// succeeds once a summary endpoint answers.
+#[test]
+fn wait_http_outlasts_a_details_only_start() {
+    use std::io::{BufRead as _, BufReader, Read as _};
+    let tree = Sandbox::new().expect("sandbox");
+    let root = project(&tree, "slow-start");
+    let site = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .and_then(|listener| listener.local_addr())
+        .expect("a free port")
+        .port();
+    let config = tree.root().join("config");
+    write_central(
+        &config,
+        &root,
+        &json!({ "web": {
+            "match": { "cwd": ".", "process": "devserver" },
+            "endpoints": { site.to_string(): { "name": "Site" } },
+            "otherEndpoints": { "show": "details" }
+        } }),
+    );
+    let mut starting = spawn(&root, 1, Serve::Title, Some("devserver"));
+    let mut wait = Command::new(env!("CARGO_BIN_EXE_kosse"))
+        .env("KOSSE_CONFIG_DIR", &config)
+        .args([
+            "wait",
+            "web",
+            "--http",
+            "--project",
+            root.to_str().expect("UTF-8"),
+            "--timeout",
+            "30s",
+            "--instance-port",
+            "0",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn kosse wait");
+    let mut stderr = BufReader::new(wait.stderr.take().expect("stderr"));
+    let mut line = String::new();
+    stderr.read_line(&mut line).expect("read stderr");
+    assert!(
+        line.starts_with("kosse: waiting up to "),
+        "a details-only service is not an answer yet: {line:?}"
+    );
+
+    starting.stop().expect("stop the details-only start");
+    let _ready = Fixture::spawn(
+        &FixtureSpec::new()
+            .listen(&[V4])
+            .port(site)
+            .serve(Serve::Title)
+            .executable_name("devserver")
+            .cwd(&root),
+    )
+    .expect("the app's port");
+    let status = eventually(Duration::from_secs(30), || wait.try_wait().ok().flatten())
+        .expect("kosse wait ended");
+    let mut out = String::new();
+    wait.stdout
+        .take()
+        .expect("stdout")
+        .read_to_string(&mut out)
+        .expect("read stdout");
+    let mut rest = String::new();
+    stderr.read_to_string(&mut rest).expect("read stderr");
+    assert!(status.success(), "{out}{rest}");
+    assert!(out.contains(&format!("http://localhost:{site}/")), "{out}");
 }

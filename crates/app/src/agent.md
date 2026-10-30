@@ -16,7 +16,7 @@
 | Stop what I left running                | `kosse stop <service> --here`, then the command it prints     |
 | Customize this project (names, HTTP, …) | `kosse profile context`, then the profile steps below         |
 
-`--here` is the project of the current directory (outside one it exits 2); `--project <dir>` names another. A service name is a configured one: an unknown name exits 1 at once, listing the configured names or observed ports; an ambiguous one lists ready per-port commands. Read commands use the running instance's snapshot, or scan once without one. Only a running Kossé probes HTTP, so `kosse url` (`http://localhost:<port>/`, trailing slash) needs one; one-shot rows read `not probed (no instance)`. For a service, `url` and `wait --http` choose among its `summary` endpoints only; a service whose endpoints are all `details` exits 1 naming its ports, and `kosse url <port>` answers for any endpoint.
+`--here` is the project of the current directory (outside one it exits 2); `--project <dir>` names another. A service name is a configured one: an unknown name exits 1 at once, listing the configured names or observed ports; an ambiguous one lists ready per-port commands. Read commands use the running instance's snapshot, or scan once without one. Only a running Kossé probes HTTP, so `kosse url` (`http://localhost:<port>/`, trailing slash) needs one; one-shot rows read `not probed (no instance)`. For a service, `url` and `wait --http` choose among its `summary` endpoints only: `url` on a service whose endpoints are all `details` exits 1 naming its ports (`wait` keeps waiting for a summary one), and `kosse url <port>` answers for any endpoint.
 
 ## Output
 
@@ -41,7 +41,7 @@ Markdown tables by default. The service table's columns: `PROJECT`, `BRANCH`, `S
 
 ## Customizing a project
 
-A profile names a project's services and their endpoints (`summary` or `details`), declares which speak HTTP, sets health paths and adds links. Kossé stores it in its own configuration only; do not edit the repository for it.
+A profile names a project's services and their endpoints (`summary` or `details`), declares which speak HTTP, sets health paths and adds links. Match a child whose ports change on every start (workerd) by `match.process` with `otherEndpoints: { "show": "details" }`. Kossé stores it in its own configuration only; do not edit the repository for it.
 
 1. `kosse profile context --here`: observed processes, the stored profile and its revision, current problems.
 2. Write the profile (format: `kosse config schema`) and pass it on stdin with a heredoc: `--file - <<'JSON'`.
