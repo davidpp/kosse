@@ -470,6 +470,7 @@ test("details endpoints stay visible and muted, are never opened, and Inspect sa
   const siteDetails = siteRow.locator("[data-details]");
   await expect(siteDetails).toContainText(`:${inspectorPort} Inspector`);
   await expect(siteDetails).toContainText("HTTP 200", { timeout: 30_000 });
+  await expect(siteDetails, "page titles stay in Inspect").not.toContainText("Fixture");
   await expect(siteRow.getByRole("link")).toHaveCount(1);
   await expect(siteRow.getByRole("link")).toHaveAttribute("href", `http://localhost:${sitePort}/`);
 
@@ -492,9 +493,9 @@ test("details endpoints stay visible and muted, are never opened, and Inspect sa
   const sheet = page.getByRole("dialog");
   const inspector = sheet.locator(`[data-endpoint="${inspectorPort}"]`);
   await expect(inspector).toContainText("details");
-  await expect(inspector).toContainText("never a launch target");
+  await expect(inspector).toContainText("not a launch target");
   await expect(inspector).toContainText("Kossé profile: endpoints");
-  await expect(sheet.locator(`[data-endpoint="${sitePort}"]`)).toContainText("in the summary");
+  await expect(sheet.locator(`[data-endpoint="${sitePort}"]`)).toContainText("summary");
   await page.keyboard.press("Escape");
   await workerRow.getByRole("button", { name: "Inspect" }).click();
   await expect(sheet.locator(`[data-endpoint="${workerd.ports[0]}"]`)).toContainText(

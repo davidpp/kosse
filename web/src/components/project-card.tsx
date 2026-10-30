@@ -287,7 +287,8 @@ function DetailsLine({
               {index === 0 ? null : <span aria-hidden> · </span>}
               <span className={mono}>:{endpoint.port}</span>
               {endpoint.display.name === null ? null : ` ${endpoint.display.name}`}
-              {` ${probe.text}`}
+              {/* Page titles stay in Inspect: a details endpoint often serves the app's page. */}
+              {` ${probe.text.split(" · ")[0] ?? ""}`}
             </span>
           );
         })}

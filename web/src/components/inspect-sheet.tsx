@@ -264,9 +264,9 @@ function EndpointDetail({
         <span className="text-ink-muted">· reachable from {EXPOSURE[endpoint.exposure]}</span>
       </div>
       <dl className="mt-1.5 grid grid-cols-[7rem_1fr] gap-x-3 gap-y-0.5">
-        <dt className="text-ink-muted">Shown</dt>
+        <dt className="text-ink-muted">Why</dt>
         <dd>
-          {details ? "in details, never a launch target" : "in the summary"} ·{" "}
+          {details ? "not a launch target · " : ""}
           <span className="text-ink-muted">{displayReason(endpoint.display)}</span>
         </dd>
         <dt className="text-ink-muted">Bound to</dt>

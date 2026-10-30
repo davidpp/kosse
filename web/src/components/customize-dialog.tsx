@@ -221,7 +221,7 @@ export function CustomizeDialog({
                   </select>
                 </Field>
                 <Field
-                  label="Probe path"
+                  label="Probe path (summary endpoints)"
                   hint={repoHint(draft, "probePath", draft.effective?.probePath)}
                 >
                   <input
@@ -406,13 +406,10 @@ function Field({
   );
 }
 
-const ENDPOINT_FIELDS = [
-  ["port", "Port"],
-  ["name", "Name"],
-  ["probePath", "Probe path"],
-] as const;
+/** Port, name, tier and remove; the health path takes the line below in the same group. */
+const endpointGrid = "grid grid-cols-[4.5rem_minmax(0,1fr)_7rem_2.25rem] items-center gap-2";
 
-/** Rows of port, name, probe path and tier; a listed endpoint is in the summary unless set to details. */
+/** One group per listed endpoint; a listed endpoint is in the summary unless set to details. */
 function EndpointsEditor({
   draft,
   onChange,
@@ -423,37 +420,59 @@ function EndpointsEditor({
   return (
     <div className="space-y-1.5" data-endpoints-editor>
       <span className={`${label} block`}>Endpoints</span>
+      {draft.endpoints.length === 0 ? null : (
+        <div className={`${endpointGrid} px-2.5 ${label}`} aria-hidden>
+          <span>Port</span>
+          <span>Name</span>
+          <span>Shown</span>
+        </div>
+      )}
       {draft.endpoints.map((endpoint, at) => {
         const set = (change: Partial<EndpointDraft>) =>
           onChange(replaceAt(draft.endpoints, at, { ...endpoint, ...change }));
         return (
           <div
             key={endpoint.uid}
-            className="grid grid-cols-[4.5rem_1fr_1fr_6.5rem_auto] gap-2 max-sm:grid-cols-[4.5rem_1fr_6.5rem_auto]"
+            className="space-y-2 rounded-control border border-hairline bg-canvas/50 p-2"
+            data-endpoint-row
           >
-            {ENDPOINT_FIELDS.map(([field, text]) => (
+            <div className={endpointGrid}>
               <input
-                key={field}
-                className={`${input} ${field === "name" ? "" : mono} ${field === "probePath" ? "max-sm:order-last max-sm:col-span-3" : ""}`}
-                aria-label={`Endpoint ${text.toLowerCase()}`}
-                placeholder={text}
-                value={endpoint[field]}
-                onInput={(event) => set({ [field]: event.currentTarget.value })}
+                className={`${input} ${mono}`}
+                aria-label="Endpoint port"
+                placeholder="3000"
+                inputMode="numeric"
+                value={endpoint.port}
+                onInput={(event) => set({ port: event.currentTarget.value })}
               />
-            ))}
-            <ShowSelect
-              value={endpoint.show === "details" ? "details" : ""}
-              unset="summary"
-              onChange={(show) => set({ show })}
+              <input
+                className={input}
+                aria-label="Endpoint name"
+                placeholder="Site"
+                value={endpoint.name}
+                onInput={(event) => set({ name: event.currentTarget.value })}
+              />
+              <ShowSelect
+                value={endpoint.show === "details" ? "details" : ""}
+                unset="summary"
+                onChange={(show) => set({ show })}
+              />
+              <button
+                type="button"
+                className={quiet}
+                aria-label="Remove endpoint"
+                onClick={() => onChange(draft.endpoints.filter((_, i) => i !== at))}
+              >
+                <Trash2 className="size-3.5" aria-hidden />
+              </button>
+            </div>
+            <input
+              className={`${input} ${mono}`}
+              aria-label="Endpoint health path"
+              placeholder="Health path for this port"
+              value={endpoint.probePath}
+              onInput={(event) => set({ probePath: event.currentTarget.value })}
             />
-            <button
-              type="button"
-              className={quiet}
-              aria-label="Remove endpoint"
-              onClick={() => onChange(draft.endpoints.filter((_, i) => i !== at))}
-            >
-              <Trash2 className="size-3.5" aria-hidden />
-            </button>
           </div>
         );
       })}
