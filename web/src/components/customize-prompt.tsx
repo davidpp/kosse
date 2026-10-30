@@ -4,12 +4,12 @@ import { useRef, useState } from "react";
 
 import { failureOf, promptQuery } from "@/api/client";
 
-import { button, mono } from "./ui";
+import { button } from "./ui";
 
 /**
  * "Customize with your agent": core's prompt for `root` (the text `kosse profile prompt` prints),
- * read-only, with Copy. The agent previews with `--dry-run` and applies with `--expect`; the
- * snapshot then carries the new profile to the fields below.
+ * read-only, with Copy. Its line breaks are core's, so the box scrolls sideways instead of
+ * wrapping. When the agent applies a profile, the snapshot carries it to the fields below.
  */
 export function AgentPrompt({ root }: { root: string }) {
   const prompt = useQuery(promptQuery(root));
@@ -19,6 +19,8 @@ export function AgentPrompt({ root }: { root: string }) {
 
   const copy = async () => {
     if (prompt.data === undefined) return;
+    // Cleared first, so a second copy is announced again.
+    setCopied(null);
     try {
       await navigator.clipboard.writeText(prompt.data.prompt);
       setCopied("Copied to the clipboard.");
@@ -51,16 +53,16 @@ export function AgentPrompt({ root }: { root: string }) {
       {failure === null ? (
         <>
           <p className="text-ink-muted">
-            Paste it into the coding agent working in this repository. It previews the profile with{" "}
-            <code className={mono}>--dry-run</code>, then applies it with{" "}
-            <code className={mono}>--expect</code>; the fields below follow.
+            Copy this prompt into the coding agent working in this repository. When it applies a
+            profile, the fields below update.
           </p>
           <textarea
             ref={text}
             readOnly
-            rows={9}
+            rows={5}
+            wrap="off"
             aria-label="Prompt for your coding agent"
-            className="block w-full resize-y rounded-control border border-hairline bg-canvas px-3 py-2 font-mono text-small text-ink"
+            className="block w-full resize-y overflow-x-auto rounded-control border border-hairline bg-canvas px-3 py-2 font-mono text-small text-ink"
             value={prompt.data?.prompt ?? "Loading…"}
           />
           <output className="block text-small text-ink-muted">{copied}</output>

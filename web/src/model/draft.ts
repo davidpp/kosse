@@ -11,7 +11,7 @@ export type DraftView<T> = {
   /**
    * The profile changed under an edited draft, or a save was refused as a conflict: the draft is
    * kept until the user reloads. `reloadable` once the snapshot shows the newer profile (a refused
-   * save can arrive before it).
+   * save can arrive before it), or once the caller stopped waiting for it.
    */
   changedOutside: { reloadable: boolean } | null;
 };
@@ -24,15 +24,18 @@ export function draftView<T>({
   live,
   pinned,
   conflicted,
+  waited,
 }: {
   live: Based<T>;
   pinned: Based<T> | null;
   conflicted: boolean;
+  /** Long enough has passed since the conflict for the snapshot to have shown the change. */
+  waited: boolean;
 }): DraftView<T> {
   if (pinned === null) return { shown: live, changedOutside: null };
   const changed = pinned.revision !== live.revision;
   return {
     shown: pinned,
-    changedOutside: changed || conflicted ? { reloadable: changed } : null,
+    changedOutside: changed || conflicted ? { reloadable: changed || waited } : null,
   };
 }

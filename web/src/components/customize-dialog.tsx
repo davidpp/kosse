@@ -62,14 +62,28 @@ export function CustomizeDialog({
   onClose: () => void;
 }) {
   const live: Base = { revision: metadata?.centralRevision ?? NO_REVISION, profile: metadata };
-  const [opened] = useState(live.revision);
-  const [pinned, setPinned] = useState<Base | null>(null);
+  const [opened, setOpened] = useState(live.revision);
+  const [pinned, setPinned] = useState<{ base: Base; title: string } | null>(null);
   const [conflicted, setConflicted] = useState(false);
-  const view = draftView({ live, pinned, conflicted });
+  const [waited, setWaited] = useState(false);
+  const [generation, setGeneration] = useState(0);
+  const view = draftView({ live, pinned: pinned?.base ?? null, conflicted, waited });
+  const pin = (base: Base | null) =>
+    setPinned((current) => (base === null ? null : (current ?? { base, title })));
   const reload = () => {
     setPinned(null);
     setConflicted(false);
+    setWaited(false);
+    setOpened(live.revision);
+    setGeneration((current) => current + 1);
   };
+  // A refused save can arrive before the snapshot that shows the other writer's profile. That
+  // takes one scan plus the file check (scheduler.rs, watch.rs); past it, Reload is offered anyway.
+  useEffect(() => {
+    if (!conflicted || waited) return;
+    const timer = setTimeout(() => setWaited(true), RELOAD_BOUND_MS);
+    return () => clearTimeout(timer);
+  }, [conflicted, waited]);
 
   const notice =
     view.changedOutside !== null ? (
@@ -78,8 +92,8 @@ export function CustomizeDialog({
         className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-stale bg-stale-wash px-4 py-2.5"
       >
         <p className="min-w-0 flex-1 basis-60">
-          The profile was changed outside this window, by an agent or another window. Your edits are
-          kept and were not saved.
+          An agent or another window changed this profile. Your edits aren't saved. Reload to see
+          the new profile; your edits will be discarded.
         </p>
         <button
           type="button"
@@ -97,19 +111,24 @@ export function CustomizeDialog({
     ) : null;
 
   return (
-    <Dialog title={`Customize ${title}`} labelledBy="customize-title" onClose={onClose}>
+    <Dialog
+      title={`Customize ${pinned?.title ?? title}`}
+      labelledBy="customize-title"
+      onClose={onClose}
+    >
       <ProfileForm
-        key={view.shown.revision}
         root={root}
         title={title}
         metadata={view.shown.profile}
         services={services}
         expectedRevision={view.shown.revision}
+        generation={generation}
+        blocked={view.changedOutside !== null}
         lead={<AgentPrompt root={root} />}
         notice={notice}
-        onPin={setPinned}
+        onPin={pin}
         onConflict={(base) => {
-          setPinned(base);
+          pin(base);
           setConflicted(true);
         }}
         onClose={onClose}
@@ -118,9 +137,12 @@ export function CustomizeDialog({
   );
 }
 
+const RELOAD_BOUND_MS = 5000;
+
 /**
  * The fields: only those the central profile sets are editable here; values that come from the
- * repository's kosse.json are shown beside them and stay untouched.
+ * repository's kosse.json are shown beside them and stay untouched. A new base (another
+ * revision, or a reload) resets the draft in place, so focus stays where it was.
  */
 function ProfileForm({
   root,
@@ -128,6 +150,8 @@ function ProfileForm({
   metadata,
   services,
   expectedRevision,
+  generation,
+  blocked,
   lead,
   notice,
   onPin,
@@ -139,6 +163,9 @@ function ProfileForm({
   metadata: ProjectMetadata | null;
   services: Service[];
   expectedRevision: string;
+  generation: number;
+  /** The profile changed outside: saving would be refused, so Save is off. */
+  blocked: boolean;
   lead: ReactNode;
   notice: ReactNode;
   /** The draft's base once it is edited (`null` while untouched), so it is kept. */
@@ -149,15 +176,22 @@ function ProfileForm({
 }) {
   const client = useQueryClient();
   const hasCentral = metadata?.sources.includes("central") ?? false;
-  const [start] = useState(() => ({
-    name: metadata?.nameSource === "central" ? (metadata.name ?? "") : "",
-    drafts: initialDrafts(metadata),
-  }));
+  const [start, setStart] = useState(() =>
+    startOf(metadata, expectedRevision, generation, undefined),
+  );
   const [name, setName] = useState(start.name);
   const [drafts, setDrafts] = useState<ServiceDraft[]>(start.drafts);
   const [problem, setProblem] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const [base] = useState<Base>({ revision: expectedRevision, profile: metadata });
+  if (start.base.revision !== expectedRevision || start.generation !== generation) {
+    const next = startOf(metadata, expectedRevision, generation, drafts);
+    setStart(next);
+    setName(next.name);
+    setDrafts(next.drafts);
+    setProblem(null);
+    setConfirmRemove(false);
+  }
+  const { base } = start;
   const edited = name !== start.name || drafts !== start.drafts;
   useEffect(() => onPin(edited ? base : null), [edited, base, onPin]);
 
@@ -191,7 +225,7 @@ function ProfileForm({
   );
 
   const submit = () => {
-    if (save.isPending) return;
+    if (save.isPending || blocked) return;
     const built = buildProfile(name, drafts);
     if (typeof built === "string") {
       setProblem(built);
@@ -455,7 +489,7 @@ function ProfileForm({
           <button type="button" className={button} onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className={primary} aria-disabled={save.isPending}>
+          <button type="submit" className={primary} aria-disabled={save.isPending || blocked}>
             {save.isPending ? "Saving…" : "Save"}
           </button>
         </div>
@@ -500,6 +534,25 @@ function protocolOf(value: string): DeclaredProtocol | "" {
 
 function replaceAt<T>(list: T[], index: number, value: T): T[] {
   return list.map((item, at) => (at === index ? value : item));
+}
+
+/** The draft for one base; rows keep their keys (`uid`) by ID, so a reset keeps their elements. */
+function startOf(
+  metadata: ProjectMetadata | null,
+  revision: string,
+  generation: number,
+  previous: ServiceDraft[] | undefined,
+) {
+  const drafts = initialDrafts(metadata);
+  for (const draft of drafts) {
+    draft.uid = previous?.find((old) => old.id === draft.id)?.uid ?? draft.uid;
+  }
+  return {
+    base: { revision, profile: metadata } satisfies Base,
+    generation,
+    name: metadata?.nameSource === "central" ? (metadata.name ?? "") : "",
+    drafts,
+  };
 }
 
 export function initialDrafts(metadata: ProjectMetadata | null): ServiceDraft[] {

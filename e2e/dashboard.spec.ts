@@ -27,7 +27,8 @@ test.beforeEach(async ({ page }) => {
   // violation without a source file is discounted once per such injected element. Playwright's
   // WebKit also reports `style-src-attr` against every `<select>` the page inserts, from the
   // engine's own control rendering: a bare `<select>` built by a script on a page with no inline
-  // style reproduces it, so those are not the page's styles.
+  // style reproduces it, so those are not the page's styles (reproduced with @playwright/test
+  // 1.64.1, its WebKit 27.2 build 2370; Kossé's own window reports none).
   await page.addInitScript(() => {
     const seen: { directive: string; source: string }[] = [];
     let automation = 0;
@@ -427,30 +428,48 @@ test("customize opens on core's agent prompt and reconciles an agent's change wi
   await expect(dialog.getByRole("heading", { name: "Or edit fields" })).toBeVisible();
   const name = dialog.getByLabel("Project name");
 
-  // Untouched draft: the form follows the agent's profile.
+  // Untouched draft: the form follows the agent's profile in place, focus kept.
+  await name.focus();
   await agentSets("Storefront (agent)");
   await expect(name).toHaveValue("Storefront (agent)", { timeout: 15_000 });
+  await expect(name).toBeFocused();
   await expect(dialog.getByText("Updated: the profile was changed outside")).toBeVisible();
 
-  // Edited draft: kept, the change is shown, and saving it would overwrite, so it is refused.
+  // Edited draft, saved right after an agent's apply: whichever reaches Kossé first (the save, a
+  // 409, or the snapshot, which turns Save off), the edit is kept, the change shown, and the
+  // agent's profile never overwritten.
+  const saves: number[] = [];
+  page.on("response", (response) => {
+    if (response.url().endsWith("/api/profile") && response.request().method() === "POST")
+      saves.push(response.status());
+  });
   await name.fill("Mine");
   await agentSets("Storefront (agent 2)");
-  const changed = dialog.getByRole("alert");
-  await expect(changed).toContainText("changed outside this window", { timeout: 15_000 });
-  await expect(name).toHaveValue("Mine");
-  const refused = page.waitForResponse(
-    (response) => response.url().endsWith("/api/profile") && response.request().method() === "POST",
-  );
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
-  expect((await refused).status()).toBe(409);
-  await expect(changed).toContainText("Your edits are kept and were not saved");
-  await expect(dialog).toBeVisible();
+  const changed = dialog.getByRole("alert");
+  await expect(changed).toContainText("An agent or another window changed this profile", {
+    timeout: 15_000,
+  });
+  await expect(changed).toContainText("your edits will be discarded");
+  await expect(dialog.getByRole("button", { name: "Save", exact: true })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await expect(dialog.getByRole("heading", { level: 2 })).toHaveText(
+    "Customize Storefront (agent)",
+  );
+  await expect(name).toHaveValue("Mine");
+  expect(
+    saves.every((status) => status === 409),
+    `saves: ${saves.join(", ")}`,
+  ).toBe(true);
   expect(await config()).toContain('"name": "Storefront (agent 2)"');
   expect(await config()).not.toContain('"Mine"');
 
-  await dialog.getByRole("button", { name: "Reload profile" }).click();
+  await dialog.getByRole("button", { name: "Reload profile" }).click({ timeout: 15_000 });
   await expect(name).toHaveValue("Storefront (agent 2)");
   await expect(changed).toBeHidden();
+  await expect(dialog.getByText("Updated: the profile was changed outside")).toBeHidden();
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
 });

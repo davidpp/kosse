@@ -372,8 +372,13 @@ async function flows(world: World, opened: string) {
   // Customize with your agent: core's prompt, then an agent's `kosse profile set` while the
   // window is open. An untouched draft follows it; an edited one is kept, shows the change and
   // reloads on request. (Copy writes the person's real clipboard, so it is checked by hand.)
-  const agentSets = (name: string) =>
-    kosseCommand(
+  // The stored profile (earlier flows saved one), renamed: no flow depends on another's order.
+  const agentSets = async (name: string) => {
+    const stored = JSON.parse(
+      await readFile(join(world.configDir, "config.json"), "utf8").catch(() => "{}"),
+    ) as { projects?: Record<string, object> };
+    const profile = { version: 1, services: {}, ...stored.projects?.[world.storefront], name };
+    return kosseCommand(
       world.configDir,
       [
         "profile",
@@ -384,8 +389,9 @@ async function flows(world: World, opened: string) {
         "--instance-port",
         String(world.server.port),
       ],
-      JSON.stringify({ version: 1, name, services: {} }),
+      JSON.stringify(profile),
     ).status;
+  };
   const nameField = `document.querySelector("dialog[open] input").value`;
   await click(`section:has(${row("vite")}) button`, "Customize");
   await dialogVisible("Customize with your agent", /^Customize /);
@@ -394,15 +400,18 @@ async function flows(world: World, opened: string) {
     "Customize shows core's prompt, as the CLI prints it",
     (await until(`document.querySelector("dialog[open] textarea").value`)) === prompt,
   );
-  check("an agent applies a profile", agentSets(`${NAME}-agent`) === 0);
-  check(
-    "an untouched draft follows the agent's profile",
-    (await until(`${nameField} === ${JSON.stringify(`${NAME}-agent`)}`, 15_000)) === true,
-  );
   await click("dialog[open] input");
+  check("an agent applies a profile", (await agentSets(`${NAME}-agent`)) === 0);
+  check(
+    "an untouched draft follows the agent's profile, focus kept",
+    (await until(
+      `${nameField} === ${JSON.stringify(`${NAME}-agent`)} && document.activeElement === document.querySelector("dialog[open] input")`,
+      15_000,
+    )) === true,
+  );
   await type("x");
   await until(`${nameField} === ${JSON.stringify(`${NAME}-agentx`)}`, 3000);
-  check("an agent applies another profile", agentSets(NAME) === 0);
+  check("an agent applies another profile", (await agentSets(NAME)) === 0);
   const kept = await until(
     `document.querySelector("dialog[open] [role=alert]") && ${nameField} === ${JSON.stringify(`${NAME}-agentx`)}`,
     15_000,
