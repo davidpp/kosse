@@ -327,6 +327,60 @@ fn a_dry_run_predicts_what_the_running_instance_applies() {
     assert!(status.success());
 }
 
+/// The revision a dry run reports, in its JSON (`currentRevision` and the metadata's
+/// `centralRevision`) and in its Markdown, is the one the following `set --expect` accepts: the
+/// prompt tells agents to apply with it.
+#[test]
+fn a_dry_runs_revision_is_the_one_to_expect() {
+    let world = world();
+    let first = world
+        .tree
+        .file("first.json", &world.proposed())
+        .expect("file");
+    let set = |file: &Path, extra: &[&str]| {
+        let mut args = vec!["profile", "set", "--file", file.to_str().expect("UTF-8")];
+        args.extend_from_slice(extra);
+        world.kosse(&args)
+    };
+    let saved: ProfileApplied = json_of(&set(&first, &["--json"]));
+    let renamed = world
+        .tree
+        .file(
+            "renamed.json",
+            &world.proposed().replace("\"Acme\"", "\"Acme 2\""),
+        )
+        .expect("file");
+
+    let preview: ProfilePreview = json_of(&set(&renamed, &["--json", "--dry-run"]));
+    assert_eq!(preview.current_revision, saved.saved.revision);
+    assert_eq!(preview.effective.central_revision, saved.saved.revision);
+    let markdown = String::from_utf8(set(&renamed, &["--dry-run"]).stdout).expect("UTF-8");
+    assert!(
+        markdown.contains(&format!("current revision: {}", saved.saved.revision)),
+        "{markdown}"
+    );
+
+    let applied = set(
+        &renamed,
+        &["--json", "--expect", &preview.effective.central_revision],
+    );
+    assert_eq!(
+        code(&applied),
+        NEGATIVE,
+        "saved, with its ambiguous process: {}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    let applied: ProfileApplied = json_of(&applied);
+    assert_eq!(
+        applied
+            .saved
+            .profile
+            .and_then(|profile| profile.name)
+            .as_deref(),
+        Some("Acme 2")
+    );
+}
+
 /// The window (API) and an agent (CLI) share one profile: a write made from a revision that
 /// another writer has since replaced is refused, whichever writer is late, and nothing is lost.
 /// Clients that send no revision keep working.

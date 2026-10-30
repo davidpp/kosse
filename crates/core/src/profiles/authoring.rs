@@ -349,8 +349,8 @@ pub fn preview(
     if let (Some(proposed), Some(stored)) = (&mut proposed_stored, stored) {
         proposed.keep_unknown_from(stored);
     }
-    // What the applied profile's revision will be, kept fields included.
-    effective.central_revision = crate::profiles::central::revision(proposed_stored.as_ref());
+    // The metadata as it would apply, but keyed to the stored revision: the one to `--expect`.
+    effective.central_revision = crate::profiles::central::revision(stored);
     ProfilePreview {
         schema_version: crate::agent::AGENT_SCHEMA_VERSION,
         root: root.to_owned(),
