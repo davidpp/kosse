@@ -20,15 +20,15 @@ Served on loopback; shown in Kossé's own window (opened from the tray or on exp
 
 One calm, dense dashboard grouped by repository/worktree, with package/service rows. Search matches project, package, command name and port. Default view filters known system noise; a visible “all listeners” option makes exclusions reversible.
 
-Each row shows name, port(s), protocol/link confidence, process age, CPU, memory, observation state, and Open / Inspect / Stop actions. Different worktrees remain distinguishable even with identical repo names. One process owning multiple ports is one action target with multiple endpoints.
+Each row shows name, port(s), protocol/link confidence, process age, CPU, memory, observation state, and Open / Inspect / Stop actions. Different worktrees remain distinguishable even with identical repo names. One process owning multiple ports is one action target with multiple endpoints. A profile can put endpoints in the summary (what a person opens: the row's endpoints with Open, the only launch targets) or in details (inspectors and internal ports: one compact muted line on the row, no Open, never the failed marker); port 9229 is in details by inference ([project metadata](project-metadata.md#endpoints-names-and-display-tiers-s21)).
 
-Inspect reveals exact identity, metadata availability, exposure classification, parent PID (if known), sanitized command, and why attribution/link inference was made. Missing permission or metadata displays unknown, not a guessed project.
+Inspect reveals exact identity, metadata availability, exposure classification, parent PID (if known), sanitized command, and why attribution/link inference was made. It lists every endpoint in full with its tier, name and why (Kossé profile, kosse.json, or inferred: default inspector port); a details endpoint's URL is a quiet diagnostic link there. Missing permission or metadata displays unknown, not a guessed project.
 
 Keyboard navigation, visible focus, accessible confirmation dialog, responsive narrow layout, light/dark system preference, reduced motion, and explicit empty/loading/stale/error states are required. No charts needed for v1; accurate current metrics suffice.
 
 ## Tray surface
 
-A native macOS menu with project/service grouping, recognizable names/ports, Open, Inspect (opens the dashboard window on that service), Stop, Open Dashboard, and Quit. Stop must use the same confirmation and identity policy as the dashboard (opening the dashboard's confirmation is acceptable). No alternate unguarded destructive path.
+A native macOS menu with project/service grouping, recognizable names/ports, Open (summary endpoints that answered HTTP only; with several, `Open <name>` or `Open :port`), Inspect (opens the dashboard window on that service), Stop, Open Dashboard, and Quit. Stop must use the same confirmation and identity policy as the dashboard (opening the dashboard's confirmation is acceptable). No alternate unguarded destructive path.
 
 Tray stays useful with browser closed. Initial discovery failure is visible. Quit stops Kossé only, never discovered services. Headless mode has no tray requirement.
 

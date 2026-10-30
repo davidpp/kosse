@@ -147,11 +147,12 @@ fn list_json_matches_fixture_manifest_and_lsof() {
 }
 
 /// The documented columns of `kosse list`'s service table (README, CONTRIBUTING).
-const COLUMNS: [&str; 8] = [
+const COLUMNS: [&str; 9] = [
     "PROJECT",
     "BRANCH",
     "SERVICE",
     "PORT",
+    "SHOW",
     "HTTP",
     "PROCESS",
     "PID.START",

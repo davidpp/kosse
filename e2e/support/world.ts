@@ -24,6 +24,11 @@ export type World = {
   worktree: string;
   /** A second project outside Git: a package directory. */
   billing: string;
+  /**
+   * A Vite + workerd stack with a central profile: the site's inspector and every workerd port
+   * are details endpoints.
+   */
+  marketing: string;
   fixtures: Record<FixtureName, Fixture>;
   server: Server;
   /** Stops the server (by its handle) and starts a new instance on the same port. */
@@ -34,7 +39,16 @@ export type World = {
   dispose: () => Promise<void>;
 };
 
-export type FixtureName = "web" | "api" | "docs" | "stubborn" | "worker" | "db" | "gateway";
+export type FixtureName =
+  | "web"
+  | "api"
+  | "docs"
+  | "stubborn"
+  | "worker"
+  | "db"
+  | "gateway"
+  | "site"
+  | "workerd";
 
 /** A fake credential assembled at run time, so no secret-shaped literal sits in the source. */
 const fakeToken = ["kosse", "fixture", "token", "0000"].join("-");
@@ -62,10 +76,12 @@ export async function createWorld(
   const storefront = join(dir, "work", "storefront");
   const worktree = join(dir, "work", "worktrees", "storefront");
   const billing = join(dir, "work", "billing-api");
+  const marketing = join(dir, "work", "marketing-site");
   const started: Fixture[] = [];
 
   try {
     await createRepo(storefront, ["web", "api", "docs", "worker"]);
+    await createRepo(marketing, []);
     await mkdir(join(dir, "work", "worktrees"), { recursive: true });
     git(storefront, "worktree", "add", "-q", "-b", "checkout-redesign", worktree);
     await mkdir(billing, { recursive: true });
@@ -122,6 +138,25 @@ export async function createWorld(
         args: ["run"],
         ...look("", [8443]),
       },
+      // Vite with its inspector: the profile lists the site in the summary, the inspector in
+      // details.
+      site: {
+        name: "vite",
+        cwd: marketing,
+        serve: "title",
+        listen: ["127.0.0.1", "127.0.0.1"],
+        args: ["dev"],
+        ...look("Marketing site", [5180, 9229]),
+      },
+      // workerd's ports change on every start; `otherEndpoints` keeps them all in details. An
+      // internal 500 is reachable HTTP, never a failure of the site.
+      workerd: {
+        name: "workerd",
+        cwd: marketing,
+        serve: "error",
+        listen: ["127.0.0.1", "127.0.0.1"],
+        args: ["serve", "--experimental"],
+      },
     };
     const start = async (name: FixtureName) => {
       const fixture = await startFixture(bin, {
@@ -139,7 +174,37 @@ export async function createWorld(
       worker: await start("worker"),
       db: await start("db"),
       gateway: await start("gateway"),
+      site: await start("site"),
+      workerd: await start("workerd"),
     };
+    const [sitePort, inspectorPort] = fixtures.site.ports;
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, "config.json"),
+      `${JSON.stringify({
+        version: 1,
+        projects: {
+          [marketing]: {
+            version: 1,
+            services: {
+              site: {
+                name: "Marketing site",
+                match: { cwd: ".", process: "vite" },
+                endpoints: {
+                  [String(sitePort)]: { name: "Site" },
+                  [String(inspectorPort)]: { name: "Inspector", show: "details" },
+                },
+              },
+              worker: {
+                name: "Worker runtime",
+                match: { cwd: ".", process: "workerd" },
+                otherEndpoints: { show: "details" },
+              },
+            },
+          },
+        },
+      })}\n`,
+    );
 
     // `docs` is deliberately outside `--act-only`: stopping it must be refused. The supervised
     // worker's children are never probed (their PIDs are not known up front).
@@ -151,7 +216,15 @@ export async function createWorld(
       fixtures.db,
       fixtures.gateway,
     ];
-    const probe = [fixtures.web, fixtures.api, fixtures.docs, fixtures.stubborn, fixtures.gateway];
+    const probe = [
+      fixtures.web,
+      fixtures.api,
+      fixtures.docs,
+      fixtures.stubborn,
+      fixtures.gateway,
+      fixtures.site,
+      fixtures.workerd,
+    ];
     if (showcase) probe.push(fixtures.worker);
     const serve = (port?: number) =>
       startServer({
@@ -167,6 +240,7 @@ export async function createWorld(
       storefront,
       worktree,
       billing,
+      marketing,
       fixtures,
       server: await serve(),
       restart: async () => {

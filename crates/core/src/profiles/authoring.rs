@@ -15,8 +15,8 @@ use ts_rs::TS;
 
 use crate::{
     model::{
-        CommandLine, Endpoint, Observation, PackageLabel, ProcessIdentity, Project, ScanWarning,
-        Service,
+        CommandLine, Endpoint, EndpointDisplay, Observation, PackageLabel, ProcessIdentity,
+        Project, ScanWarning, Service,
     },
     profiles::{
         document::{ProjectProfile, REPO_FILE_NAME},
@@ -31,12 +31,13 @@ use crate::{
 pub const MATCHING_RULES: &[&str] = &[
     "Only processes attributed to this project root are candidates; matching never crosses projects.",
     "`match.cwd` is relative to the root (`.` is the root): a process matches when its working directory is that directory or inside it. No `..`; a symbolic link leading outside the project matches nothing.",
-    "`match.port` narrows to processes listening on that port; with `cwd` both must hold. `match` needs `cwd`, `port` or both, and unknown criteria are refused.",
+    "`match.port` narrows to processes listening on that port; `match.process` to processes with exactly that OS process name (the PROCESS column, never the command line). Every criterion given must hold; `match` needs at least one of `cwd`, `port` and `process`, and unknown criteria are refused.",
     "`match.cwd: \".\"` takes in every package's processes; for a service at the root only, use `match.port`.",
-    "A process matched by several entries is ambiguous and gets none of them.",
+    "A process matched by several entries is ambiguous and gets none of them, except that entries naming its `process` take it from entries that do not (adding `port` makes an entry no more specific), unless that would hand a central entry's process to a repository entry: then it stays ambiguous.",
+    "`endpoints` (keyed by port) names endpoints and sets `show`: `summary` (the default for a listed endpoint: what a person opens, the only launch targets of Open, `kosse url <service>` and `kosse wait <service> --http`) or `details` (diagnostics only). `otherEndpoints.show` applies to the matched processes' unlisted endpoints, including ports that change on every start. Port 9229 otherwise shows as `Inspector`, in details.",
     "An entry without `match` is declared only (name, links) and matches nothing; `disabled: true` suppresses an entry.",
-    "Central over repository, field by field; `match` and `links` replace as a whole.",
-    "Only the central profile's `protocol` (`http`/`https`) makes an endpoint an HTTP probe candidate; `probePath` is requested only after `GET /` got an HTTP response.",
+    "Central over repository, field by field; `match`, `endpoints`, `otherEndpoints` and `links` replace as a whole.",
+    "Only the central profile's `protocol` (`http`/`https`) makes an endpoint an HTTP probe candidate; `probePath` is requested only after `GET /` got an HTTP response. An endpoint's own `probePath` applies to it on either tier; the service's `probePath` only to its summary endpoints.",
 ];
 
 /// A root's stored central profile and its revision.
@@ -168,7 +169,17 @@ pub struct PredictedMatch {
     pub name: Option<String>,
     pub cwd: Option<String>,
     pub ports: Vec<u16>,
+    /// How each port would be shown under the proposed profile, ordered by port.
+    pub displays: Vec<PredictedDisplay>,
     pub profile: Option<ProfileMatch>,
+}
+
+/// One port of a [`PredictedMatch`] and its display under the proposed profile.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PredictedDisplay {
+    pub port: u16,
+    pub display: EndpointDisplay,
 }
 
 /// `kosse profile set --dry-run --json`.
@@ -335,6 +346,14 @@ pub fn preview(
                 .endpoints
                 .iter()
                 .map(|endpoint| endpoint.port)
+                .collect(),
+            displays: service
+                .endpoints
+                .into_iter()
+                .map(|endpoint| PredictedDisplay {
+                    port: endpoint.port,
+                    display: endpoint.display,
+                })
                 .collect(),
             profile: service.profile,
         })

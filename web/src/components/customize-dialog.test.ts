@@ -10,8 +10,12 @@ const draft = {
   name: "",
   cwd: "",
   port: "",
+  process: "",
   protocol: "" as const,
   probePath: "",
+  endpoints: [],
+  endpointsSet: false,
+  otherEndpoints: "" as const,
   links: [],
   linksSet: false,
   disabled: false,
@@ -75,6 +79,8 @@ describe("customize form", () => {
       match: null,
       protocol: null,
       probePath: null,
+      endpoints: null,
+      otherEndpoints: null,
       links: null,
       disabled: null,
     } as const;
@@ -84,6 +90,8 @@ describe("customize form", () => {
       match: null,
       protocol: null,
       probePath: null,
+      endpoints: [],
+      otherEndpoints: null,
       links: [],
       disabled: false,
       sources: none,
@@ -119,6 +127,19 @@ describe("customize form", () => {
           sources: { ...none, name: "central", probePath: "repository", links: "central" },
         }),
         entry("repo-only", { name: "From repo", sources: { ...none, name: "repository" } }),
+        entry("worker", {
+          match: { cwd: ".", process: "workerd" },
+          endpoints: [
+            { port: 3000, name: "Site", show: null, probePath: "/health" },
+            { port: 9229, name: null, show: "details", probePath: null },
+          ],
+          otherEndpoints: "details",
+          sources: { ...none, match: "central", endpoints: "central", otherEndpoints: "central" },
+        }),
+        entry("repo-endpoints", {
+          endpoints: [{ port: 4000, name: "Admin", show: null, probePath: null }],
+          sources: { ...none, endpoints: "repository", name: "central" },
+        }),
       ],
     };
     expect(buildProfile("Shop", initialDrafts(metadata))).toEqual({
@@ -131,8 +152,38 @@ describe("customize form", () => {
           name: "API",
           links: [{ label: "Docs", url: "https://docs.shop.test/", kind: "external" }],
         },
+        worker: {
+          match: { cwd: ".", process: "workerd" },
+          endpoints: {
+            "3000": { name: "Site", probePath: "/health" },
+            "9229": { show: "details" },
+          },
+          otherEndpoints: { show: "details" },
+        },
+        "repo-endpoints": {},
       },
     });
+  });
+
+  it("builds endpoints keyed by port, a bare port meaning summary", () => {
+    const endpoint = { uid: 9, port: "3000", name: "", show: "" as const, probePath: "" };
+    expect(
+      buildProfile("", [
+        { ...draft, endpoints: [endpoint, { ...endpoint, port: "" }], otherEndpoints: "details" },
+      ]),
+    ).toEqual({
+      version: 1,
+      services: {
+        api: { endpoints: { "3000": { show: "summary" } }, otherEndpoints: { show: "details" } },
+      },
+    });
+    expect(buildProfile("", [{ ...draft, endpointsSet: true }])).toEqual({
+      version: 1,
+      services: { api: { endpoints: {} } },
+    });
+    expect(buildProfile("", [{ ...draft, endpoints: [endpoint, endpoint] }])).toBe(
+      "api: endpoint :3000 is listed twice",
+    );
   });
 
   it("removes the profile when nothing is set", () => {

@@ -6,6 +6,8 @@
 //! - `BRANCH`: branch, `detached@<commit>`, `?` when Git did not say, `-` outside Git;
 //! - `SERVICE`: the configured service, `Name (id) [source]`, or `ambiguous: a, b`;
 //! - `PORT`;
+//! - `SHOW`: `summary` (a launch target) or `details`, then ` · <name>` when the endpoint is named
+//!   and ` (inferred)` for the default inspector port no profile describes;
 //! - `HTTP`: `<status> <url>` when it answered HTTP, otherwise the probe state (`not probed (no
 //!   instance)` for a candidate of a one-shot scan, which never probes);
 //! - `PROCESS`: the OS process name;
@@ -26,11 +28,11 @@ use std::{
 
 use kosse_core::{
     model::{
-        Endpoint, GitHead, HttpProbe, Observation, ProbeResult, ProbeSkip, ProcessIdentity,
-        Project, Service, Snapshot, TlsFailure,
+        DisplayBasis, Endpoint, EndpointDisplay, GitHead, HttpProbe, Observation, ProbeResult,
+        ProbeSkip, ProcessIdentity, Project, Service, Snapshot, TlsFailure,
     },
     profiles::{
-        document::ServiceMatch,
+        document::{EndpointShow, ServiceMatch},
         view::{ConfiguredService, ProfileMatch, ProjectMetadata},
     },
 };
@@ -44,11 +46,12 @@ use crate::{
     text::printable,
 };
 
-pub const COLUMNS: [&str; 8] = [
+pub const COLUMNS: [&str; 9] = [
     "PROJECT",
     "BRANCH",
     "SERVICE",
     "PORT",
+    "SHOW",
     "HTTP",
     "PROCESS",
     "PID.START",
@@ -104,7 +107,7 @@ pub fn probes_run(snapshot: &Snapshot) -> bool {
 /// One row per port of each service (only `port` when given). `probes_run` is false for an
 /// observation no prober follows, so a candidate reads `not probed (no instance)` rather than
 /// `pending`.
-pub fn services_table(observation: &Observation, port: Option<u16>, probes_run: bool) -> Table<8> {
+pub fn services_table(observation: &Observation, port: Option<u16>, probes_run: bool) -> Table<9> {
     let projects: HashMap<&str, &Project> = observation
         .projects
         .iter()
@@ -133,6 +136,7 @@ pub fn services_table(observation: &Observation, port: Option<u16>, probes_run: 
                 &branch,
                 &configured,
                 &endpoint.port.to_string(),
+                &show_label(&endpoint.display),
                 &http_state(endpoint, probes_run),
                 process,
                 &identity,
@@ -152,6 +156,22 @@ pub fn reachable_url(endpoint: &Endpoint) -> Option<String> {
         } => Some(prober::open_url(*tls, endpoint.port)),
         _ => None,
     }
+}
+
+/// The `SHOW` cell: `summary`, `details · Inspector (inferred)`, `summary · Site`.
+pub fn show_label(display: &EndpointDisplay) -> String {
+    let mut label = match display.show {
+        EndpointShow::Summary => "summary",
+        EndpointShow::Details => "details",
+    }
+    .to_owned();
+    if let Some(name) = &display.name {
+        let _ = write!(label, " · {name}");
+    }
+    if display.basis == DisplayBasis::InspectorPort {
+        label.push_str(" (inferred)");
+    }
+    label
 }
 
 /// `200 http://localhost:3000/`, or what stands in the way: `pending` (`not probed (no instance)`
@@ -212,6 +232,9 @@ pub fn matcher_label(matcher: &ServiceMatch) -> String {
     }
     if let Some(port) = matcher.port {
         parts.push(format!("port {port}"));
+    }
+    if let Some(process) = &matcher.process {
+        parts.push(format!("process {process}"));
     }
     parts.join(", ")
 }

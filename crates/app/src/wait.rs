@@ -11,7 +11,10 @@
 //! `--http` asks for probes exactly as the dashboard's "try HTTP" does, so there is one probe
 //! policy: through the instance's `POST /api/probe` (session token, same origin, its rate
 //! limit), or in process through [`Probes::request`] after the same
-//! [`probe::requested_target`] check. Only the endpoints of the one matching service are probed,
+//! [`probe::requested_target`] check. Only the endpoints of the one matching service are probed
+//! (its summary endpoints, its launch targets, unless `--port` names one; while a service has
+//! only details endpoints, as during startup when an inspector binds first, it keeps waiting and
+//! the timeout names them),
 //! first at once, then after 1 s, doubling to at most [`PROBE_BACKOFF_MAX`]; a rate-limited or
 //! stale request is retried after a second. Any HTTP response counts (404 and 500 included). An
 //! endpoint that may never be probed (another user's, not on loopback) fails at once (exit 3),
@@ -249,11 +252,19 @@ fn judge(
         WaitCondition::Http => match services {
             [] => Verdict::Waiting { probe: Vec::new() },
             [service] => {
-                let endpoints: Vec<&Endpoint> = service
-                    .endpoints
-                    .iter()
-                    .filter(|endpoint| port.is_none_or(|port| endpoint.port == port))
-                    .collect();
+                let endpoints: Vec<&Endpoint> = match port {
+                    Some(port) => service
+                        .endpoints
+                        .iter()
+                        .filter(|endpoint| endpoint.port == port)
+                        .collect(),
+                    None => service.launch_endpoints().collect(),
+                };
+                // During startup a details port (`node --inspect` on 9229) often binds before
+                // the app's: keep waiting; the timeout message says why nothing qualified.
+                if endpoints.is_empty() {
+                    return Verdict::Waiting { probe: Vec::new() };
+                }
                 if let Some(url) = endpoints
                     .iter()
                     .find_map(|endpoint| list::reachable_url(endpoint))
@@ -339,6 +350,17 @@ fn last_states(
         .flat_map(|service| &service.endpoints)
         .filter(|endpoint| port.is_none_or(|port| endpoint.port == port))
         .collect();
+    if condition == WaitCondition::Http
+        && port.is_none()
+        && let [service] = observation.services.as_slice()
+        && service.launch_endpoints().next().is_none()
+        && !service.endpoints.is_empty()
+    {
+        return format!(
+            " ({})",
+            crate::query::details_only("it", service, "kosse wait --http --port")
+        );
+    }
     match condition {
         WaitCondition::Http if !endpoints.is_empty() => {
             format!(" (last: {})", states(&endpoints, probes_run))

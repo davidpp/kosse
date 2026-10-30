@@ -23,6 +23,7 @@ This is the dependency/specification index, not a second status tracker. Live st
 | S18 | Discovery: `kosse agent`, skill file, help pointer | S13–S17 |
 | S19 | Agent acceptance evaluation vs a `ps`/`lsof` baseline | S18 |
 | S20 | (someday) Exploratory "started by" ancestry attribution | S13 |
+| S21 | Endpoint names and summary/details display (issue #9) | S18 |
 
 ## Dependency graph
 
@@ -166,6 +167,16 @@ Real-terminal tests (OpenTUI's test renderer or a PTY harness against the real b
 ### S13–S20 (agent surface)
 
 Scope, command contract, exit codes and acceptance for each are in [agent surface](agent-surface.md#slices).
+
+### S21 (endpoint names and display tiers, issue #9)
+
+#### Scope
+
+Per-endpoint `name`, `show: summary | details` and `probePath` in `endpoints` (keyed by port), `otherEndpoints` for the rest, `match.process` for a child with changing ports, and the one inference (port 9229 is `Inspector`, details), as in [project metadata](project-metadata.md#endpoints-names-and-display-tiers-s21). Core resolves `Endpoint.display`; summary endpoints are the only launch targets of tray Open, dashboard Open, `kosse url <service>` and `kosse wait <service> --http`. Dashboard row (details on one muted line), Inspect (tier, name, provenance), Customize (Process field, Endpoints editor, Other endpoints), CLI `SHOW` column, profile prompt step 2.
+
+#### Acceptance
+
+Through owned fixtures and the real binary: one process with two HTTP ports and a profile listing one as summary and the rest as details gives `kosse url <service>` the summary port (before: ambiguous); a `workerd` fixture matched by `match.process` with `otherEndpoints: details` keeps its new ports in details after a restart without a profile edit, `kosse url <service>` exits 1 naming them and `kosse url <port>` answers; a directory-wide and a process entry give each process one match; an endpoint `probePath` is requested on that endpoint only and the service's never on a details endpoint. The dashboard (Playwright and the real window) shows details endpoints muted without Open, Inspect says why, and the tray offers Open only for summary endpoints. Evidence in `docs/evidence/S21.md`.
 
 ## Exit rule
 

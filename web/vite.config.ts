@@ -46,6 +46,9 @@ export default defineConfig({
     // Third-party license notices for the bundled JS, collected for release packaging.
     license: true,
     emptyOutDir: true,
+    // One entry chunk and no dynamic imports, so there is nothing to preload: the polyfill would
+    // only cost budget.
+    modulePreload: { polyfill: false },
   },
   test: {
     environment: "jsdom",

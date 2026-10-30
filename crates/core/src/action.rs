@@ -469,6 +469,7 @@ mod tests {
                     bind_addresses: vec!["127.0.0.1".to_owned()],
                     exposure: Exposure::Loopback,
                     http: HttpProbe::Pending,
+                    display: crate::model::EndpointDisplay::default(),
                 })
                 .collect(),
             project: None,

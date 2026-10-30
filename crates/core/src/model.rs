@@ -290,7 +290,7 @@ pub enum CpuUsage {
 }
 
 /// One port of a service, with every address it is bound to on that port.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Endpoint {
     pub protocol: TransportProtocol,
@@ -301,6 +301,105 @@ pub struct Endpoint {
     pub exposure: Exposure,
     /// Bounded HTTP enrichment. Listening is a fact; this only says what an HTTP request saw.
     pub http: HttpProbe,
+    /// Where views show this endpoint and what it is called. Display only: it never changes
+    /// identity, eligibility, binds or which endpoints are probed. Missing from an older
+    /// instance's snapshot, it reads as [`EndpointDisplay::inferred`] for the port, as a scan
+    /// without a profile would show it.
+    pub display: EndpointDisplay,
+}
+
+/// [`Endpoint`] as read, with `display` optional.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EndpointWire {
+    protocol: TransportProtocol,
+    port: u16,
+    bind_addresses: Vec<String>,
+    exposure: Exposure,
+    http: HttpProbe,
+    display: Option<EndpointDisplay>,
+}
+
+impl<'de> Deserialize<'de> for Endpoint {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = EndpointWire::deserialize(deserializer)?;
+        Ok(Self {
+            display: wire
+                .display
+                .unwrap_or_else(|| EndpointDisplay::inferred(wire.port)),
+            protocol: wire.protocol,
+            port: wire.port,
+            bind_addresses: wire.bind_addresses,
+            exposure: wire.exposure,
+            http: wire.http,
+        })
+    }
+}
+
+/// An endpoint's name and tier, resolved from the matched profile entry or inferred.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct EndpointDisplay {
+    /// The profile's (or the inference's) name for the endpoint; `null` shows the port alone.
+    pub name: Option<String>,
+    /// `summary` endpoints are a service's launch targets; `details` ones are diagnostics only.
+    pub show: crate::profiles::document::EndpointShow,
+    pub basis: DisplayBasis,
+    /// The profile source of `endpoint` and `otherEndpoints`; `null` otherwise.
+    pub source: Option<crate::profiles::view::ProfileSource>,
+}
+
+/// Why an endpoint is shown where it is, in precedence order.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum DisplayBasis {
+    /// The matched entry lists this port in `endpoints`.
+    Endpoint,
+    /// The matched entry's `otherEndpoints`.
+    OtherEndpoints,
+    /// Port 9229, the default Node, Wrangler and Vite-plugin inspector port, which no profile
+    /// entry describes: `Inspector`, in details.
+    InspectorPort,
+    /// Nothing says otherwise: in the summary.
+    #[default]
+    Default,
+}
+
+/// Node's `--inspect` default, also Wrangler's `inspector_port` and the Cloudflare Vite plugin's
+/// `inspectorPort`: the only port whose display is inferred.
+pub const INSPECTOR_PORT: u16 = 9229;
+
+impl EndpointDisplay {
+    /// What an endpoint no profile entry describes is shown as.
+    #[must_use]
+    pub fn inferred(port: u16) -> Self {
+        if port == INSPECTOR_PORT {
+            Self {
+                name: Some("Inspector".to_owned()),
+                show: crate::profiles::document::EndpointShow::Details,
+                basis: DisplayBasis::InspectorPort,
+                source: None,
+            }
+        } else {
+            Self::default()
+        }
+    }
+
+    #[must_use]
+    pub fn is_summary(&self) -> bool {
+        self.show == crate::profiles::document::EndpointShow::Summary
+    }
+}
+
+impl Service {
+    /// The endpoints a person opens: the summary ones. Tray Open, dashboard Open, `kosse url
+    /// <service>` and `kosse wait <service> --http` choose only among these; an explicit port
+    /// answers for any endpoint.
+    pub fn launch_endpoints(&self) -> impl Iterator<Item = &Endpoint> {
+        self.endpoints
+            .iter()
+            .filter(|endpoint| endpoint.display.is_summary())
+    }
 }
 
 /// Whether an endpoint was probed over HTTP, and what was seen.
@@ -568,4 +667,28 @@ fn write_list<T: fmt::Display>(f: &mut fmt::Formatter<'_>, items: &[T]) -> fmt::
         write!(f, "{item}")?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 0.2.1 instance's snapshot has no `display`: the CLI must still never offer its
+    /// inspector as the service's URL.
+    #[test]
+    fn an_endpoint_without_display_reads_as_the_scanner_would_infer_it() {
+        let read = |port: u16| -> Endpoint {
+            serde_json::from_value(serde_json::json!({
+                "protocol": "tcp",
+                "port": port,
+                "bindAddresses": ["127.0.0.1"],
+                "exposure": "loopback",
+                "http": {"state": "pending"}
+            }))
+            .expect("older endpoint")
+        };
+        assert_eq!(read(9229).display, EndpointDisplay::inferred(9229));
+        assert!(!read(9229).display.is_summary());
+        assert!(read(3000).display.is_summary());
+    }
 }

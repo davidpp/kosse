@@ -23,6 +23,9 @@ pub const MAX_LINKS: usize = 16;
 pub const MAX_LABEL_CHARS: usize = 100;
 pub const MAX_URL_BYTES: usize = 2048;
 pub const MAX_PATH_BYTES: usize = 512;
+pub const MAX_ENDPOINTS: usize = 64;
+/// `match.process`: the kernel truncates process names to 31 bytes, so longer never matches.
+pub const MAX_PROCESS_NAME_CHARS: usize = 64;
 
 /// Optional metadata about one project (a worktree root). Nothing in it is executed, fetched or
 /// applied to the system: it names services, narrows which processes they are, and declares
@@ -85,8 +88,10 @@ pub struct ServiceProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(length(max = 16))]
     pub links: Option<Vec<LinkProfile>>,
-    /// Origin-relative path requested by the HTTP probe instead of `/`, only on a loopback
-    /// endpoint of the user's own process where `GET /` already got an HTTP response.
+    /// Origin-relative health path requested by the HTTP probe instead of `/` on the service's
+    /// summary endpoints (only the matched port, when `match` names one); an endpoint's own
+    /// `probePath` wins. Requested only on a loopback endpoint of the user's own process where
+    /// `GET /` already got an HTTP response.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         length(max = 512),
@@ -95,6 +100,23 @@ pub struct ServiceProfile {
         )
     )]
     pub probe_path: Option<String>,
+    /// Endpoints of the matched processes by port (decimal, `1`–`65535`): a name, whether a
+    /// person opens it (`summary`) or it is shown for diagnostics only (`details`), and its own
+    /// health path. Replaces (never extends) the other source's object.
+    #[serde(
+        default,
+        deserialize_with = "some_unique_keys",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(extend(
+        "propertyNames" = { "pattern": "^[1-9][0-9]{0,4}$" },
+        "maxProperties" = 64
+    ))]
+    pub endpoints: Option<BTreeMap<String, EndpointProfile>>,
+    /// How the matched processes' endpoints that `endpoints` does not list are shown: for a
+    /// process whose ports change on every start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub other_endpoints: Option<OtherEndpoints>,
     /// `true` suppresses an entry with this ID from the other source (and this one).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disabled: Option<bool>,
@@ -104,7 +126,7 @@ pub struct ServiceProfile {
     pub unknown: BTreeMap<String, Value>,
 }
 
-/// Narrows the project's processes to this service. Both criteria must hold. A port alone
+/// Narrows the project's processes to this service. Every criterion given must hold. A port alone
 /// matches only processes of this project: it never attributes another project's process.
 /// Unknown criteria are refused rather than ignored, since ignoring one would widen the match.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
@@ -121,6 +143,61 @@ pub struct ServiceMatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1))]
     pub port: Option<u16>,
+    /// The OS process name, exactly as the PROCESS column shows it (`workerd`, `node`): for a
+    /// child whose ports change on every start. Never the command line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 64))]
+    pub process: Option<String>,
+}
+
+/// One listed endpoint of a service. At least one field is set.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(optional_fields)]
+pub struct EndpointProfile {
+    /// Shown with the port: `Site`, `Inspector`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 100))]
+    pub name: Option<String>,
+    /// `summary` (the default for a listed endpoint) or `details`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show: Option<EndpointShow>,
+    /// The health path of this endpoint, on either tier; wins over the service's `probePath`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        length(max = 512),
+        regex(
+            pattern = r"^/(?:(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%[0-9A-Fa-f]{2})(?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%[0-9A-Fa-f]{2})*)?(?:\?(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*)?$"
+        )
+    )]
+    pub probe_path: Option<String>,
+    #[serde(flatten)]
+    #[schemars(skip)]
+    #[ts(skip)]
+    pub unknown: BTreeMap<String, Value>,
+}
+
+/// The default for endpoints `endpoints` does not list.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OtherEndpoints {
+    pub show: EndpointShow,
+    #[serde(flatten)]
+    #[schemars(skip)]
+    #[ts(skip)]
+    pub unknown: BTreeMap<String, Value>,
+}
+
+/// Where an endpoint is shown. Display only: it never changes identity, eligibility or binds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum EndpointShow {
+    /// On the service row, with Open: what a person opens. The only launch targets.
+    #[default]
+    Summary,
+    /// Visible for diagnostics (the row's muted line, Inspect), never a launch target, and its
+    /// HTTP errors never mark the service failed.
+    Details,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
@@ -191,6 +268,19 @@ impl ProjectProfile {
                 continue;
             };
             keep_missing(&mut service.unknown, &old.unknown);
+            if let (Some(endpoints), Some(old_endpoints)) = (&mut service.endpoints, &old.endpoints)
+            {
+                for (port, endpoint) in endpoints.iter_mut() {
+                    if let Some(old_endpoint) = old_endpoints.get(port) {
+                        keep_missing(&mut endpoint.unknown, &old_endpoint.unknown);
+                    }
+                }
+            }
+            if let (Some(other), Some(old_other)) =
+                (&mut service.other_endpoints, &old.other_endpoints)
+            {
+                keep_missing(&mut other.unknown, &old_other.unknown);
+            }
             if let (Some(links), Some(old_links)) = (&mut service.links, &old.links) {
                 for link in links.iter_mut() {
                     if let Some(old_link) = old_links.iter().find(|old| old.url == link.url) {
@@ -253,6 +343,15 @@ where
     deserializer.deserialize_map(UniqueKeys(PhantomData))
 }
 
+/// [`unique_keys`] for an optional object.
+fn some_unique_keys<'de, D, V>(deserializer: D) -> Result<Option<BTreeMap<String, V>>, D::Error>
+where
+    D: Deserializer<'de>,
+    V: Deserialize<'de>,
+{
+    unique_keys(deserializer).map(Some)
+}
+
 /// The JSON Schema of [`ProjectProfile`], as `kosse config schema` prints it.
 #[must_use]
 pub fn json_schema() -> String {
@@ -275,7 +374,7 @@ mod tests {
 
     #[test]
     fn unknown_fields_survive_a_round_trip_and_a_replacement() {
-        let text = r#"{"version":1,"future":{"a":1},"services":{"web":{"name":"Web","hint":2,"links":[{"label":"x","url":"http://localhost:1/","icon":"z"}]}}}"#;
+        let text = r#"{"version":1,"future":{"a":1},"services":{"web":{"name":"Web","hint":2,"links":[{"label":"x","url":"http://localhost:1/","icon":"z"}],"endpoints":{"3000":{"name":"Site","tint":"blue"}},"otherEndpoints":{"show":"details","why":1}}}}"#;
         let previous: ProjectProfile = serde_json::from_str(text).expect("parse");
         let round_trip: Value = serde_json::to_value(&previous).expect("serialize");
         assert_eq!(
@@ -289,6 +388,14 @@ mod tests {
         if let Some(links) = &mut service.links {
             links[0].unknown.clear();
         }
+        if let Some(endpoints) = &mut service.endpoints {
+            for endpoint in endpoints.values_mut() {
+                endpoint.unknown.clear();
+            }
+        }
+        if let Some(other) = &mut service.other_endpoints {
+            other.unknown.clear();
+        }
         service.name = Some("Renamed".into());
         edited.services.insert("web".into(), service);
         edited.keep_unknown_from(&previous);
@@ -297,6 +404,15 @@ mod tests {
         assert_eq!(
             edited.services["web"].links.as_ref().expect("links")[0].unknown["icon"],
             "z"
+        );
+        let web = &edited.services["web"];
+        assert_eq!(
+            web.endpoints.as_ref().expect("endpoints")["3000"].unknown["tint"],
+            "blue"
+        );
+        assert_eq!(
+            web.other_endpoints.as_ref().expect("other").unknown["why"],
+            1
         );
     }
 

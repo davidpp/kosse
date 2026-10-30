@@ -52,6 +52,56 @@
         "tcp"
       ]
     },
+    "EndpointProfile": {
+      "description": "One listed endpoint of a service. At least one field is set.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Shown with the port: `Site`, `Inspector`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 100,
+          "minLength": 1
+        },
+        "probePath": {
+          "description": "The health path of this endpoint, on either tier; wins over the service's `probePath`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512,
+          "pattern": "^/(?:(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%[0-9A-Fa-f]{2})(?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%[0-9A-Fa-f]{2})*)?(?:\\?(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*)?$"
+        },
+        "show": {
+          "description": "`summary` (the default for a listed endpoint) or `details`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EndpointShow"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "EndpointShow": {
+      "description": "Where an endpoint is shown. Display only: it never changes identity, eligibility or binds.",
+      "oneOf": [
+        {
+          "description": "On the service row, with Open: what a person opens. The only launch targets.",
+          "type": "string",
+          "const": "summary"
+        },
+        {
+          "description": "Visible for diagnostics (the row's muted line, Inspect), never a launch target, and its\nHTTP errors never mark the service failed.",
+          "type": "string",
+          "const": "details"
+        }
+      ]
+    },
     "LinkKind": {
       "oneOf": [
         {
@@ -103,8 +153,20 @@
         "url"
       ]
     },
+    "OtherEndpoints": {
+      "description": "The default for endpoints `endpoints` does not list.",
+      "type": "object",
+      "properties": {
+        "show": {
+          "$ref": "#/$defs/EndpointShow"
+        }
+      },
+      "required": [
+        "show"
+      ]
+    },
     "ServiceMatch": {
-      "description": "Narrows the project's processes to this service. Both criteria must hold. A port alone\nmatches only processes of this project: it never attributes another project's process.\nUnknown criteria are refused rather than ignored, since ignoring one would widen the match.",
+      "description": "Narrows the project's processes to this service. Every criterion given must hold. A port alone\nmatches only processes of this project: it never attributes another project's process.\nUnknown criteria are refused rather than ignored, since ignoring one would widen the match.",
       "type": "object",
       "properties": {
         "cwd": {
@@ -125,6 +187,15 @@
           "format": "uint16",
           "maximum": 65535,
           "minimum": 1
+        },
+        "process": {
+          "description": "The OS process name, exactly as the PROCESS column shows it (`workerd`, `node`): for a\nchild whose ports change on every start. Never the command line.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64,
+          "minLength": 1
         }
       },
       "additionalProperties": false
@@ -139,6 +210,20 @@
             "boolean",
             "null"
           ]
+        },
+        "endpoints": {
+          "description": "Endpoints of the matched processes by port (decimal, `1`–`65535`): a name, whether a\nperson opens it (`summary`) or it is shown for diagnostics only (`details`), and its own\nhealth path. Replaces (never extends) the other source's object.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "$ref": "#/$defs/EndpointProfile"
+          },
+          "maxProperties": 64,
+          "propertyNames": {
+            "pattern": "^[1-9][0-9]{0,4}$"
+          }
         },
         "links": {
           "description": "Friendly links. Replaces (never extends) the other source's list.",
@@ -171,8 +256,19 @@
           "maxLength": 100,
           "minLength": 1
         },
+        "otherEndpoints": {
+          "description": "How the matched processes' endpoints that `endpoints` does not list are shown: for a\nprocess whose ports change on every start.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OtherEndpoints"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "probePath": {
-          "description": "Origin-relative path requested by the HTTP probe instead of `/`, only on a loopback\nendpoint of the user's own process where `GET /` already got an HTTP response.",
+          "description": "Origin-relative health path requested by the HTTP probe instead of `/` on the service's\nsummary endpoints (only the matched port, when `match` names one); an endpoint's own\n`probePath` wins. Requested only on a loopback endpoint of the user's own process where\n`GET /` already got an HTTP response.",
           "type": [
             "string",
             "null"

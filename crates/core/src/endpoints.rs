@@ -3,7 +3,7 @@
 use std::{collections::BTreeMap, net::IpAddr};
 
 use crate::{
-    model::{Endpoint, Exposure, TransportProtocol},
+    model::{Endpoint, EndpointDisplay, Exposure, TransportProtocol},
     probe,
     sockets::ListenSocket,
 };
@@ -33,6 +33,7 @@ pub fn endpoints_of<'a>(sockets: impl IntoIterator<Item = &'a ListenSocket>) -> 
                 exposure: exposure_of(&addresses),
                 http: probe::initial_state(port, &addresses, process_name),
                 bind_addresses: addresses.iter().map(ToString::to_string).collect(),
+                display: EndpointDisplay::inferred(port),
             }
         })
         .collect()

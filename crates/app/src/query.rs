@@ -2,9 +2,10 @@
 //! as `kosse list` (see [`crate::scope::observe`]).
 //!
 //! - `url <service|port>` prints only `prober::open_url`'s `http(s)://localhost:<port>/` of the one
-//!   endpoint that answered HTTP. A name matching several services (two worktrees, say), several
-//!   answering ports, or no answer at all is a negative answer (exit 1) with the reason, and the
-//!   endpoints' probe states, on stderr.
+//!   endpoint that answered HTTP: for a service, among its summary endpoints (its launch targets);
+//!   a port answers for any endpoint. A name matching several services (two worktrees, say),
+//!   several answering ports, a service whose endpoints are all details, or no answer at all is a
+//!   negative answer (exit 1) with the reason, and the endpoints' probe states, on stderr.
 //! - `port <n>` prints `free`, qualified when other users' listeners are hidden, or the service
 //!   table's rows for that port.
 
@@ -112,11 +113,20 @@ fn reachable(
     what: &str,
     probes_run: bool,
 ) -> Result<(u16, String), Failure> {
-    let endpoints: Vec<_> = service
-        .endpoints
-        .iter()
-        .filter(|endpoint| port.is_none_or(|port| endpoint.port == port))
-        .collect();
+    let endpoints: Vec<_> = match port {
+        Some(port) => service
+            .endpoints
+            .iter()
+            .filter(|endpoint| endpoint.port == port)
+            .collect(),
+        None => service.launch_endpoints().collect(),
+    };
+    if endpoints.is_empty() && port.is_none() {
+        return Err(Failure::new(
+            CommandErrorCode::NoHttp,
+            details_only(what, service, "kosse url"),
+        ));
+    }
     let reachable: Vec<_> = endpoints
         .iter()
         .filter_map(|endpoint| list::reachable_url(endpoint).map(|url| (endpoint.port, url)))
@@ -158,6 +168,26 @@ fn reachable(
             ))
         }
     }
+}
+
+/// Why a service without summary endpoints has no launch target, naming its ports so a caller can
+/// ask for one, with `command` and the first port as the suggestion.
+pub fn details_only(what: &str, service: &Service, command: &str) -> String {
+    let ports: Vec<String> = service
+        .endpoints
+        .iter()
+        .map(|endpoint| format!(":{}", endpoint.port))
+        .collect();
+    let first = service
+        .endpoints
+        .first()
+        .map_or_else(String::new, |endpoint| {
+            format!("; name a port: `{command} {}`", endpoint.port)
+        });
+    format!(
+        "{what} has no launch target: every endpoint is in details ({}){first}",
+        ports.join(", ")
+    )
 }
 
 fn answer_port(args: &PortArgs) -> Result<(), Failure> {
