@@ -49,11 +49,18 @@ const USAGE: i32 = 2;
 const REFUSED: i32 = 3;
 const UNOBSERVED: i32 = 4;
 
+/// `kosse` with `config` as its configuration. A command that asks a running instance and names
+/// none asks no one (`--instance-port 0`): a test never reads the machine's own Kossé.
 fn kosse(config: &Path, cwd: &Path, args: &[&str], stdin: Option<&str>) -> Output {
+    let asks_instance = matches!(args, ["profile", "context" | "show" | "set", ..]);
+    let mut args = args.to_vec();
+    if asks_instance && !args.contains(&"--instance-port") {
+        args.extend(["--instance-port", "0"]);
+    }
     let mut child = Command::new(env!("CARGO_BIN_EXE_kosse"))
         .env("KOSSE_CONFIG_DIR", config)
         .current_dir(cwd)
-        .args(args)
+        .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
