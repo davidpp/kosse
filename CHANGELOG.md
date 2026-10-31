@@ -4,6 +4,8 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 
 ## Unreleased
 
+## 0.3.1 - 2026-10-31
+
 ### Added
 
 - **About Kossé** opens the native macOS About panel with the version, from the tray menu and the dashboard window's app menu.
