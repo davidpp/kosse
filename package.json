@@ -19,6 +19,7 @@
     "test:window": "bun scripts/window-test.ts",
     "test:e2e": "bun run --cwd web build && cargo build --locked -p kosse -p kosse-fixtures --bins && playwright test --config e2e/playwright.config.ts",
     "screenshots": "KOSSE_SCREENSHOTS=1 bun run test:e2e e2e/screenshots.spec.ts --project webkit && oxipng -o 4 --strip safe -q -r docs/screenshots",
+    "release": "bun scripts/release.ts",
     "release:local": "bun scripts/release-local.ts",
     "install:local": "bun scripts/install-local.ts",
     "uninstall:local": "bun scripts/uninstall-local.ts",
