@@ -296,6 +296,7 @@ fn assert_service_menu(menu: &[String], service: &str, ids: [&str; 3]) {
     }
     for fixed in [
         "tray: item dashboard\tOpen Dashboard",
+        "tray: about",
         "tray: item quit\tQuit Kossé",
     ] {
         assert!(menu.iter().any(|line| line == fixed), "{menu:#?}");

@@ -245,6 +245,8 @@ fn app_menu() -> muda::Result<Menu> {
         "Kossé",
         true,
         &[
+            &activation::about_item(),
+            &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::hide(None),
             &PredefinedMenuItem::hide_others(None),
             &PredefinedMenuItem::show_all(None),
