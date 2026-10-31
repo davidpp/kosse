@@ -5,7 +5,7 @@
 //! one section per project (name and branch) listing its services as `name :port[, :port]`, each
 //! with Open (only for summary endpoints, the launch targets, that answered HTTP), Inspect and
 //! Stop…; then the listeners
-//! outside any project; then Open Dashboard and Quit Kossé. Inspect and Stop… open dashboard
+//! outside any project; then Open Dashboard, About Kossé and Quit Kossé. Inspect and Stop… open dashboard
 //! routes; Stop… opens the dashboard's own confirmation, so the menu never signals anything.
 
 use std::collections::HashMap;
@@ -38,6 +38,8 @@ pub enum Item {
     Text(String),
     Heading(String),
     Separator,
+    /// The native About panel.
+    About,
     Action {
         label: String,
         action: Action,
@@ -101,6 +103,7 @@ impl Model {
                 title: launcher::TITLE.to_owned(),
             },
         });
+        items.push(Item::About);
         items.push(Item::Action {
             label: "Quit Kossé".to_owned(),
             action: Action::Quit,
@@ -126,7 +129,7 @@ impl Model {
                 match item {
                     Item::Action { action, .. } => out.push(action),
                     Item::Submenu { items, .. } => walk(items, out),
-                    Item::Text(_) | Item::Heading(_) | Item::Separator => {}
+                    Item::Text(_) | Item::Heading(_) | Item::Separator | Item::About => {}
                 }
             }
         }
@@ -207,6 +210,7 @@ fn label(item: &Item) -> &str {
         | Item::Action { label, .. }
         | Item::Submenu { label, .. } => label,
         Item::Separator => "",
+        Item::About => "About Kossé",
     }
 }
 
@@ -493,6 +497,7 @@ mod tests {
                 "Other Listeners",
                 "",
                 "Open Dashboard",
+                "About Kossé",
                 "Quit Kossé"
             ]
         );
@@ -746,6 +751,7 @@ mod tests {
                 "Discovery failed: enumeration failed",
                 "",
                 "Open Dashboard",
+                "About Kossé",
                 "Quit Kossé"
             ]
         );
@@ -765,7 +771,13 @@ mod tests {
         assert_eq!(model.attention, None);
         assert_eq!(
             labels(&model.items),
-            ["Scanning…", "", "Open Dashboard", "Quit Kossé"]
+            [
+                "Scanning…",
+                "",
+                "Open Dashboard",
+                "About Kossé",
+                "Quit Kossé"
+            ]
         );
     }
 }

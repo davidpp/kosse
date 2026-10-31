@@ -4,6 +4,10 @@ All notable changes to Kossé are recorded here. The format follows [Keep a Chan
 
 ## Unreleased
 
+### Added
+
+- **About Kossé** opens the native macOS About panel with the version, from the tray menu and the dashboard window's app menu.
+
 ## 0.3.0 - 2026-10-30
 
 The dashboard shows which URL to open: endpoints get names and a summary or details tier, each service leads with one open target, and Customize starts from a prompt for your coding agent.

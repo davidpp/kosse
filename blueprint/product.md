@@ -28,7 +28,7 @@ Keyboard navigation, visible focus, accessible confirmation dialog, responsive n
 
 ## Tray surface
 
-A native macOS menu with project/service grouping, recognizable names/ports, Open (summary endpoints that answered HTTP only; with several, `Open <name>` or `Open :port`), Inspect (opens the dashboard window on that service), Stop, Open Dashboard, and Quit. Stop must use the same confirmation and identity policy as the dashboard (opening the dashboard's confirmation is acceptable). No alternate unguarded destructive path.
+A native macOS menu with project/service grouping, recognizable names/ports, Open (summary endpoints that answered HTTP only; with several, `Open <name>` or `Open :port`), Inspect (opens the dashboard window on that service), Stop, Open Dashboard, About, and Quit. The native About panel shows the version; the dashboard window's app menu has it too. Stop must use the same confirmation and identity policy as the dashboard (opening the dashboard's confirmation is acceptable). No alternate unguarded destructive path.
 
 Tray stays useful with browser closed. Initial discovery failure is visible. Quit stops Kossé only, never discovered services. Headless mode has no tray requirement.
 

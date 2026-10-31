@@ -136,6 +136,8 @@ pub fn run(args: &AppArgs) -> Result<(), AppError> {
         let _runtime = &runtime;
         match event {
             Event::NewEvents(StartCause::Init) => {
+                // The About panel draws the process's icon.
+                activation::set_app_icon();
                 // tray-icon requires the loop to be running before the status item is created.
                 if let Err(error) = app.create_tray() {
                     report!("kosse: {error}");
@@ -351,6 +353,7 @@ fn native(item: &Item, actions: &mut HashMap<MenuId, Action>) -> muda::Result<Bo
         Item::Text(text) => Box::new(MenuItem::new(escape(text), false, None)),
         Item::Heading(text) => Box::new(PredefinedMenuItem::section_header(&escape(text))),
         Item::Separator => Box::new(PredefinedMenuItem::separator()),
+        Item::About => Box::new(activation::about_item()),
         Item::Action { label, action } => {
             let id = MenuId::new(action.id());
             actions.insert(id.clone(), action.clone());
@@ -489,6 +492,9 @@ mod test_control {
                 }
                 super::Item::Text(text) | super::Item::Heading(text) => {
                     let _ = writeln!(out, "tray: text {path}{text}");
+                }
+                super::Item::About => {
+                    let _ = writeln!(out, "tray: about");
                 }
                 super::Item::Separator => {}
             }

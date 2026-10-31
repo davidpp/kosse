@@ -7,6 +7,7 @@
 //! the terminal, so macOS may leave the window behind it; that is a platform limit, recorded in
 //! the human checklist.
 
+use muda::{AboutMetadata, PredefinedMenuItem};
 use objc2::{AllocAnyThread, MainThreadMarker};
 use objc2_app_kit::{NSApplication, NSApplicationActivationOptions, NSImage, NSRunningApplication};
 use objc2_foundation::NSData;
@@ -46,6 +47,19 @@ pub fn activate_self() {
                 .activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows);
         }
     }
+}
+
+/// The native About panel's menu item. A bare binary has no `Info.plist` to fill the panel from.
+pub fn about_item() -> PredefinedMenuItem {
+    PredefinedMenuItem::about(
+        Some("About Kossé"),
+        Some(AboutMetadata {
+            name: Some(crate::launcher::TITLE.to_owned()),
+            version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+            copyright: Some("Copyright © 2026 David Paquet".to_owned()),
+            ..AboutMetadata::default()
+        }),
+    )
 }
 
 /// From the window's main thread: use Kossé's icon for the process instead of the generic one.
