@@ -146,15 +146,13 @@ The notices come from cargo-about with [`about.toml`](about.toml), which restate
 
 ## Releasing
 
-Releases are cut from `main` by a tag; [`release.yml`](.github/workflows/release.yml) does the rest.
+`bun run release X.Y.Z`, on a clean `main` at `origin/main`, cuts a release from the entries under CHANGELOG's Unreleased (add a summary line there first if you want one):
 
-1. Bump `version` in the root `Cargo.toml` (`[workspace.package]`; `Cargo.lock` follows on the next build) and move CHANGELOG's Unreleased entries under `## X.Y.Z - YYYY-MM-DD`.
-2. Merge to `main` with CI green.
-3. Tag that commit and push the tag:
+1. Moves them under `## X.Y.Z - YYYY-MM-DD` and bumps the root `Cargo.toml` (`[workspace.package]`), `Cargo.lock` and the README status, on a `release-X.Y.Z` branch with a PR.
+2. Waits for CI and merges the PR.
+3. Tags the merge `vX.Y.Z`, pushes the tag and follows [`release.yml`](.github/workflows/release.yml) until it finishes.
 
-   ```sh
-   git tag -a vX.Y.Z -m "Kossé X.Y.Z" && git push origin vX.Y.Z
-   ```
+A failure stops at that step and nothing is published before the tag.
 
 On the tag, the workflow's macOS job:
 

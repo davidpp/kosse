@@ -12,6 +12,7 @@ Kossé observes local development services (listeners, processes, projects) and 
 - `bun run app -- start|status|eval|shot|resize|click|key|theme|show|logs|stop` runs the real menu-bar app and its WKWebView window on owned fixtures and drives it ([docs/agent-drive.md](docs/agent-drive.md), skill `drive-app`): use it to see a UI change in the real window, not only in Playwright. `bun run test:window` is the automated real-window suite (needs an unlocked screen; CI is configured to run it after `test:e2e`, first run pending).
 - `bun run test:e2e` runs the Playwright suite (WebKit + Chromium) against the real debug `kosse` with owned fixtures; it is not part of `check` (CI runs it after `check`). `bun run screenshots` regenerates `docs/screenshots/` from fixture data only.
 - `bun run fmt` and `bun run contracts` rewrite tracked files. CI fails if `check` leaves the tree dirty.
+- `bun run release X.Y.Z` is the one release command: changelog, bump, PR, merge on green CI, tag, and following `release.yml` to the published release (CONTRIBUTING.md). Run it only when the maintainer asks for a release.
 - `bun run release:local` builds the macOS arm64 archive, checksum and unpublished Homebrew formula in `artifacts/`; `bun run install:local` / `uninstall:local` (`--prefix <dir>`, default `~/.local`) install or remove exactly the recorded files; `bun run test:package` runs the archive through install, the installed binary, upgrade and uninstall in a sandbox. None of them publishes, signs or touches login startup.
 
 ## Invariants
