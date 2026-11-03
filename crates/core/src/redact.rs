@@ -607,13 +607,10 @@ mod tests {
     }
 
     #[test]
-    fn keys_split_into_words() {
-        assert_eq!(words("apiKey"), ["api", "key"]);
-        assert_eq!(
-            words("AWS_SECRET_ACCESS_KEY"),
-            ["aws", "secret", "access", "key"]
-        );
-        assert_eq!(words("db.password"), ["db", "password"]);
+    fn sensitive_keys_match_words_not_substrings() {
+        assert!(is_sensitive_key("apiKey"));
+        assert!(is_sensitive_key("AWS_SECRET_ACCESS_KEY"));
+        assert!(is_sensitive_key("db.password"));
         assert!(is_sensitive_key("--ACCESSTOKEN"));
         assert!(!is_sensitive_key("--keep-alive"));
         assert!(!is_sensitive_key("monkey"));

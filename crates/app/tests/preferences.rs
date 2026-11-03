@@ -7,7 +7,7 @@
 
 mod support;
 
-use std::{fs, os::unix::fs::PermissionsExt, thread, time::Duration};
+use std::{fs, os::unix::fs::PermissionsExt};
 
 use kosse_core::contract::Preferences;
 use kosse_fixtures::repo::Sandbox;
@@ -143,8 +143,8 @@ fn unusable_configuration_is_reported_and_never_overwritten() {
         let read = server.get("/api/preferences");
         assert_eq!(read.status, 409, "{}", read.text());
         assert_eq!(read.error_code(), "configUnavailable");
-        thread::sleep(Duration::from_millis(1100));
-        let refused = post(&server, &token, r#"{"allListeners":true}"#);
+        let refused =
+            server.post_json_admitted("/api/preferences", &token, r#"{"allListeners":true}"#);
         assert_eq!(refused.status, 409, "{}", refused.text());
         assert_eq!(refused.error_code(), "configUnavailable");
         assert!(refused.text().contains("config.json"), "{}", refused.text());
