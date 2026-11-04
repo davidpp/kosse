@@ -39,7 +39,7 @@ jobs:
 
       # No build caches here: a release is built from a clean slate, so nothing a PR run wrote
       # can reach the shipped binary.
-      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           version: 2026.10.11
           cache: false
