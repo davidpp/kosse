@@ -35,7 +35,7 @@ libc = "0.2.191"
 listeners = "0.6.1"
 # Test-only: validates the shipped profile example against the emitted schema. No remote
 # reference resolution (default features off).
-jsonschema = { version = "0.59.0", default-features = false }
+jsonschema = { version = "0.60.2", default-features = false }
 # Test-only self-signed certificates for the TLS fixture.
 rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }
 # kill(2) with typed errno and a positive-only PID type (process groups need a separate call).
