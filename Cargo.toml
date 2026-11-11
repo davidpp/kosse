@@ -35,7 +35,7 @@ libc = "0.2.191"
 listeners = "0.6.1"
 # Test-only: validates the shipped profile example against the emitted schema. No remote
 # reference resolution (default features off).
-jsonschema = { version = "0.59.0", default-features = false }
+jsonschema = { version = "0.60.2", default-features = false }
 # Test-only self-signed certificates for the TLS fixture.
 rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }
 # kill(2) with typed errno and a positive-only PID type (process groups need a separate call).
@@ -104,7 +104,7 @@ objc2-web-kit = { version = "0.3.2", default-features = false, features = [
 # Decodes the embedded tray template PNGs. Already in the graph through muda.
 png = "0.18.1"
 # Process metadata only: no disk/network/component/user-database probing.
-sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+sysinfo = { version = "0.40.1", default-features = false, features = ["system"] }
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = [
